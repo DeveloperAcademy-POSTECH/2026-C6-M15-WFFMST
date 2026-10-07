@@ -1,0 +1,36 @@
+# macOS
+.DS_Store
+
+# Xcode user-specific data
+xcuserdata/
+*.xcuserstate
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+*.xccheckout
+*.xcscmblueprint
+*.moved-aside
+
+# Xcode build products
+build/
+DerivedData/
+*.hmap
+*.ipa
+*.dSYM
+*.dSYM.zip
+*.xcodeproj/*/xcshareddata/WorkspaceSettings.xcsettings
+
+# Swift Package Manager build products
+.build/
+
+# Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+# Developer-local signing configuration
+/CQB/Configurations/Signing.local.xcconfig

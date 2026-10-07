@@ -1,0 +1,21 @@
+// 이 파일을 Signing.local.xcconfig로 복사하고 본인의 Team ID를 입력합니다.
+
+// 단계별 설정 방법
+//
+// 1. 저장소의 CQB 디렉터리로 이동합니다.
+//    cd CQB
+//
+// 2. 이 예제 파일을 로컬 설정 파일로 복사합니다.
+//    cp Configurations/Signing.local.xcconfig.example Configurations/Signing.local.xcconfig
+//
+// 3. Apple Developer의 Team ID를 확인합니다.
+//    https://developer.apple.com/account
+//    Membership details > Team ID
+//
+// 4. Signing.local.xcconfig를 열어 YOUR_TEAM_ID를 교체합니다.
+//    open -t Configurations/Signing.local.xcconfig
+//
+// 5. 파일이 Git에서 제외되는지 확인합니다.
+//    git check-ignore Configurations/Signing.local.xcconfig
+
+DEVELOPMENT_TEAM = YOUR_TEAM_ID
