@@ -8,6 +8,7 @@
 import SwiftUI
 import CQBCore
 import CQBFixtures
+import CQBDesignSystem
 
 struct ContentView: View {
     private let sample = FixtureCatalog.samples[0]
@@ -20,6 +21,9 @@ struct ContentView: View {
             Text("iphone")
             
             Text(sample.title)
+                .font(DSTypography.h1)
+                .foregroundStyle(DSColor.team1)
+                
         }
         .padding()
     }

@@ -22,6 +22,10 @@ let package = Package(
             name: "CQBFirebase",
             targets: ["CQBFirebase"]
         ),
+        .library(
+            name: "CQBDesignSystem",
+            targets: ["CQBDesignSystem"]
+        ),
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
@@ -41,6 +45,13 @@ let package = Package(
         ),
         .target(
             name: "CQBFirebase",
+            dependencies: ["CQBCore"],
+            swiftSettings: [
+                .enableUpcomingFeature("ApproachableConcurrency"),
+            ],
+        ),
+        .target(
+            name: "CQBDesignSystem",
             dependencies: ["CQBCore"],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
