@@ -2,7 +2,7 @@
 name: 🐛 버그
 about: 의도와 다르게 동작하는 문제
 title: "[버그] "
-labels: bug
+labels: fix
 ---
 
 ## 🐞 현상
