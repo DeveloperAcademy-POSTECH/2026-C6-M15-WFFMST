@@ -13,8 +13,7 @@ final class InstructorStore {
     private(set) var participants: [DemoParticipant] = []
     private(set) var readinessSample: ReadinessSample = .ready
     private(set) var aarMode: AARMode = .movement
-    private(set) var selectedMovementIDs: Set<String> = []
-    private(set) var selectedVideoIDs: Set<String> = []
+    private(set) var selectedParticipantIDs: Set<String> = []
     private(set) var playbackPosition = 331.0
     private(set) var aarNotice: String?
 
@@ -33,17 +32,18 @@ final class InstructorStore {
     var canSaveFloorPlan: Bool { !floorPlanDraftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && hasSampleFloorPlan }
     var canCreateSession: Bool { !trainingName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedFloorPlan != nil }
     var readyCount: Int { participants.filter(\.isReady).count }
+    var unreadyCount: Int { participants.count - readyCount }
     var canStartTraining: Bool { !participants.isEmpty && participants.allSatisfy(\.isReady) }
+    var canRequestTrainingStart: Bool { readyCount > 0 }
+    var requiresUnreadyExclusionConfirmation: Bool { canRequestTrainingStart && unreadyCount > 0 }
     var canGoBack: Bool {
         [.floorPlanList, .floorPlanCreation, .sessionCreation, .teamReadiness].contains(phase)
     }
-    var selectedParticipantIDs: Set<String> { aarMode == .movement ? selectedMovementIDs : selectedVideoIDs }
     var selectedParticipants: [DemoParticipant] { participants.filter { selectedParticipantIDs.contains($0.id) } }
     var selectionSummary: String {
         if selectedParticipantIDs.count == participants.count && !participants.isEmpty { return "전체 대원" }
         return selectedParticipants.isEmpty ? "대원 선택" : "대원 " + selectedParticipants.map { String($0.number) }.joined(separator: ", ")
     }
-    var allParticipantsSelected: Bool { !participants.isEmpty && selectedParticipantIDs.count == participants.count }
     var canSelectAllParticipants: Bool { aarMode == .movement || participants.count <= maximumVideoCount }
 
     func openFloorPlanList() { phase = .floorPlanList }
@@ -81,48 +81,51 @@ final class InstructorStore {
             for index in participants.indices { participants[index].isReady = index < 3 }
         }
     }
-    // 화면 검증용 목록 제외이며 실제 참가 취소·기록 제외 정책을 의미하지 않는다.
-    func excludeParticipant(_ id: String) {
-        guard phase == .teamReadiness else { return }
-        participants.removeAll { $0.id == id }
-    }
     func startTraining() {
         guard phase == .teamReadiness, canStartTraining else { return }
+        phase = .trainingInProgress
+    }
+    func startTrainingExcludingUnreadyParticipants() {
+        guard phase == .teamReadiness, canRequestTrainingStart else { return }
+        participants.removeAll { !$0.isReady }
         phase = .trainingInProgress
     }
     func finishTraining() {
         guard phase == .trainingInProgress else { return }
         aarMode = .movement
-        selectedMovementIDs = Set(participants.map(\.id))
-        selectedVideoIDs = Set(participants.prefix(maximumVideoCount).map(\.id))
+        selectedParticipantIDs = Set(participants.map(\.id))
         playbackPosition = 331
         aarNotice = nil
         phase = .aar
     }
-    // 데모에서는 동선/영상 선택을 따로 보관한다. 실제 제품의 전환 정책은 추후 합의한다.
     func changeAARMode(to mode: AARMode) {
+        if mode == .video, selectedParticipantIDs.count > maximumVideoCount {
+            aarNotice = "영상은 최대 \(maximumVideoCount)명까지 볼 수 있습니다. 표시 대상을 \(maximumVideoCount)명 이하로 선택해주세요."
+            return
+        }
         aarMode = mode
         aarNotice = nil
     }
     func isParticipantSelected(_ id: String) -> Bool { selectedParticipantIDs.contains(id) }
     func canToggleParticipant(_ id: String) -> Bool {
         guard participants.contains(where: { $0.id == id }) else { return false }
-        return aarMode == .movement || selectedVideoIDs.contains(id) || selectedVideoIDs.count < maximumVideoCount
+        return aarMode == .movement || selectedParticipantIDs.contains(id) || selectedParticipantIDs.count < maximumVideoCount
     }
     func toggleParticipantSelection(_ id: String) {
         guard canToggleParticipant(id) else {
             aarNotice = "영상은 최대 \(maximumVideoCount)명까지 선택할 수 있습니다."
             return
         }
-        var selection = selectedParticipantIDs
-        if selection.contains(id) { selection.remove(id) } else { selection.insert(id) }
-        if aarMode == .movement { selectedMovementIDs = selection } else { selectedVideoIDs = selection }
+        if selectedParticipantIDs.contains(id) {
+            selectedParticipantIDs.remove(id)
+        } else {
+            selectedParticipantIDs.insert(id)
+        }
         aarNotice = nil
     }
     func selectAllParticipants() {
         guard canSelectAllParticipants else { return }
-        if aarMode == .movement { selectedMovementIDs = Set(participants.map(\.id)) }
-        else { selectedVideoIDs = Set(participants.map(\.id)) }
+        selectedParticipantIDs = Set(participants.map(\.id))
         aarNotice = nil
     }
     func setPlaybackPosition(_ value: Double) {
@@ -137,8 +140,7 @@ final class InstructorStore {
         trainingName = "샘플 훈련"
         selectedFloorPlanID = floorPlans.first?.id
         participants = []
-        selectedMovementIDs = []
-        selectedVideoIDs = []
+        selectedParticipantIDs = []
         readinessSample = .ready
         aarMode = .movement
         aarNotice = nil

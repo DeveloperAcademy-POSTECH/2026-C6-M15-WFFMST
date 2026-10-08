@@ -31,19 +31,28 @@ struct InstructorStoreChecks {
         store.createSession()
         store.loadReadinessSample(.empty)
         store.startTraining()
-        expect(store.phase == .teamReadiness && !store.canStartTraining, "0명 시작 차단")
+        expect(store.phase == .teamReadiness && !store.canRequestTrainingStart, "준비 완료자 0명 시작 차단")
         store.loadReadinessSample(.partial)
         store.startTraining()
         expect(store.phase == .teamReadiness, "미준비자 있을 때 시작 차단")
-        let firstID = store.participants[0].id
-        let secondID = store.participants[1].id
-        store.excludeParticipant(firstID)
-        expect(store.participants.first?.id == secondID && store.participants.first?.number == 2, "제외 후 대원 식별자/번호 유지")
+        expect(store.canRequestTrainingStart && store.requiresUnreadyExclusionConfirmation, "준비 완료 대원이 있으면 일괄 제외 후 시작 가능")
+        store.startTrainingExcludingUnreadyParticipants()
+        expect(store.phase == .trainingInProgress && store.participants.count == 3, "미준비자 일괄 제외 후 훈련 시작")
+        expect(store.participants.allSatisfy(\.isReady), "훈련 참가자는 모두 준비 완료")
+
+        store.finishTraining()
+        store.finishAAR()
+        store.returnHome()
+        store.openSessionCreation()
+        store.selectFloorPlan(savedPlanID)
+        store.setTrainingName("테스트 훈련")
+        store.createSession()
         store.goBack()
         expect(store.phase == .sessionCreation && store.trainingName == "테스트 훈련", "뒤로 이동 시 작성한 입력 유지")
         expect(store.selectedFloorPlanID == savedPlanID && store.participants.isEmpty, "선택 도면 유지, 이전 샘플 참가자 초기화")
 
         store.createSession()
+        let firstID = store.participants[0].id
         store.startTraining()
         expect(store.phase == .trainingInProgress, "전원 준비 → 훈련")
         store.goBack()
@@ -53,8 +62,14 @@ struct InstructorStoreChecks {
         expect(store.selectedParticipants.count == 6, "동선 전체 선택")
         store.setPlaybackPosition(420)
         store.changeAARMode(to: .video)
-        expect(store.selectedParticipants.count == 4 && store.playbackPosition == 420, "영상 4명 제한, 재생 위치 유지")
+        expect(store.aarMode == .movement && store.selectedParticipants.count == 6, "5명 이상이면 영상 전환 차단")
+        expect(store.aarNotice != nil && store.playbackPosition == 420, "영상 제한 안내, 재생 위치 유지")
         let fifthID = store.participants[4].id
+        let sixthID = store.participants[5].id
+        store.toggleParticipantSelection(fifthID)
+        store.toggleParticipantSelection(sixthID)
+        store.changeAARMode(to: .video)
+        expect(store.aarMode == .video && store.selectedParticipants.count == 4, "4명 이하이면 선택을 유지해 영상 전환")
         store.toggleParticipantSelection(fifthID)
         expect(store.selectedParticipants.count == 4 && !store.isParticipantSelected(fifthID), "다섯 번째 영상 선택 차단")
         store.selectAllParticipants()
@@ -62,12 +77,12 @@ struct InstructorStoreChecks {
         store.toggleParticipantSelection(firstID)
         store.toggleParticipantSelection(fifthID)
         expect(store.isParticipantSelected(fifthID), "해제 후 다른 대원 선택")
-        let videoIDs = store.selectedParticipantIDs
+        let selectedIDs = store.selectedParticipantIDs
         store.changeAARMode(to: .movement)
-        expect(store.selectedParticipants.count == 6, "모드 전환 후 동선 선택 복원")
+        expect(store.selectedParticipantIDs == selectedIDs, "영상에서 동선으로 선택 유지")
         store.changeAARMode(to: .video)
-        expect(store.selectedParticipantIDs == videoIDs, "모드 전환 후 영상 선택 복원")
-        for id in videoIDs { store.toggleParticipantSelection(id) }
+        expect(store.selectedParticipantIDs == selectedIDs, "동선에서 영상으로 선택 유지")
+        for id in selectedIDs { store.toggleParticipantSelection(id) }
         expect(store.selectedParticipants.isEmpty, "선택 없음 상태 지원")
         store.setPlaybackPosition(.nan)
         expect(store.playbackPosition == 420, "유효하지 않은 재생 위치 무시")

@@ -2,7 +2,7 @@ import SwiftUI
 
 struct TeamReadinessView: View {
     @Environment(InstructorStore.self) private var store
-    @State private var participantToExclude: DemoParticipant?
+    @State private var isShowingExclusionConfirmation = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -45,29 +45,30 @@ struct TeamReadinessView: View {
         .padding(24)
         .safeAreaInset(edge: .bottom) {
             HStack(spacing: 24) {
-                Text("데모에서는 참가자가 1명 이상이고 전원 준비된 경우에만 시작합니다.")
+                Text("미준비 대원이 있으면 확인 후 해당 대원을 제외하고 시작합니다.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 Spacer()
-                ActionButton("훈련 시작", action: store.startTraining)
-                    .disabled(!store.canStartTraining)
-                    .accessibilityIdentifier("readiness.start")
+                ActionButton("훈련 시작") {
+                    if store.requiresUnreadyExclusionConfirmation {
+                        isShowingExclusionConfirmation = true
+                    } else {
+                        store.startTraining()
+                    }
+                }
+                .disabled(!store.canRequestTrainingStart)
+                .accessibilityIdentifier("readiness.start")
             }
             .padding(24)
             .background(.bar)
         }
-        .alert("샘플 목록에서 제외", isPresented: Binding(
-            get: { participantToExclude != nil },
-            set: { if !$0 { participantToExclude = nil } }
-        ), presenting: participantToExclude) { participant in
-            Button("제외", role: .destructive) {
-                store.excludeParticipant(participant.id)
+        .alert("미준비 대원 제외", isPresented: $isShowingExclusionConfirmation) {
+            Button("제외하고 시작", role: .destructive) {
+                store.startTrainingExcludingUnreadyParticipants()
             }
-            Button("취소", role: .cancel) {
-                participantToExclude = nil
-            }
-        } message: { participant in
-            Text("\(participant.displayName) · \(participant.name)을 현재 샘플 목록에서만 제외합니다. 실제 참가 취소나 기록 제외 처리는 하지 않으며, 훈련은 자동으로 시작되지 않습니다.")
+            Button("취소", role: .cancel) {}
+        } message: {
+            Text("설정이 준비되지 않은 대원 \(store.unreadyCount)명을 현재 세션에서 제외하고 훈련을 시작할까요?")
         }
     }
 
@@ -104,10 +105,6 @@ struct TeamReadinessView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             Label(participant.isReady ? "준비 완료" : "설정 중", systemImage: participant.isReady ? "checkmark.circle" : "clock")
                 .foregroundStyle(.secondary)
-            ActionButton("샘플에서 제외", systemImage: "person.crop.circle.badge.minus") {
-                participantToExclude = participant
-            }
-            .accessibilityIdentifier("readiness.exclude.\(participant.id)")
         }
         .padding(.vertical, 20)
     }
