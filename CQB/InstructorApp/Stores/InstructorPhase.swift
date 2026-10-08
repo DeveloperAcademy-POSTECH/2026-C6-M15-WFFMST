@@ -16,8 +16,6 @@ enum InstructorPhase: Equatable {
     }
 }
 
-enum AARMode: String, CaseIterable, Identifiable {
+enum AARMode: Equatable {
     case movement, video
-    var id: Self { self }
-    var title: String { self == .movement ? "동선" : "영상" }
 }

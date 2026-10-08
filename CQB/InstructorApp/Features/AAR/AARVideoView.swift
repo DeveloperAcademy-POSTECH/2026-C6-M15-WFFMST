@@ -4,30 +4,32 @@ struct AARVideoView: View {
     @Environment(InstructorStore.self) private var store
 
     var body: some View {
+        let selectedParticipants = store.selectedParticipants
+
         GeometryReader { geometry in
             Group {
-                switch store.selectedParticipants.count {
+                switch selectedParticipants.count {
                 case 0:
                     ContentUnavailableView("표시할 대원을 선택하세요", systemImage: "video.slash",
                                            description: Text("오른쪽 표시 대상 메뉴에서 대원을 선택할 수 있습니다."))
                 case 1:
-                    videoRow(store.selectedParticipants)
+                    videoRow(selectedParticipants)
                 case 2:
                     VStack(spacing: 12) {
-                        ForEach(store.selectedParticipants) { participant in
+                        ForEach(selectedParticipants) { participant in
                             videoPlaceholder(participant)
                         }
                     }
                 case 3:
                     VStack(spacing: 12) {
-                        videoRow(Array(store.selectedParticipants.prefix(2)))
-                        videoRow(Array(store.selectedParticipants.suffix(1)))
+                        videoRow(Array(selectedParticipants.prefix(2)))
+                        videoRow(Array(selectedParticipants.suffix(1)))
                             .frame(width: max(0, (geometry.size.width - 12) / 2))
                     }
                 default:
                     VStack(spacing: 12) {
-                        videoRow(Array(store.selectedParticipants.prefix(2)))
-                        videoRow(Array(store.selectedParticipants.dropFirst(2)))
+                        videoRow(Array(selectedParticipants.prefix(2)))
+                        videoRow(Array(selectedParticipants.dropFirst(2)))
                     }
                 }
             }
@@ -72,6 +74,8 @@ struct AARVideoView: View {
     store.createSession()
     store.startTraining()
     store.finishTraining()
+    store.toggleParticipantSelection("member-5")
+    store.toggleParticipantSelection("member-6")
     store.changeAARMode(to: .video)
     store.toggleParticipantSelection("member-4")
     return AARVideoView().environment(store)

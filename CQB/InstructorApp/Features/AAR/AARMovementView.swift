@@ -4,10 +4,12 @@ struct AARMovementView: View {
     @Environment(InstructorStore.self) private var store
 
     var body: some View {
+        let selectedParticipants = store.selectedParticipants
+
         VStack(alignment: .leading, spacing: 12) {
             Text("동선 복기").font(.headline)
 
-            if store.selectedParticipants.isEmpty {
+            if selectedParticipants.isEmpty {
                 ContentUnavailableView("표시할 대원을 선택하세요", systemImage: "person.crop.circle.badge.questionmark",
                                        description: Text("오른쪽 표시 대상 메뉴에서 대원을 선택할 수 있습니다."))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -15,7 +17,7 @@ struct AARMovementView: View {
                 FloorPlanPreview(title: store.selectedFloorPlan?.name ?? "샘플 훈련 도면")
                     .overlay {
                         GeometryReader { geometry in
-                            ForEach(store.selectedParticipants) { participant in
+                            ForEach(selectedParticipants) { participant in
                                 Text("\(participant.number)")
                                     .font(.headline.monospacedDigit())
                                     .frame(width: 36, height: 36)
