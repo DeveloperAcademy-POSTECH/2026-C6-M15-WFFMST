@@ -22,6 +22,10 @@ let package = Package(
             name: "CQBFirebase",
             targets: ["CQBFirebase"]
         ),
+        .library(
+            name: "CQBDesignSystem",
+            targets: ["CQBDesignSystem"]
+        ),
     ],
     dependencies: [
         .package(url: "https://github.com/firebase/firebase-ios-sdk.git", from: "12.19.2"),
@@ -51,6 +55,13 @@ let package = Package(
                 .product(name: "FirebaseFirestore", package: "firebase-ios-sdk"),
                 .product(name: "FirebaseStorage", package: "firebase-ios-sdk"),
             ],
+            swiftSettings: [
+                .enableUpcomingFeature("ApproachableConcurrency"),
+            ],
+        ),
+        .target(
+            name: "CQBDesignSystem",
+            dependencies: ["CQBCore"],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],
