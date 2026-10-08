@@ -10,12 +10,11 @@ import Foundation
 import FirebaseCore
 
 public enum CQBFirebaseModule {
-    /// 앱 시작 시 한 번 호출한다. GoogleService-Info.plist가 앱 번들에 없으면 건너뛴다.
+    /// 앱 시작 시 한 번 호출한다. GoogleService-Info.plist가 앱 번들에 없으면 즉시 중단한다.
     public static func configure() {
         guard FirebaseApp.app() == nil else { return }
         guard Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil else {
-            print("[CQBFirebase] GoogleService-Info.plist가 없어 Firebase 설정을 건너뜁니다.")
-            return
+            fatalError("[CQBFirebase] GoogleService-Info.plist가 앱 번들에 없습니다. MemberApp/ 또는 InstructorApp/ 폴더를 확인하세요.")
         }
         FirebaseApp.configure()
     }
