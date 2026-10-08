@@ -7,9 +7,14 @@
 
 import SwiftUI
 import CQBCore
+import CQBFirebase
 
 @main
 struct MemberApp: App {
+    init() {
+        CQBFirebaseModule.configure()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

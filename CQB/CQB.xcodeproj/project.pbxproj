@@ -11,6 +11,8 @@
 		788A10E330769825003DEA3E /* CQBCore in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10E230769825003DEA3E /* CQBCore */; };
 		788A10F030769F19003DEA3E /* CQBFixtures in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10EF30769F19003DEA3E /* CQBFixtures */; };
 		788A10F230769F20003DEA3E /* CQBFixtures in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10F130769F20003DEA3E /* CQBFixtures */; };
+		788A10F530770001003DEA3E /* CQBFirebase in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10F430770001003DEA3E /* CQBFirebase */; };
+		788A10F730770001003DEA3E /* CQBFirebase in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10F630770001003DEA3E /* CQBFirebase */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -47,6 +49,7 @@
 			files = (
 				788A10D9307697FA003DEA3E /* CQBCore in Frameworks */,
 				788A10F030769F19003DEA3E /* CQBFixtures in Frameworks */,
+				788A10F530770001003DEA3E /* CQBFirebase in Frameworks */,
 			);
 		};
 		788A1082307682B8003DEA3E /* Frameworks */ = {
@@ -54,6 +57,7 @@
 			files = (
 				788A10E330769825003DEA3E /* CQBCore in Frameworks */,
 				788A10F230769F20003DEA3E /* CQBFixtures in Frameworks */,
+				788A10F730770001003DEA3E /* CQBFirebase in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -107,6 +111,7 @@
 			packageProductDependencies = (
 				788A10D8307697FA003DEA3E /* CQBCore */,
 				788A10EF30769F19003DEA3E /* CQBFixtures */,
+				788A10F430770001003DEA3E /* CQBFirebase */,
 			);
 			productName = CQB;
 			productReference = 788A10733076802C003DEA3E /* MemberApp.app */;
@@ -129,6 +134,7 @@
 			packageProductDependencies = (
 				788A10E230769825003DEA3E /* CQBCore */,
 				788A10F130769F20003DEA3E /* CQBFixtures */,
+				788A10F630770001003DEA3E /* CQBFirebase */,
 			);
 			productName = InstructorApp;
 			productReference = 788A1085307682B8003DEA3E /* InstructorApp.app */;
@@ -530,6 +536,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 788A10D7307697FA003DEA3E /* XCLocalSwiftPackageReference "Packages/CQBCore" */;
 			productName = CQBFixtures;
+		};
+		788A10F430770001003DEA3E /* CQBFirebase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 788A10D7307697FA003DEA3E /* XCLocalSwiftPackageReference "Packages/CQBCore" */;
+			productName = CQBFirebase;
+		};
+		788A10F630770001003DEA3E /* CQBFirebase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 788A10D7307697FA003DEA3E /* XCLocalSwiftPackageReference "Packages/CQBCore" */;
+			productName = CQBFirebase;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
