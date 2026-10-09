@@ -236,128 +236,48 @@ index   = row × columns + column
 
 생성 후 도면을 바꾸는 메서드는 제공하지 않는다. 세션 생성은 참조 기록과 함께 성공해야 한다. 취소는 `CancellationError`로 구분하며 빈 결과나 성공으로 숨기지 않는다. 쓰기 취소/시간 초과가 서버 롤백을 보장하지 않으므로 같은 요청으로 결과를 확인할 수 있어야 한다.
 
-### 도면 모델·프로토콜 참조 선언
+### 구현된 공통 파일 검증 API
 
-아래 선언은 본문 데이터 경계를 보여 주는 초안이며 아직 패키지에 구현된 API가 아니다. 실제 코드에는 공개 생성자·검증 factory·오류 매핑이 필요하다. 특히 `Codable`만으로 유효성 검증이 수행되지는 않는다.
+다음은 패키지에 구현했다. 앱 Store/화면·Repository·Firebase는 아직 연결하지 않았다.
+
+| 코드 | 책임 |
+| --- | --- |
+| [Models/FloorPlan.swift](../CQB/Packages/CQBCore/Sources/CQBCore/Models/FloorPlan.swift) | 좌표·축척·참조·manifest·파일 모델, 파일 검증 오류 |
+| [FloorPlanJSON](../CQB/Packages/CQBCore/Sources/CQBCore/Services/FloorPlanJSON.swift) | UTF-8/버전/필수 필드 decode, 정렬된 키·소문자 UUID encode, 정확한 바이트 SHA-256 |
+| [FloorPlanGeometry](../CQB/Packages/CQBCore/Sources/CQBCore/Services/FloorPlanGeometry.swift) | 정규화↔px·축척·외곽 규칙 |
+| [FloorPlanValidator / ValidatedFloorPlan](../CQB/Packages/CQBCore/Sources/CQBCore/Services/FloorPlanValidator.swift) | 참조·hash·격자·외곽과 이미지 검증 조립, 검증 이후 점 조회 |
+| [FloorPlanImageValidating](../CQB/Packages/CQBCore/Sources/CQBCore/Services/FloorPlanImageValidating.swift) | Core가 요구하는 신뢰할 수 있는 이미지 디코더 경계 |
+| [CQBImageIO / PNGFloorPlanImageValidator](../CQB/Packages/CQBCore/Sources/CQBImageIO/PNGFloorPlanImageValidator.swift) | PNG 구조/CRC·단일 정지 이미지·실제 디코딩·크기·방향·sRGB/8bit·불투명 검사 |
+
+`CQBCore`는 Foundation/CryptoKit을 사용하며 SwiftUI/Firebase/ImageIO/CoreGraphics를 import하지 않는다. 양쪽 Apple 앱에서 재사용할 Image I/O 검증 구현만 별도 `CQBImageIO` 타깃으로 분리했다. 이 모듈은 이미지 정규화·압축 최적화를 수행하거나 앱 타깃에 자동 연결하지 않는다.
 
 ```swift
-import Foundation
+import CQBCore
+import CQBImageIO
 
-public struct ImagePoint: Codable, Hashable, Sendable {
-    public let x: Double
-    public let y: Double
-}
-public struct NormalizedPoint: Codable, Hashable, Sendable {
-    public let x: Double
-    public let y: Double
-}
-public struct MapScale: Codable, Hashable, Sendable {
-    public let a: ImagePoint
-    public let b: ImagePoint
-    public let meters: Double
-}
-public struct FloorPlanReference: Codable, Hashable, Sendable {
-    public let floorPlanID: UUID
-    public let revisionID: UUID
-    public let navigationSHA256: String
-}
-public struct NavigationGridDescriptor: Codable, Hashable, Sendable {
-    public let columns: Int
-    public let rows: Int
-    public let cellSizePixels: Int
-    public let encoding: String // v1: uint8-row-major
-    public let freeValue: UInt8 // 0
-    public let blockedValue: UInt8 // 1
-    public let outsideIsBlocked: Bool // true
-    public let maskSHA256: String
-}
-public struct FloorPlanManifest: Codable, Sendable {
-    public let schemaVersion: Int
-    public let floorPlanID: UUID
-    public let revisionID: UUID
-    public let coordinateSystem: String // image-top-left-row-major
-    public let imageWidth: Int
-    public let imageHeight: Int
-    public let imageSHA256: String
-    public let scale: MapScale
-    public let indoorOutline: [NormalizedPoint]
-    public let navigationGrid: NavigationGridDescriptor
-    public let extractionAlgorithmVersion: String
-    public let rasterizationVersion: Int
-    public let manuallyReviewed: Bool
-    // navigationSHA256은 포함하지 않는다. 이 JSON 바이트의 hash는 외부 참조에 둔다.
-}
-public struct FloorPlanSummary: Codable, Sendable {
-    public let reference: FloorPlanReference
-    public let name: String
-}
-public struct FloorPlanFiles: Sendable {
-    public let imagePNG: Data
-    public let navigationMapJSON: Data
-    public let resolvedMask: Data
-}
-public struct PublishFloorPlanRequest: Sendable {
-    public let requestID: UUID
-    public let reference: FloorPlanReference
-    public let name: String
-    public let files: FloorPlanFiles
-}
-public struct FloorPlanPageRequest: Sendable {
-    public let limit: Int
-    public let cursor: String?
-}
-public struct FloorPlanPage: Sendable {
-    public let items: [FloorPlanSummary]
-    public let nextCursor: String?
-}
-public enum FloorPlanReadContext: Sendable {
-    case library
-    case session(UUID)
-}
-public struct ValidatedFloorPlan: Sendable {
-    public let reference: FloorPlanReference
-    public let manifest: FloorPlanManifest
-    public let imagePNG: Data
-    public let resolvedMask: Data
-    // Production implementation restricts construction to the validator.
-}
-public protocol FloorPlanRepository: Sendable {
-    func publish(_ request: PublishFloorPlanRequest) async throws -> FloorPlanSummary
-    func list(_ request: FloorPlanPageRequest) async throws -> FloorPlanPage
-    func load(_ reference: FloorPlanReference,
-              context: FloorPlanReadContext) async throws -> ValidatedFloorPlan
-}
-
-// 도면 연결 관점의 최소 세션 생성 입력. PIN/참가 등 전체 세션 계약은 별도 검토.
-public struct CreateTrainingSessionRequest: Sendable {
-    public let requestID: UUID
-    public let name: String
-    public let floorPlan: FloorPlanReference
-}
-public struct SessionFloorPlanBinding: Codable, Sendable {
-    public let sessionID: UUID
-    public let floorPlan: FloorPlanReference
-}
-public protocol SessionFloorPlanRepository: Sendable {
-    func createSession(_ request: CreateTrainingSessionRequest) async throws -> SessionFloorPlanBinding
-    func binding(for sessionID: UUID) async throws -> SessionFloorPlanBinding
-}
-public enum FloorPlanServiceError: Error, Sendable {
-    case invalidInput(String)
-    case unsupportedSchema(Int)
-    case unsupportedEncoding(String)
-    case integrityMismatch
-    case referenceMismatch
-    case notFound
-    case notReady
-    case accessDenied
-    case conflict
-    case sessionLocked
-    case temporarilyUnavailable
-}
+let validator = FloorPlanValidator(imageValidator: PNGFloorPlanImageValidator())
+// files와 reference는 서비스에서 받은 원본 바이트/참조.
+// 세션 경로에서는 expectedReference에 세션이 고정한 참조를 전달한다.
+let map = try validator.validate(
+    files: files,
+    reference: reference,
+    expectedReference: sessionFloorPlanReference
+)
+let scale = map.pixelsPerMeter
+let cell = map.cell(at: ImagePoint(x: 100, y: 120))
+let blocked = map.isBlocked(at: ImagePoint(x: 220, y: 120))
+try map.validateStart(at: ImagePoint(x: 100, y: 120))
 ```
 
-`SessionFloorPlanRepository`는 도면 연결 관점의 최소 경계이며 전체 PIN·참가·세션 상태 계약을 대신하지 않는다. 공통 SessionRepository가 확정되면 생성/참조 조회 기능을 중복 서비스로 만들지 않고 통합한다.
+- raw 모델 생성/JSON decode만으로 검증이 완료되지는 않는다. `ValidatedFloorPlan`은 외부 생성자나 Codable을 제공하지 않으며 전체 validator를 통과해야 생성된다.
+- 이미지 검증 구현은 호출자가 주입하는 신뢰 경계다. no-op 가짜 검사기를 앱에 주입하지 않는다. 검증은 인증/권한/ready 확인을 대신하지 않는다.
+- `files`는 원본 manifest 바이트도 보존한다. 재시도에 재encode한 바이트를 쓰지 않는다. 공통 writer는 형식 작성 도구이며 파일 전체 validator를 대신하지 않는다.
+- `cell(at:)`은 범위 밖/NaN/무한대에 nil, `isBlocked(at:)`는 true를 반환한다. `validateStart`는 잘못된 좌표와 blocked 시작점을 구분해 거부한다.
+- 이미지/격자 검사에는 CPU 작업이 있으므로 UI actor 밖에서 호출한다. 취소는 CancellationError로 전달한다.
+- 파일 오류는 `FloorPlanValidationError`로 구분한다: manifest/image/grid/scale/outline/coordinate, blockedStart, unsupportedSchema/CoordinateSystem/Encoding, integrityMismatch, referenceMismatch. 서비스의 권한/재시도 오류와 별개다.
+- schemaVersion은 1을 유지한다. 새로운 파일 필드는 추가하지 않았으며 정상 Fixture의 원본 바이트와 hash를 바꾸지 않았다.
+
+도면 등록/목록/조회·세션 연결의 행동은 위 표를 따른다. Repository와 서비스 오류 선언은 [이전 참조 선언](archive/shared-data-contract-draft-2026-10-09.md)에 보존된 검토안이며 이번 파일 읽기 단계에서 구현하지 않았다. 세션 생성/고정 기능은 후속 서비스 구현에서 전체 SessionRepository와 중복되지 않게 연결한다.
 
 ## 7. 동선 담당자에게 전달할 기준
 
@@ -381,6 +301,8 @@ public enum FloorPlanServiceError: Error, Sendable {
 ### 무엇을 검증하는가
 
 첫 연결 흐름은 **교관 등록 결과 내보내기 → 공통 검증/등록 → 목록 → 세션 참조 고정 → 대원 도면 조회**다.
+
+첫 정상 샘플과 수동 기대값은 [normal-v1 도면 Fixture](normal-floorplan-fixture.md)에 정의했다. CQBFixtures의 파일을 공통 모델·validator로 읽는 테스트까지 구현했다. 가짜 Repository와 앱 연동은 아직 구현하지 않았다.
 
 | 검증 영역 | 확인할 결과 |
 | --- | --- |
@@ -407,7 +329,7 @@ raw 업로드 선행 조건을 검토할 때는 가짜 저장소에 검증된 �
 ### 문서와 실제 구현의 구분
 
 - 본문은 사용자가 수락한 도면 전달 규칙과 협업 책임을 반영한다.
-- 공통 모델·서비스·파일 검증·Fixture 테스트는 아직 구현 완료가 아니다. 현재 CQBFixtures의 이름 샘플을 도면 호환성 증거로 간주하지 않는다.
+- 공통 도면 모델·파일 검증·좌표 계산과 normal-v1 소비 테스트를 구현했다. 서비스·앱 연동·동선 모델은 아직 구현하지 않았고 팀 승인을 대신하지 않는다.
 - 팀원 3명 승인과 노션 변경 기록은 미완료다. 담당자 확인 없이 보류 항목을 확정값으로 구현하지 않는다.
 - 해상도·용량 최적화는 후속 범위이며 이번에 숫자를 추가 조정하거나 성능 보장을 선언하지 않는다.
 - #14 완료에는 도면 검증뿐 아니라 이슈에 적힌 동선 담당자 검토·관련 테스트도 필요하다. 이번 문서 정리는 이슈 완료 선언이 아니다.
@@ -415,7 +337,7 @@ raw 업로드 선행 조건을 검토할 때는 가짜 저장소에 검증된 �
 ### 검증 기준
 
 - [ ] 문서와 CQBCore 모델·프로토콜·검증 코드가 일치한다.
-- [ ] PNG/manifest/격자 및 좌표·축척·외곽·hash·revision을 검증한다.
+- [x] 공통 파일 validator에서 PNG/manifest/격자 및 좌표·축척·외곽·hash·revision을 검증한다. 서비스 권한 검증은 별도다.
 - [ ] 20px/m, index 30050 예시와 경계/홀수 크기를 양쪽에서 동일하게 해석한다.
 - [ ] 등록 중복·실패/재시도·미완료 자료 조회 차단을 검증한다.
 - [ ] 같은 도면 재사용과 세션 참조 불변·소유/참가 접근 범위를 검증한다.
@@ -440,4 +362,5 @@ raw 업로드 선행 조건을 검토할 때는 가짜 저장소에 검증된 �
 - 2026-10-09: 익명 UID 소유, 촬영 시작 카메라 방향, 세션 생성 시 도면 고정을 반영했다.
 - 2026-10-09: 후속 논의를 반영해 파일/JSON/좌표 규칙·중복 저장·담당 책임·Fixture 한계를 협업 기준으로 정리했다. 세션당 팀 배정/훈련 시작 한 번을 명시했다.
 - 2026-10-09: 이미지 최적화는 후속 범위로 남기고 기존 제한을 유지했다. 보류한 선분 충돌 규칙과 미검토 동선 선언은 필수 계약에서 분리했다.
-- 2026-10-09: 기존 문서 전체를 이력 파일로 보존했다. 문서 링크 외 앱 코드·Xcode 설정·GitHub Issue는 변경하지 않았다.
+- 2026-10-09: 기존 문서 전체를 이력 파일로 보존했다. 이 문서 정리 시점에는 문서 링크 외 앱 코드·Xcode 설정·GitHub Issue를 변경하지 않았다.
+- 2026-10-09: CQBCore 도면 모델·파일/좌표 검증과 CQBImageIO 어댑터를 구현했다. 데이터 필드·schemaVersion 1·Fixture 원본은 유지했다. 파일 오류/이미지 검사 프로토콜을 추가했으며 팀 승인·서비스·앱 연동은 여전히 별도다.

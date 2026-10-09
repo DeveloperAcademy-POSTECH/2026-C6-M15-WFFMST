@@ -18,6 +18,7 @@ let package = Package(
             name: "CQBFixtures",
             targets: ["CQBFixtures"]
         ),
+        .library(name: "CQBImageIO", targets: ["CQBImageIO"]),
         .library(
             name: "CQBFirebase",
             targets: ["CQBFirebase"]
@@ -52,6 +53,11 @@ let package = Package(
             ],
         ),
         .target(
+            name: "CQBImageIO",
+            dependencies: ["CQBCore"],
+            swiftSettings: [.enableUpcomingFeature("ApproachableConcurrency")],
+        ),
+        .target(
             name: "CQBDesignSystem",
             dependencies: ["CQBCore"],
             swiftSettings: [
@@ -67,7 +73,7 @@ let package = Package(
         ),
         .testTarget(
             name: "CQBCoreTests",
-            dependencies: ["CQBCore"],
+            dependencies: ["CQBCore", "CQBFixtures", "CQBImageIO"],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],

@@ -40,6 +40,7 @@ CQB/
    │  └─ Services/
    ├─ CQBFirebase/
    ├─ CQBFixtures/
+   ├─ CQBImageIO/                  # Apple Image I/O 기반 공통 이미지 검증 어댑터
    └─ CQBDesignSystem/
 ```
 
@@ -105,6 +106,13 @@ CQB/
 - 공통 색상, 타이포그래피, UI 컴포넌트를 패키지로 제공한다.
 - 각 앱은 제품 결정에 따라 이 모듈을 선택적으로 사용한다.
 
+### CQBImageIO
+
+- CQBCore의 `FloorPlanImageValidating`을 ImageIO/CoreGraphics로 구현한다.
+- 실제 PNG 디코딩·방향·크기·색상·불투명 조건을 검증하며 이미지를 고치거나 정규화하지 않는다.
+- CQBCore만 의존하고 SwiftUI/Firebase에 의존하지 않는다. Core는 ImageIO 구현을 알지 않는다.
+- 양쪽 앱 연동 시 이 어댑터를 Core validator에 주입한다. 제품 정의가 앱 타깃 연결을 자동으로 추가하지는 않는다.
+
 ## 의존성 방향
 
 ```text
@@ -114,6 +122,8 @@ InstructorApp ────┘       ▲
                           │
 CQBFirebase ──────────────┤
 CQBFixtures ──────────────┘
+
+CQBImageIO ───────────> CQBCore
 
 MemberApp / InstructorApp ──선택적──> CQBDesignSystem
 ```
