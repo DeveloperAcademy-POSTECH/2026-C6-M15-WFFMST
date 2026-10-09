@@ -1,0 +1,89 @@
+{
+  "fixtureFormatVersion": 1,
+  "recordingID": "66666666-6666-4666-8666-666666666663",
+  "sessionID": "33333333-3333-4333-8333-333333333333",
+  "memberID": "55555555-5555-4555-8555-555555555555",
+  "floorPlan": {
+    "floorPlanID": "11111111-1111-4111-8111-111111111111",
+    "revisionID": "22222222-2222-4222-8222-222222222222",
+    "navigationSHA256": "1546ad93af9a824f1ae9774fa623e02c6f1ec138eba2d050e868976588b5342d"
+  },
+  "originMeters": {
+    "x": 10,
+    "y": 1.5,
+    "z": 20
+  },
+  "startPose": {
+    "positionNormalized": {
+      "x": 0.1,
+      "y": 0.2
+    },
+    "directionPointNormalized": {
+      "x": 0.2,
+      "y": 0.2
+    },
+    "cameraDirectionRadians": 0
+  },
+  "samples": [
+    {
+      "time": 0,
+      "arTimestamp": 100,
+      "arPosition": [
+        10,
+        1.5,
+        20
+      ],
+      "relativeMeters": {
+        "x": 0,
+        "y": 0
+      },
+      "trackingState": "normal",
+      "segment": 1
+    },
+    {
+      "time": 1,
+      "arTimestamp": 101,
+      "arPosition": [
+        11,
+        1.5,
+        20
+      ],
+      "relativeMeters": {
+        "x": 1,
+        "y": 0
+      },
+      "trackingState": "normal",
+      "segment": 1
+    },
+    {
+      "time": 2,
+      "arTimestamp": 102,
+      "arPosition": [
+        12,
+        1.5,
+        20
+      ],
+      "relativeMeters": {
+        "x": 2,
+        "y": 0
+      },
+      "trackingState": "normal",
+      "segment": 1
+    },
+    {
+      "time": 3,
+      "arTimestamp": 103,
+      "arPosition": [
+        13,
+        1.5,
+        20
+      ],
+      "relativeMeters": {
+        "x": 3,
+        "y": 0
+      },
+      "trackingState": "normal",
+      "segment": 1
+    }
+  ]
+}

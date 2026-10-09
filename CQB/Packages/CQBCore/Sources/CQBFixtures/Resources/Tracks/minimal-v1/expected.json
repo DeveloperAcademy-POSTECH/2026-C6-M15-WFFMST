@@ -1,0 +1,283 @@
+{
+  "fixtureFormatVersion": 1,
+  "status": "review-sample-not-production-wire-schema",
+  "algorithmExecuted": false,
+  "floorPlanFixture": "normal-v1",
+  "sessionID": "33333333-3333-4333-8333-333333333333",
+  "memberID": "55555555-5555-4555-8555-555555555555",
+  "pixelsPerMeter": 20,
+  "startPixels": {
+    "x": 100,
+    "y": 120
+  },
+  "inputRotationDegrees": 0,
+  "numericTolerance": 1e-9,
+  "cases": [
+    {
+      "id": "normal",
+      "rawSHA256": "af2ffb7c63b4e41ab03a394e8d2c4b31c243bea1ea5c90d77a1e2f9180a810f5",
+      "recordingID": "66666666-6666-4666-8666-666666666661",
+      "resultID": "77777777-7777-4777-8777-777777777771",
+      "status": "done",
+      "selectedCandidateIndex": 2,
+      "validSampleCount": 3,
+      "coveredSampleCount": 3,
+      "validSampleCoverage": 1,
+      "vertices": [
+        {
+          "t": 0.4,
+          "x": 100,
+          "y": 120,
+          "part": 0,
+          "sampleIndex": 0,
+          "provenance": "unspecified"
+        },
+        {
+          "t": 1.4,
+          "x": 120,
+          "y": 120,
+          "part": 0,
+          "sampleIndex": 1,
+          "provenance": "unspecified"
+        },
+        {
+          "t": 2.4,
+          "x": 140,
+          "y": 140,
+          "part": 0,
+          "sampleIndex": 2,
+          "provenance": "unspecified"
+        }
+      ],
+      "connectedSourcePairs": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "mustNotConnectSourcePairs": [],
+      "unresolvedIntervals": [],
+      "warnings": [],
+      "failureReason": null
+    },
+    {
+      "id": "tracking-gap",
+      "rawSHA256": "c584235fccfdebe47b99b4ad63099a3fd9da03e6f623de504c0fd5c7d60f2125",
+      "recordingID": "66666666-6666-4666-8666-666666666662",
+      "resultID": "77777777-7777-4777-8777-777777777772",
+      "status": "partial",
+      "selectedCandidateIndex": 0,
+      "validSampleCount": 4,
+      "coveredSampleCount": 4,
+      "validSampleCoverage": 1,
+      "vertices": [
+        {
+          "t": 0.4,
+          "x": 100,
+          "y": 120,
+          "part": 0,
+          "sampleIndex": 0,
+          "provenance": "unspecified"
+        },
+        {
+          "t": 1.4,
+          "x": 120,
+          "y": 120,
+          "part": 0,
+          "sampleIndex": 1,
+          "provenance": "unspecified"
+        },
+        {
+          "t": 4.4,
+          "x": 140,
+          "y": 140,
+          "part": 1,
+          "sampleIndex": 4,
+          "provenance": "unspecified"
+        },
+        {
+          "t": 5.4,
+          "x": 160,
+          "y": 140,
+          "part": 1,
+          "sampleIndex": 5,
+          "provenance": "unspecified"
+        }
+      ],
+      "connectedSourcePairs": [
+        [
+          0,
+          1
+        ],
+        [
+          4,
+          5
+        ]
+      ],
+      "mustNotConnectSourcePairs": [
+        [
+          1,
+          4
+        ]
+      ],
+      "unresolvedIntervals": [
+        {
+          "from": 1.4,
+          "to": 4.4,
+          "bounds": "()",
+          "reason": "trackingLost",
+          "missingSampleIndices": [
+            2,
+            3
+          ]
+        }
+      ],
+      "warnings": [
+        "trackingLost",
+        "connectionUnverified"
+      ],
+      "failureReason": null
+    },
+    {
+      "id": "search-limit",
+      "rawSHA256": "b78676046a0208661ef85bb0df5e4a8faf508aa61fdc8bae64dd88744d1ad7a6",
+      "recordingID": "66666666-6666-4666-8666-666666666663",
+      "resultID": "77777777-7777-4777-8777-777777777773",
+      "status": "partial",
+      "selectedCandidateIndex": 0,
+      "validSampleCount": 4,
+      "coveredSampleCount": 2,
+      "validSampleCoverage": 0.5,
+      "vertices": [
+        {
+          "t": 0.4,
+          "x": 100,
+          "y": 120,
+          "part": 0,
+          "sampleIndex": 0,
+          "provenance": "unspecified"
+        },
+        {
+          "t": 1.4,
+          "x": 120,
+          "y": 120,
+          "part": 0,
+          "sampleIndex": 1,
+          "provenance": "unspecified"
+        }
+      ],
+      "connectedSourcePairs": [
+        [
+          0,
+          1
+        ]
+      ],
+      "mustNotConnectSourcePairs": [],
+      "unresolvedIntervals": [
+        {
+          "from": 1.4,
+          "to": 3.4,
+          "bounds": "(]",
+          "reason": "searchLimit",
+          "missingSampleIndices": [
+            2,
+            3
+          ]
+        }
+      ],
+      "warnings": [
+        "searchIncomplete"
+      ],
+      "failureReason": null
+    },
+    {
+      "id": "insufficient-movement",
+      "rawSHA256": "bd8fb777fed2ef1724f8bb29555b92c29345afeeabb6e288e27e532141949c33",
+      "recordingID": "66666666-6666-4666-8666-666666666664",
+      "resultID": "77777777-7777-4777-8777-777777777774",
+      "status": "failed",
+      "selectedCandidateIndex": null,
+      "validSampleCount": 2,
+      "coveredSampleCount": 0,
+      "validSampleCoverage": 0,
+      "vertices": [],
+      "connectedSourcePairs": [],
+      "mustNotConnectSourcePairs": [],
+      "unresolvedIntervals": [
+        {
+          "from": 0.4,
+          "to": 1.4,
+          "bounds": "[]",
+          "reason": "insufficientMovement",
+          "missingSampleIndices": [
+            0,
+            1
+          ]
+        }
+      ],
+      "warnings": [],
+      "failureReason": "insufficientMovement"
+    }
+  ],
+  "publicationExamples": [
+    {
+      "id": "raw-not-confirmed",
+      "caseID": "tracking-gap",
+      "rawConfirmed": false,
+      "resultFilesReady": true,
+      "previousSelection": null,
+      "expectedPublic": false,
+      "expectedSelection": null
+    },
+    {
+      "id": "result-not-ready",
+      "caseID": "normal",
+      "rawConfirmed": true,
+      "resultFilesReady": false,
+      "previousSelection": null,
+      "expectedPublic": false,
+      "expectedSelection": null
+    },
+    {
+      "id": "first-partial",
+      "caseID": "tracking-gap",
+      "rawConfirmed": true,
+      "resultFilesReady": true,
+      "previousSelection": null,
+      "expectedPublic": true,
+      "expectedSelection": "77777777-7777-4777-8777-777777777772"
+    },
+    {
+      "id": "failed-recalculation",
+      "caseID": "insufficient-movement",
+      "rawConfirmed": true,
+      "resultFilesReady": true,
+      "previousSelection": "previous-published-result",
+      "expectedPublic": null,
+      "expectedSelection": "previous-published-result"
+    },
+    {
+      "id": "new-result-does-not-overwrite-selection",
+      "caseID": "normal",
+      "rawConfirmed": true,
+      "resultFilesReady": true,
+      "previousSelection": "previous-published-result",
+      "expectedPublic": true,
+      "expectedSelection": "previous-published-result"
+    },
+    {
+      "id": "cancelled-recalculation",
+      "caseID": null,
+      "attempt": "cancelled",
+      "rawConfirmed": true,
+      "resultFilesReady": false,
+      "previousSelection": "previous-published-result",
+      "expectedPublic": false,
+      "expectedSelection": "previous-published-result"
+    }
+  ]
+}

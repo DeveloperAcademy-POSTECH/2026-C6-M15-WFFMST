@@ -1,0 +1,159 @@
+{
+  "fixtureFormatVersion": 1,
+  "source": "hand-authored-selected-candidate-snapshots-not-v13-execution",
+  "cases": [
+    {
+      "id": "normal",
+      "rawFile": "normal-raw.json",
+      "resultID": "77777777-7777-4777-8777-777777777771",
+      "recordingStartOffsetSeconds": 0.4,
+      "attempt": "completed",
+      "solverSnapshot": {
+        "selected": 2,
+        "searchIncomplete": false,
+        "chosen": {
+          "vertices": [
+            {
+              "point": {
+                "x": 100,
+                "y": 120
+              },
+              "time": 0,
+              "sampleIndex": 0,
+              "part": 0
+            },
+            {
+              "point": {
+                "x": 120,
+                "y": 120
+              },
+              "time": 1,
+              "sampleIndex": 1,
+              "part": 0
+            },
+            {
+              "point": {
+                "x": 140,
+                "y": 140
+              },
+              "time": 2,
+              "sampleIndex": 2,
+              "part": 0
+            }
+          ],
+          "unresolved": [],
+          "searchLimited": false
+        }
+      }
+    },
+    {
+      "id": "tracking-gap",
+      "rawFile": "tracking-gap-raw.json",
+      "resultID": "77777777-7777-4777-8777-777777777772",
+      "recordingStartOffsetSeconds": 0.4,
+      "attempt": "completed",
+      "solverSnapshot": {
+        "selected": 0,
+        "searchIncomplete": false,
+        "chosen": {
+          "vertices": [
+            {
+              "point": {
+                "x": 100,
+                "y": 120
+              },
+              "time": 0,
+              "sampleIndex": 0,
+              "part": 0
+            },
+            {
+              "point": {
+                "x": 120,
+                "y": 120
+              },
+              "time": 1,
+              "sampleIndex": 1,
+              "part": 0
+            },
+            {
+              "point": {
+                "x": 140,
+                "y": 140
+              },
+              "time": 4,
+              "sampleIndex": 4,
+              "part": 1
+            },
+            {
+              "point": {
+                "x": 160,
+                "y": 140
+              },
+              "time": 5,
+              "sampleIndex": 5,
+              "part": 1
+            }
+          ],
+          "unresolved": [
+            {
+              "from": 4,
+              "through": 4,
+              "reason": "tracking restart connection unverified"
+            }
+          ],
+          "searchLimited": false
+        }
+      }
+    },
+    {
+      "id": "search-limit",
+      "rawFile": "search-limit-raw.json",
+      "resultID": "77777777-7777-4777-8777-777777777773",
+      "recordingStartOffsetSeconds": 0.4,
+      "attempt": "completed",
+      "solverSnapshot": {
+        "selected": 0,
+        "searchIncomplete": true,
+        "chosen": {
+          "vertices": [
+            {
+              "point": {
+                "x": 100,
+                "y": 120
+              },
+              "time": 0,
+              "sampleIndex": 0,
+              "part": 0
+            },
+            {
+              "point": {
+                "x": 120,
+                "y": 120
+              },
+              "time": 1,
+              "sampleIndex": 1,
+              "part": 0
+            }
+          ],
+          "unresolved": [
+            {
+              "from": 2,
+              "through": 3,
+              "reason": "search budget reached"
+            }
+          ],
+          "searchLimited": true
+        }
+      }
+    },
+    {
+      "id": "insufficient-movement",
+      "rawFile": "insufficient-movement-raw.json",
+      "resultID": "77777777-7777-4777-8777-777777777774",
+      "recordingStartOffsetSeconds": 0.4,
+      "attempt": "noCandidate",
+      "observedReason": "insufficientMovement",
+      "solverSnapshot": null
+    }
+  ]
+}

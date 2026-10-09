@@ -40,7 +40,7 @@ let package = Package(
         .target(
             name: "CQBFixtures",
             dependencies: ["CQBCore"],
-            resources: [.copy("Resources/FloorPlans")],
+            resources: [.copy("Resources/FloorPlans"), .copy("Resources/Tracks")],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],
