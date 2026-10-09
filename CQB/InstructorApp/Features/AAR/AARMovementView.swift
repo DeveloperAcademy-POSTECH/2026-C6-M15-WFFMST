@@ -14,7 +14,7 @@ struct AARMovementView: View {
                                        description: Text("오른쪽 표시 대상 메뉴에서 대원을 선택할 수 있습니다."))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                FloorPlanPreview(title: store.selectedFloorPlan?.name ?? "샘플 훈련 도면")
+                FloorPlanPreview(title: store.selectedFloorPlan?.name ?? "샘플 훈련 도면", image: store.selectedPlanImage)
                     .overlay {
                         GeometryReader { geometry in
                             ForEach(selectedParticipants) { participant in

@@ -22,7 +22,7 @@ struct FloorPlanListView: View {
                         ContentUnavailableView(
                             "등록된 도면이 없습니다",
                             systemImage: "map",
-                            description: Text("도면 추가를 눌러 샘플 도면을 등록해보세요.")
+                            description: Text("도면 추가를 눌러 이미지와 장애물, 축척을 등록해보세요.")
                         )
                     }
 
@@ -42,7 +42,7 @@ struct FloorPlanListView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(floorPlan.name)
                         .font(.title3.bold())
-                    Text("샘플 도면")
+                    Text(floorPlan.registeredPlan == nil ? "샘플 도면" : "로컬 등록 · 앱 실행 중 유지")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -50,7 +50,7 @@ struct FloorPlanListView: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text(floorPlan.fileName)
-                    Text("참고 거리 \(floorPlan.referenceDistance, format: .number) m · 샘플 값")
+                    Text("기준 거리 \(floorPlan.referenceDistance, format: .number) m\(floorPlan.registeredPlan == nil ? " · 샘플 값" : "")")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
