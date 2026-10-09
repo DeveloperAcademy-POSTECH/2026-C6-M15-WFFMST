@@ -34,3 +34,4 @@ playground.xcworkspace
 
 # Developer-local signing configuration
 /CQB/Configurations/Signing.local.xcconfig
+*.swift
