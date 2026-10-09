@@ -28,14 +28,13 @@ struct StartPositionSetupView: View {
                     .foregroundStyle(DSColor.darkGreen)
                     .frame(maxWidth: .infinity, minHeight: 42, alignment: .topLeading)
                 VStack(spacing: 24) {
-                    statusRow("출발 위치", value: startPoint == nil ? "미지정" : "지정됨", isSet: startPoint != nil)
-                    statusRow("바라보는 방향", value: directionPoint == nil ? "미설정" : "설정됨", isSet: directionPoint != nil)
+                    SetupStatusRow("출발 위치", value: startPoint == nil ? "미지정" : "지정됨", isSet: startPoint != nil)
+                    SetupStatusRow("바라보는 방향", value: directionPoint == nil ? "미설정" : "설정됨", isSet: directionPoint != nil)
                 }
                 .padding(.top, 20)
-                Button("좌표 고정") {
+                ActionButton("좌표 고정") {
                     if let startPoint, let directionPoint { onConfirm(startPoint, directionPoint) }
                 }
-                .buttonStyle(MemberPrimaryButtonStyle())
                 .disabled(startPoint == nil || directionPoint == nil)
                 .padding(.top, 12)
             }
@@ -96,19 +95,9 @@ struct StartPositionSetupView: View {
         }
         .aspectRatio(330.0 / 400.0, contentMode: .fit)
         .padding(12)
-        .memberSurface()
-    }
-
-    private func statusRow(_ title: String, value: String, isSet: Bool) -> some View {
-        HStack {
-            Text(title).font(DSTypography.body1)
-            Spacer()
-            Text(value).font(DSTypography.body2)
-                .foregroundStyle(isSet ? DSColor.main : DSColor.darkGreen)
-        }
-        .padding(.horizontal, 16)
-        .frame(height: 40)
-        .memberSurface()
+        .background(DSColor.area1)
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(DSColor.area3))
     }
 }
 

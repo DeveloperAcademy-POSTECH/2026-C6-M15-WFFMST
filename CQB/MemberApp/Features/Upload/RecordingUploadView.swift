@@ -40,8 +40,7 @@ struct RecordingUploadView: View {
                         Text(isComplete ? "완료되었습니다." : "완료되면 종료할 수 있습니다.")
                             .font(DSTypography.body2)
                             .foregroundStyle(DSColor.darkGreen)
-                        Button("홈으로", action: onHome)
-                            .buttonStyle(MemberPrimaryButtonStyle())
+                        ActionButton("홈으로", action: onHome)
                             .disabled(!isComplete)
                     }
                 }

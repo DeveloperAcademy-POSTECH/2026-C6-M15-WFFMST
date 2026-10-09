@@ -20,9 +20,10 @@ struct SessionJoinView: View {
                     Text("훈련 참가")
                         .font(DSTypography.h2)
                         .padding(.bottom, 68)
+                    
                     VStack(alignment: .leading, spacing: 12) {
                         Text("PIN 번호").font(DSTypography.h3)
-                        TextField("", text: $pin, prompt: Text("6자리 PIN 입력").foregroundStyle(DSColor.white))
+                        TextField("6자리 PIN 입력", text: $pin)
                             .keyboardType(.numberPad)
                             .textContentType(.oneTimeCode)
                             .focused($focusedField, equals: .pin)
@@ -30,34 +31,31 @@ struct SessionJoinView: View {
                             .onChange(of: pin) { _, value in
                                 pin = String(value.filter { $0.isASCII && $0.isNumber }.prefix(6))
                             }
-                            .padding(.horizontal, 12)
-                            .frame(height: 48)
-                            .memberSurface()
                     }
                     .padding(.bottom, 52)
+                    
                     VStack(alignment: .leading, spacing: 12) {
                         Text("대원명").font(DSTypography.h3)
-                        TextField("", text: $memberName, prompt: Text("예: 이름").foregroundStyle(DSColor.white))
+                        TextField("예: 이름", text: $memberName)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .focused($focusedField, equals: .name)
                             .submitLabel(.done)
                             .onSubmit { focusedField = nil }
                             .accessibilityLabel("대원명")
-                            .padding(.horizontal, 12)
-                            .frame(height: 48)
-                            .memberSurface()
                     }
+                    
                     Text("지휘관이 알아볼 수 있는 이름을 입력해주세요.")
                         .font(DSTypography.body2)
                         .foregroundStyle(DSColor.darkGreen)
                         .padding(.top, 24)
+                    
                     Spacer(minLength: 28)
-                    Button("참가") {
+                    
+                    ActionButton("참가") {
                         focusedField = nil
                         onJoin(pin, memberName.trimmingCharacters(in: .whitespacesAndNewlines))
                     }
-                    .buttonStyle(MemberPrimaryButtonStyle())
                     .disabled(!canJoin)
                 }
                 .font(DSTypography.body1)
