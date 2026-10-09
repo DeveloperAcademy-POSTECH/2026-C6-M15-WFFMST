@@ -46,11 +46,25 @@ enum FloorPlanRegistrationChecks {
         draft.placePoint(point(0.9, 0.9))
         draft.placePoint(point(0.1, 0.9))
         draft.confirmOutline()
+        precondition(draft.isProcessing && !draft.isReplayingEdits, "outline calculation must retain visible progress")
         try await idle(draft)
         precondition(draft.canContinueEditing)
         let stroke = LocalEditStroke(mode: .block, points: [point(0.3, 0.3), point(0.6, 0.3)], normalizedDiameter: 0.03)
+        let previousPreview = draft.maskPNGData
         draft.appendStroke(stroke)
+        precondition(draft.isReplayingEdits, "stroke replay uses quiet processing presentation")
         precondition(draft.resolvedGrid == nil && !draft.canContinueEditing, "old preview must invalidate synchronously")
+        precondition(draft.maskPNGData == previousPreview && previousPreview != nil,
+                     "keep the last visual mask while replaying a stroke, without keeping a registerable grid")
+        try await idle(draft)
+        precondition(!draft.isReplayingEdits)
+        precondition(draft.maskPNGData != previousPreview && draft.resolvedGrid != nil, "replace preview after replay succeeds")
+        let editedPreview = draft.maskPNGData
+        draft.undoStroke()
+        precondition(draft.maskPNGData == editedPreview && draft.resolvedGrid == nil)
+        try await idle(draft)
+        precondition(draft.maskPNGData == previousPreview)
+        draft.appendStroke(stroke)
         try await idle(draft)
         draft.continueToScale()
         draft.placePoint(point(0.2, 0.2))
@@ -73,6 +87,11 @@ enum FloorPlanRegistrationChecks {
         let snapshot = draft.registration()!
         precondition(snapshot.name == "새 도면" && snapshot.resolvedGrid == draft.resolvedGrid)
         precondition(snapshot.strokes == [stroke] && snapshot.outline == draft.outline)
+        draft.reportImportFailure(NSError(domain: NSCocoaErrorDomain, code: NSUserCancelledError))
+        draft.reportImportFailure(CancellationError())
+        precondition(draft.errorMessage == nil && draft.canRegister && draft.registration()?.image == snapshot.image)
+        precondition(draft.strokes == snapshot.strokes && draft.outline == snapshot.outline && draft.scale == snapshot.scale,
+                     "picker cancellation must preserve the complete reviewed draft")
         precondition(snapshot.resolvedGrid.blocked[0] == 1, "outside outline must be blocked")
         let expectedPreview = try LocalFloorPlanMaskRenderer.pngData(grid: snapshot.resolvedGrid)
         precondition(draft.maskPNGData == expectedPreview)
@@ -97,6 +116,7 @@ enum FloorPlanRegistrationChecks {
         let draft = FloorPlanDraftStore(importer: service)
         draft.setName("유지할 이름")
         draft.importImage(from: url("old.png"))
+        precondition(draft.isProcessing && !draft.isReplayingEdits, "initial extraction must retain visible progress")
         try await wait { await service.has("old.png") }
         draft.importImage(from: url("new.png"))
         try await wait { await service.has("new.png") }
@@ -119,14 +139,35 @@ enum FloorPlanRegistrationChecks {
         draft.showReview()
         draft.setReviewed(true)
         precondition(draft.canRegister)
+        let previous = draft.registration()!
+        let previousPNG = draft.maskPNGData
+        draft.importImage(from: url("broken-replacement.png"))
+        precondition(draft.isImporting && !draft.isReplayingEdits && !draft.canRegister)
+        try await wait { await service.has("broken-replacement.png") }
+        await service.fail("broken-replacement.png")
+        try await idle(draft)
+        precondition(draft.canRegister && draft.image == previous.image && draft.strokes == previous.strokes)
+        precondition(draft.outline == previous.outline && draft.scale == previous.scale && draft.maskPNGData == previousPNG,
+                     "failed replacement must preserve the complete reviewed draft")
+        draft.importImage(from: url("cancel-replacement.png"))
+        try await wait { await service.has("cancel-replacement.png") }
+        draft.cancelProcessing()
+        await service.succeed("cancel-replacement.png")
+        try await wait { await service.finished == 4 }
+        for _ in 0..<5 { await Task.yield() }
+        precondition(draft.canRegister && draft.image == previous.image && draft.strokes == previous.strokes)
+        precondition(draft.outline == previous.outline && draft.scale == previous.scale && draft.maskPNGData == previousPNG,
+                     "cancelled replacement must preserve draft and ignore late success")
         draft.importImage(from: url("replacement.png"))
-        precondition(draft.image == nil && draft.resolvedGrid == nil && draft.maskPNGData == nil)
-        precondition(draft.strokes.isEmpty && draft.outline.isEmpty && draft.scale == nil && !draft.reviewed)
+        precondition(draft.image == previous.image && draft.resolvedGrid == previous.resolvedGrid && draft.maskPNGData == previousPNG)
+        precondition(draft.strokes == previous.strokes && draft.outline == previous.outline && draft.scale == previous.scale)
         precondition(draft.name == "유지할 이름" && !draft.canRegister)
         try await wait { await service.has("replacement.png") }
         await service.succeed("replacement.png")
         try await idle(draft)
         precondition(draft.image?.fileName == "replacement.png" && !draft.canContinueEditing)
+        precondition(draft.strokes.isEmpty && draft.outline.isEmpty && draft.scale == nil && !draft.reviewed,
+                     "only successful replacement resets old edits")
         draft.setTool(.outline)
         for p in [point(0.1, 0.1), point(0.9, 0.1), point(0.9, 0.9), point(0.1, 0.9)] { draft.placePoint(p) }
         draft.confirmOutline()
@@ -145,6 +186,21 @@ enum FloorPlanRegistrationChecks {
         draft.refreshMask()
         try await idle(draft)
         precondition(draft.resolvedGrid != nil, "cancelled mask calculation must be retryable")
+        let block = LocalEditStroke(mode: .block, points: [point(0.2, 0.2), point(0.8, 0.8)], normalizedDiameter: 0.03)
+        let open = LocalEditStroke(mode: .open, points: block.points, normalizedDiameter: 0.02)
+        draft.appendStroke(block)
+        draft.appendStroke(open) // cancels the first calculation before its cache commits
+        try await idle(draft)
+        let full = try LocalFloorPlanGeometry.resolve(base: draft.baseGrid!, width: draft.image!.width,
+            height: draft.image!.height, strokes: draft.strokes, outline: [])
+        precondition(draft.resolvedGrid == full, "cancelled incremental work must not corrupt the next cache")
+        draft.undoStroke()
+        draft.cancelProcessing()
+        draft.refreshMask()
+        try await idle(draft)
+        let afterUndo = try LocalFloorPlanGeometry.resolve(base: draft.baseGrid!, width: draft.image!.width,
+            height: draft.image!.height, strokes: draft.strokes, outline: [])
+        precondition(draft.resolvedGrid == afterUndo, "retry after cancelled undo must use the current history")
     }
 
     static func errorsCancellationAndLifetime() async throws {

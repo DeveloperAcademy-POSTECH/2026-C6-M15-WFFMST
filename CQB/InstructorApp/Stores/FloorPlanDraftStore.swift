@@ -21,6 +21,7 @@ final class FloorPlanDraftStore {
     private(set) var tool: LocalCanvasTool = .move
     private(set) var normalizedDiameter = 0.006
     private(set) var isProcessing = false
+    private(set) var isImporting = false
     private(set) var isDrawing = false
     private(set) var activity = ""
     private(set) var errorMessage: String?
@@ -33,6 +34,7 @@ final class FloorPlanDraftStore {
     @ObservationIgnored private let importer: any FloorPlanImporting
     @ObservationIgnored private var work: Task<Void, Never>?
     @ObservationIgnored private var generation = UUID()
+    @ObservationIgnored private var replayCache: LocalFloorPlanReplayCache?
 
     init(importer: any FloorPlanImporting = LocalFloorPlanImportService()) {
         self.importer = importer
@@ -41,6 +43,8 @@ final class FloorPlanDraftStore {
     deinit { work?.cancel() }
 
     var hasName: Bool { !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    // Only same-image edit replay retains a preview; import/outline/retry work stays visible.
+    var isReplayingEdits: Bool { isProcessing && !isImporting && maskPNGData != nil }
     var canContinueEditing: Bool { hasName && image != nil && resolvedGrid != nil && outlineConfirmed && !isProcessing && !isDrawing }
     var scale: LocalPlanScale? {
         guard let scaleA, let scaleB,
@@ -74,33 +78,57 @@ final class FloorPlanDraftStore {
         normalizedDiameter = min(0.05, max(0.001, value))
     }
     func reportImportFailure(_ error: Error) {
+        let cocoaError = error as NSError
+        guard !(error is CancellationError),
+              !(cocoaError.domain == NSCocoaErrorDomain && cocoaError.code == NSUserCancelledError) else { return }
         errorMessage = error.localizedDescription
     }
 
     func importImage(from url: URL) {
         invalidateWork()
-        clearImageState()
         errorMessage = nil
         isProcessing = true
+        isImporting = true
         activity = "이미지 정규화 및 장애물 자동 추출 중"
         let token = generation
         let service = importer
+        // Prepare the complete replacement off-main, including its first preview.
+        // The old draft remains usable if any of these steps fail or are cancelled.
+        let preparation = Task.detached(priority: .userInitiated) {
+            let result = try await service.process(url: url)
+            try Task.checkCancellation()
+            var cache = try LocalFloorPlanReplayCache(base: result.baseGrid,
+                width: result.image.width, height: result.image.height)
+            let grid = try cache.resolve(strokes: [], outline: [])
+            let png = try LocalFloorPlanMaskRenderer.pngData(grid: grid)
+            return (result, cache, grid, png)
+        }
         work = Task { [weak self] in
             do {
-                let result = try await service.process(url: url)
+                let (result, cache, grid, png) = try await withTaskCancellationHandler {
+                    try await preparation.value
+                } onCancel: { preparation.cancel() }
                 try Task.checkCancellation()
                 guard let self, self.generation == token else { return }
+                self.clearImageState()
                 self.image = result.image
                 self.baseGrid = result.baseGrid
+                self.resolvedGrid = grid
+                self.maskPNGData = png
+                self.replayCache = cache
 #if canImport(UIKit)
                 self.previewImage = UIImage(data: result.image.pngData)
+                self.maskImage = UIImage(data: png, scale: 1 / CGFloat(grid.cellSizePixels))
 #endif
                 self.step = .editing
                 self.tool = .move
-                self.refreshMask()
+                self.isProcessing = false
+                self.isImporting = false
+                self.work = nil
             } catch {
                 guard let self, self.generation == token else { return }
                 self.isProcessing = false
+                self.isImporting = false
                 self.work = nil
                 if !(error is CancellationError) { self.errorMessage = error.localizedDescription }
             }
@@ -114,6 +142,7 @@ final class FloorPlanDraftStore {
     }
 
     func appendStroke(_ stroke: LocalEditStroke) {
+        guard !isImporting else { return }
         guard step == .editing, image != nil, stroke.normalizedDiameter.isFinite,
               stroke.normalizedDiameter > 0, stroke.normalizedDiameter <= 0.1,
               !stroke.points.isEmpty, stroke.points.allSatisfy(\.isValid),
@@ -124,19 +153,19 @@ final class FloorPlanDraftStore {
         }
         strokes.append(stroke)
         reviewed = false
-        refreshMask()
+        recomputeMask(preservingPreview: true)
     }
     func undoStroke() {
         guard !isDrawing, !strokes.isEmpty else { return }
         strokes.removeLast()
         reviewed = false
-        refreshMask()
+        recomputeMask(preservingPreview: true)
     }
     func resetEdits() {
         guard !isDrawing else { return }
         strokes = []
         reviewed = false
-        refreshMask()
+        recomputeMask(preservingPreview: true)
     }
     func placePoint(_ point: LocalPlanPoint) {
         guard point.isValid, !isProcessing else { return }
@@ -196,36 +225,46 @@ final class FloorPlanDraftStore {
             image: image, baseGrid: baseGrid, strokes: strokes, outline: outline, scale: scale, resolvedGrid: resolvedGrid)
     }
 
-    // Preview와 등록에 동일한 결과를 사용한다. 변경 즉시 이전 결과를 무효화한다.
+    // Outline/image changes must not display a previously confirmed boundary.
     func refreshMask() {
+        recomputeMask(preservingPreview: false)
+    }
+
+    // During stroke replay, retain only the last visual preview to prevent flashing.
+    // The authoritative grid is always invalidated immediately, so it cannot be registered.
+    private func recomputeMask(preservingPreview: Bool) {
         guard let image, let baseGrid else { return }
         invalidateWork()
         resolvedGrid = nil
-        maskPNGData = nil
+        if !preservingPreview {
+            maskPNGData = nil
 #if canImport(UIKit)
-        maskImage = nil
+            maskImage = nil
 #endif
+        }
         isProcessing = true
         activity = "편집 결과 계산 중"
         errorMessage = nil
         let token = generation
         let edits = strokes
         let polygon = outlineConfirmed ? outline : []
+        let previousCache = replayCache
         let processing = Task.detached(priority: .userInitiated) {
-            let grid = try LocalFloorPlanGeometry.resolve(base: baseGrid, width: image.width, height: image.height,
-                strokes: edits, outline: polygon)
+            var cache = try previousCache ?? LocalFloorPlanReplayCache(base: baseGrid, width: image.width, height: image.height)
+            let grid = try cache.resolve(strokes: edits, outline: polygon)
             try Task.checkCancellation()
             let png = try LocalFloorPlanMaskRenderer.pngData(grid: grid)
-            return (grid, png)
+            return (grid, png, cache)
         }
         work = Task { [weak self] in
             do {
-                let (grid, png) = try await withTaskCancellationHandler {
+                let (grid, png, cache) = try await withTaskCancellationHandler {
                     try await processing.value
                 } onCancel: { processing.cancel() }
                 try Task.checkCancellation()
                 guard let self, self.generation == token else { return }
                 self.resolvedGrid = grid
+                self.replayCache = cache
                 self.maskPNGData = png
 #if canImport(UIKit)
                 self.maskImage = UIImage(data: png, scale: 1 / CGFloat(grid.cellSizePixels))
@@ -246,8 +285,10 @@ final class FloorPlanDraftStore {
         work?.cancel()
         work = nil
         isProcessing = false
+        isImporting = false
     }
     private func clearImageState() {
+        replayCache = nil
         step = .information
         image = nil
         baseGrid = nil
