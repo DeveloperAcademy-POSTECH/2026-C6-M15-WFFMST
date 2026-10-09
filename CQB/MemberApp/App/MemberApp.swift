@@ -10,6 +10,8 @@ import CQBCore
 
 @main
 struct MemberApp: App {
+    @UIApplicationDelegateAdaptor(MemberAppDelegate.self) private var appDelegate
+
     var body: some Scene {
         WindowGroup {
             AppContainer()
