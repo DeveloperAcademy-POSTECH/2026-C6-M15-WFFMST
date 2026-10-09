@@ -21,7 +21,7 @@ struct ContentView: View {
             Text("iphone")
             
             Text(sample.title)
-                .font(DSTypography.h1)
+                .font(DSTypography.h3)
                 .foregroundStyle(DSColor.team1)
                 
         }
