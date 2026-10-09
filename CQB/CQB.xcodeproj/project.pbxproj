@@ -17,6 +17,19 @@
 		788A1085307682B8003DEA3E /* InstructorApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = InstructorApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		E810D0C02026100900000001 /* Development documents excluded from InstructorApp */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				AGENTS.md,
+				docs/README.md,
+				docs/flows.md,
+				docs/issue-8-implementation.md,
+			);
+			target = 788A1084307682B8003DEA3E /* InstructorApp */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		788A10753076802C003DEA3E /* MemberApp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -25,6 +38,9 @@
 		};
 		788A1086307682B8003DEA3E /* InstructorApp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				E810D0C02026100900000001 /* Development documents excluded from InstructorApp */,
+			);
 			path = InstructorApp;
 			sourceTree = "<group>";
 		};
