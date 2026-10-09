@@ -6,7 +6,7 @@
 
 양쪽 앱 담당자가 **동일한 파일의 좌표·축척·최종 격자·도면 참조를 동일하게 해석하는지** 확인하는 작은 정상 샘플이다. 실제 도면이나 PoC 추출 결과가 아니라 수작업으로 규칙을 정한 합성 도면이다. 이미지와 격자는 좌우·상하 비대칭으로 만들어 반전과 행/열 혼동을 발견하기 쉽게 했다.
 
-최초에는 파일·기대값·샘플 자체 정합성을 정의했고, 현재는 CQBCore 모델/validator로 읽는 검증까지 추가했다. 가짜 Repository, 실제 Local* 내보내기, 앱 화면 연동, 원본 동선/보정 결과는 아직 구현하지 않았다. 팀의 최종 계약 승인이나 두 기기 통신·자동 추출 정확도를 증명하지 않는다.
+최초에는 파일·기대값·샘플 자체 정합성을 정의했고, 현재는 CQBCore 모델/validator와 메모리 가짜 Repository에서 같은 자료를 사용하는 검증까지 추가했다. 실제 Local* 내보내기, 앱 화면 연동, 원본 동선/보정 결과는 아직 구현하지 않았다. 팀의 최종 계약 승인이나 두 기기 통신·자동 추출 정확도를 증명하지 않는다.
 
 ## 파일과 사용 방법
 
@@ -104,7 +104,7 @@ Foundation/JSONDecoder를 사용하는 위 예시는 필요한 모듈을 연결�
 - sessionID A: `33333333-3333-4333-8333-333333333333`
 - sessionID B: `44444444-4444-4444-8444-444444444444`
 
-`expected.json`의 두 세션은 동일한 `reference.json`의 내용을 참조한다. 이 단계는 **두 예제의 참조가 같은지**만 확인한다. 서비스가 생성 후 변경을 거부하는지, 인증/참가 권한을 지키는지는 가짜 Repository 구현 이후 별도 테스트한다.
+`expected.json`의 두 세션은 동일한 `reference.json`의 내용을 참조한다. 파일 정합성 테스트는 **두 예제의 참조가 같은지**만 확인한다. 추가한 FloorPlanRepositoryTests에서는 가짜 서비스로 별도의 세션 ID를 실제 생성하고 참조 고정·소유/참가 범위를 검사한다. 이 두 검증을 실제 Firebase 인증/보안 검증과 혼동하지 않는다.
 
 | 파일 | SHA-256 |
 | --- | --- |
@@ -151,6 +151,41 @@ swift test --package-path CQB/Packages/CQBCore
 - 홀수 이미지의 마지막 셀·외곽 선분 위 셀 중심을 확인했다. 경로 선분 통과 여부 검사는 구현하지 않았다.
 - CQBImageIO, MemberApp, InstructorApp의 iOS Simulator 빌드 통과. InstructorApp은 아직 Core/Fixture/이미지 어댑터를 연결하지 않아 회귀 빌드만 확인했다.
 - 파일 형식·schemaVersion 1·Fixture 원본 바이트/hash는 변경하지 않았다. 공통 모델·이미지 검증 프로토콜·검증 오류 API의 팀 승인과 노션 기록은 남아 있다.
+
+## 메모리 가짜 서비스 사용
+
+공통 API와 실패 처리 기준은 [공통 계약](shared-data-contract.md)의 3.8을 따른다. 아래는 동일 실행 안에서 교관/대원 역할을 조립하는 예시이며, 앱의 PIN 참가 기능이나 기기 간 통신 구현이 아니다. `files`와 `reference`는 앞의 normal-v1 읽기 예제를 사용한다.
+
+```swift
+let backend = InMemoryFloorPlanStore(imageValidator: PNGFloorPlanImageValidator())
+let instructor = backend.client(authenticatedUID: "fixture-instructor")
+let member = backend.client(authenticatedUID: "fixture-member")
+// 실패 후 재시도할 때 새 UUID를 만들지 말고 이 요청 전체를 유지한다.
+let request = RegisterFloorPlanRequest(requestID: UUID(), name: "훈련장 A",
+                                       reference: reference, files: files)
+let summary = try await instructor.register(request)
+let session = try await instructor.createSession(
+    CreateFloorPlanSessionRequest(requestID: UUID(), name: "훈련 1", floorPlan: summary.reference))
+// 검증된 참가 상태를 재현하는 테스트 전용 설정. 앱의 join API가 아니다.
+try await backend.setParticipants(["fixture-member"], sessionID: session.sessionID)
+let memberMap = try await member.loadForSession(session.sessionID, expectedReference: session.floorPlan)
+// memberMap.pixelsPerMeter == 20
+```
+
+실패 재현은 `await backend.failOnce(at: .afterStagingRegistration)` 또는 `.afterRegistrationCommit` 등으로 설정한다. 전자는 ready 전 비공개 자료를 남기고, 후자는 등록은 완료됐지만 응답이 유실된 상황이다. 동일 등록 요청을 다시 보내면 하나의 도면으로 복구된다. 새 backend는 빈 저장소이며 다른 앱 프로세스와 메모리를 공유하지 않는다.
+
+```sh
+swift test --package-path CQB/Packages/CQBCore --filter FloorPlanRepositoryTests
+```
+
+### 서비스 검증 추가 (2026-10-10)
+
+- 서비스 테스트 17개 통과. 패키지 전체에서는 의미 있는 테스트 42개와 기존 빈 example 1개가 통과했다.
+- 세션 전 등록·두 세션 재사용·소유/참가 범위·참가 해제·미완료 자료 차단을 확인했다.
+- 저장 전/중간/성공 후 응답 유실·같은 요청의 재시도·동시 중복/충돌·세션 참조 교체 거부를 확인했다.
+- cursor의 소유자 범위·snapshot/재조회·입력 오류·취소·backend 해제를 검증했다. 해제 테스트는 Instruments 장시간 메모리 측정을 대신하지 않는다.
+- MemberApp/InstructorApp generic iOS Simulator 빌드 통과. 실제 화면 주입·Local* 내보내기·Firebase 보안 규칙·두 기기 동기화 검증은 아니다.
+- 문서·소스의 팀 승인과 노션 기록은 자동 완료 처리하지 않았다.
 
 ## 담당자 확인
 

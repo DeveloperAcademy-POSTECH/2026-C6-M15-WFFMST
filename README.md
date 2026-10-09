@@ -9,7 +9,7 @@
 ## 구조와 앱별 문서
 
 - [공통 아키텍처](docs/architecture.md)
-- [양쪽 앱 공통 데이터 계약](docs/shared-data-contract.md): 도면 전달·소비·서비스 협업 기준 (공통 코드·팀 승인 상태 별도 표기)
+- [공통 데이터 계약](docs/shared-data-contract.md): 도면·세션·대원·기록·동선·AAR의 도메인·저장·모듈 기준 (초안·구현·승인 상태 구분)
 - [InstructorApp 문서](CQB/InstructorApp/docs/README.md)
 
 공통 문서는 루트 `docs/`, 앱 전용 설명과 작업 기록은 각 앱의 `docs/`에서 관리합니다.
