@@ -162,7 +162,7 @@ swift test --package-path CQB/Packages/CQBCore --filter 'TrackDocumentTests|Trac
 ### 실행한 검증 (2026-10-10)
 
 - 읽기 전용 샘플 검사: 사례 4개·공개/선택 기대값 6개·변형 검사 6개 통과.
-- 패키지 전체: 의미 있는 테스트 91개와 기존 빈 example 1개 통과(CQBFixturesTests 9개 + CQBCoreTests 83개). 공통 변환 13개, 문서 검증 14개, 단절 회귀 6개, 동선 repository 13개 포함.
+- 패키지 전체: 의미 있는 테스트 98개와 기존 빈 example 1개 통과(CQBFixturesTests 9개 + CQBCoreTests 90개). 공통 변환 13개, 문서 검증 14개, 단절 회귀 6개, Float 회귀 7개, 동선 repository 13개 포함.
 - 추가 경고 검사: done/partial의 headingAmbiguous 인코딩·검증 후 좌표/상태 보존, 미지원 경고 거부, 발행 응답 유실 후 재시도·교관 조회의 경고 보존. 원본 합성 리소스 6개를 바꾸지 않고 테스트에서 경고를 주입한다.
 - 기존 도면 normal-v1 생성 규칙/바이트 검사 통과, 도면 파일과 hash 유지.
 - 동선 문서/가짜 서비스 추가 후 MemberApp/InstructorApp generic iOS Simulator 빌드 통과. 리소스/의존성 및 기존 앱 회귀 빌드이며 화면 주입 검증은 아니다. sandbox의 캐시 접근 제한은 승인 후 재실행했다. MemberApp의 AppIntents 메타데이터 추출 생략 경고는 빌드 실패가 아니다.
@@ -192,7 +192,32 @@ swift test --package-path CQB/Packages/CQBCore --filter TrackDiscontinuityTests
 swift test --package-path CQB/Packages/CQBCore
 ```
 
-검증 대상은 공통 validator와 가짜 발행 서비스다. V13 보정 코어·파일 schema·합성 원본 바이트·UI를 바꾸지 않았고, 실제 보정 정확도 개선을 주장하지 않는다. 리뷰에서 별도로 발견한 Float 허용오차와 페이지 캐시 문제는 이 수정에 포함하지 않았다.
+검증 대상은 공통 validator와 가짜 발행 서비스다. V13 보정 코어·파일 schema·합성 원본 바이트·UI를 바꾸지 않았고, 실제 보정 정확도 개선을 주장하지 않는다. 이 단절 수정에는 Float 허용오차와 페이지 캐시 문제를 포함하지 않았다. Float 검증은 아래 별도 수정으로 다룬다.
+
+### Float 상대좌표 검증 수정 (2026-10-10)
+
+PoC는 ARKit의 Float 위치에서 Float 원점을 뺀 뒤 Double로 승격한다. 기존 validator는 먼저 승격된 Double 위치·원점의 차이만 비교해, 정상 연산의 반올림 차이를 invalidRaw로 오판했다. `Float(40.1) - Float(0.1)` 사례의 두 연산 경로 차이는 약 **1.527369e-6m**로 기존 1e-6m를 넘는다.
+
+기존 Double 경로를 유지하면서 **두 피연산자를 Float로 손실 없이 표현할 수 있을 때만 실제 Float 뺄셈 결과**도 검사한다. 각 경로의 잔여 허용오차는 1e-6m 그대로다. 정상 Float 상대좌표를 다시 계산해 덮어쓰지 않으며, 좌표 크기에 비례해 임의의 값까지 수용하는 범위도 만들지 않는다. 전체 기준과 생산자 연결 방법은 [공통 계약 1.5](shared-data-contract.md#동선-schema-1-검토용-구현안)를 따른다.
+
+[TrackFloatPrecisionTests](../CQB/Packages/CQBCore/Tests/CQBCoreTests/TrackFloatPrecisionTests.swift)의 **동일 테스트 7개를 생산 코드 수정 전·후 실행**했다.
+
+| 완료 기준 / 테스트 | 수정 전 | 수정 후 |
+| --- | --- | --- |
+| pocFloatSubtractionKeepsOriginalBytesAndCoordinates: PoC 방식의 정상 입력 허용·문서/바이트/hash 보존 | invalidRaw로 실패 | 통과·원본 그대로 |
+| floatArithmeticAcrossSignsAndMagnitudesIsAccepted: 부호/크기를 바꾼 42개 조합의 X/Z 검사 | invalidRaw로 실패 | 42개 모두 통과 |
+| doubleArithmeticAndExistingAbsoluteToleranceRemainSupported: 일반 Double 연산 및 기존 ±0.5e-6m 입력 유지 | 통과 | 통과 |
+| coordinateMismatchIsStillRejectedOnEitherAxis: X 또는 Z를 ±0.00001/±0.001m 바꾼 8개 입력 거부 | 통과 | 모두 거부 |
+| largeCoordinatesDoNotPermitArbitraryValuesWithinOneFloatULP: 큰 좌표라도 두 연산에 맞지 않는 1m 변조 거부 | 통과 | 거부 |
+| doubleOperandsAreNotSilentlyRoundedToFloat: 일반 Double을 Float로 반올림해야만 맞는 상대좌표 거부 | 통과 | 거부 |
+| overflowCannotCreateAnInfiniteTolerance: 유한한 위치/원점의 차이가 overflow인 입력 거부 | 통과 | 거부 |
+
+수정 전 7개 중 2개 실패, 수정 후 7개 모두 통과. 전체 패키지 **99개 테스트**와 MemberApp/InstructorApp 시뮬레이터 빌드 통과. 큰 좌표 사례는 수치 경계 시험이지 ARKit의 해당 거리 정확도나 제품 지원 범위를 뜻하지 않는다. 실제 V13 계산·보정 좌표·schema·합성 리소스·UI는 변경하지 않았다. 페이지 캐시 수정과 장시간 메모리 측정은 포함하지 않는다.
+
+```sh
+swift test --package-path CQB/Packages/CQBCore --filter TrackFloatPrecisionTests
+swift test --package-path CQB/Packages/CQBCore
+```
 
 ## 추가 검증: 실제 PoC 실험 회귀 (2026-10-10)
 

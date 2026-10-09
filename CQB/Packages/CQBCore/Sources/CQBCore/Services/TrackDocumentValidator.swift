@@ -78,8 +78,8 @@ public enum TrackDocumentValidator {
             }
             if let point = sample.relativeMeters {
                 guard point.x.isFinite, point.y.isFinite,
-                      abs(sample.arPosition[0] - raw.originMeters.x - point.x) <= 1e-6,
-                      abs(sample.arPosition[2] - raw.originMeters.z - point.y) <= 1e-6 else {
+                      matchesRelativeMeters(point.x, position: sample.arPosition[0], origin: raw.originMeters.x),
+                      matchesRelativeMeters(point.y, position: sample.arPosition[2], origin: raw.originMeters.z) else {
                     throw TrackValidationError.invalidRaw
                 }
             }
@@ -87,6 +87,22 @@ public enum TrackDocumentValidator {
         }
         try Task.checkCancellation()
         return ValidatedRawTrack(document: raw, bytes: bytes)
+    }
+
+    private static func matchesRelativeMeters(_ relative: Double, position: Double, origin: Double) -> Bool {
+        let doubleDifference = position - origin
+        guard doubleDifference.isFinite else { return false }
+        if abs(doubleDifference - relative) <= 1e-6 { return true }
+
+        // ARKit/PoC subtract Float coordinates before promoting the result to
+        // Double. Accept that exact arithmetic path as well, without widening
+        // the tolerance to every value in a magnitude-dependent ULP interval.
+        // Do not silently quantize arbitrary Double inputs to Float.
+        guard let floatPosition = Float(exactly: position),
+              let floatOrigin = Float(exactly: origin) else { return false }
+        let floatDifference = floatPosition - floatOrigin
+        guard floatDifference.isFinite else { return false }
+        return abs(Double(floatDifference) - relative) <= 1e-6
     }
 
     public static func result(_ bytes: Data, raw: ValidatedRawTrack,
