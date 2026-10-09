@@ -1,0 +1,159 @@
+{
+  "fixtureID": "normal-v1",
+  "provenance": "Hand-authored synthetic final map, not extraction or reconstruction output",
+  "imageWidth": 1000,
+  "imageHeight": 600,
+  "columns": 500,
+  "rows": 300,
+  "cellSizePixels": 2,
+  "pixelsPerMeter": 20,
+  "metersPerCell": 0.1,
+  "maskByteCount": 150000,
+  "blockedCellCount": 18000,
+  "freeCellCount": 132000,
+  "scaleNormalizedA": {
+    "x": 0.1,
+    "y": 0.2
+  },
+  "scaleNormalizedB": {
+    "x": 0.3,
+    "y": 0.2
+  },
+  "samples": [
+    {
+      "name": "scale-a-free",
+      "x": 100,
+      "y": 120,
+      "column": 50,
+      "row": 60,
+      "index": 30050,
+      "blocked": false
+    },
+    {
+      "name": "upper-left-obstacle",
+      "x": 220,
+      "y": 120,
+      "column": 110,
+      "row": 60,
+      "index": 30110,
+      "blocked": true
+    },
+    {
+      "name": "transposed-obstacle-position-free",
+      "x": 120,
+      "y": 220,
+      "column": 60,
+      "row": 110,
+      "index": 55060,
+      "blocked": false
+    },
+    {
+      "name": "vertically-flipped-position-free",
+      "x": 220,
+      "y": 480,
+      "column": 110,
+      "row": 240,
+      "index": 120110,
+      "blocked": false
+    },
+    {
+      "name": "right-wall",
+      "x": 604,
+      "y": 200,
+      "column": 302,
+      "row": 100,
+      "index": 50302,
+      "blocked": true
+    },
+    {
+      "name": "right-wall-gap",
+      "x": 604,
+      "y": 300,
+      "column": 302,
+      "row": 150,
+      "index": 75302,
+      "blocked": false
+    },
+    {
+      "name": "right-wall-below-gap",
+      "x": 604,
+      "y": 340,
+      "column": 302,
+      "row": 170,
+      "index": 85302,
+      "blocked": true
+    },
+    {
+      "name": "lower-right-obstacle",
+      "x": 820,
+      "y": 440,
+      "column": 410,
+      "row": 220,
+      "index": 110410,
+      "blocked": true
+    },
+    {
+      "name": "outside-outline",
+      "x": 10,
+      "y": 120,
+      "column": 5,
+      "row": 60,
+      "index": 30005,
+      "blocked": true
+    },
+    {
+      "name": "outline-top-left-inside",
+      "x": 20,
+      "y": 20,
+      "column": 10,
+      "row": 10,
+      "index": 5010,
+      "blocked": false
+    },
+    {
+      "name": "right-image-boundary",
+      "x": 1000,
+      "y": 120,
+      "column": null,
+      "row": null,
+      "index": null,
+      "blocked": true
+    },
+    {
+      "name": "bottom-image-boundary",
+      "x": 100,
+      "y": 600,
+      "column": null,
+      "row": null,
+      "index": null,
+      "blocked": true
+    },
+    {
+      "name": "negative-image-coordinate",
+      "x": -1,
+      "y": 120,
+      "column": null,
+      "row": null,
+      "index": null,
+      "blocked": true
+    }
+  ],
+  "sessions": [
+    {
+      "sessionID": "33333333-3333-4333-8333-333333333333",
+      "floorPlan": {
+        "floorPlanID": "11111111-1111-4111-8111-111111111111",
+        "revisionID": "22222222-2222-4222-8222-222222222222",
+        "navigationSHA256": "1546ad93af9a824f1ae9774fa623e02c6f1ec138eba2d050e868976588b5342d"
+      }
+    },
+    {
+      "sessionID": "44444444-4444-4444-8444-444444444444",
+      "floorPlan": {
+        "floorPlanID": "11111111-1111-4111-8111-111111111111",
+        "revisionID": "22222222-2222-4222-8222-222222222222",
+        "navigationSHA256": "1546ad93af9a824f1ae9774fa623e02c6f1ec138eba2d050e868976588b5342d"
+      }
+    }
+  ]
+}

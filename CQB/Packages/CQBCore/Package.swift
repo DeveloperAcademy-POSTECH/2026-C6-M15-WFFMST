@@ -39,6 +39,7 @@ let package = Package(
         .target(
             name: "CQBFixtures",
             dependencies: ["CQBCore"],
+            resources: [.copy("Resources/FloorPlans")],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],
@@ -53,6 +54,13 @@ let package = Package(
         .target(
             name: "CQBDesignSystem",
             dependencies: ["CQBCore"],
+            swiftSettings: [
+                .enableUpcomingFeature("ApproachableConcurrency"),
+            ],
+        ),
+        .testTarget(
+            name: "CQBFixturesTests",
+            dependencies: ["CQBFixtures"],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],
