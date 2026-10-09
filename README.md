@@ -4,3 +4,11 @@
 
 - [커밋 컨벤션](docs/commit-convention.md)
 - [브랜치 전략](docs/branch-strategy.md)
+- [저장소 작업 규칙](AGENTS.md)
+
+## 구조와 앱별 문서
+
+- [공통 아키텍처](docs/architecture.md)
+- [InstructorApp 문서](CQB/InstructorApp/docs/README.md)
+
+공통 문서는 루트 `docs/`, 앱 전용 설명과 작업 기록은 각 앱의 `docs/`에서 관리합니다.

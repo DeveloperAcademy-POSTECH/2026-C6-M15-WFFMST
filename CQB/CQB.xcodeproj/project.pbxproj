@@ -8,11 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		0EA19D4E3077388900A5F2CF /* CQBDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 0EA19D4D3077388900A5F2CF /* CQBDesignSystem */; };
-		0EA19D503077389000A5F2CF /* CQBDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 0EA19D4F3077389000A5F2CF /* CQBDesignSystem */; };
 		788A10D9307697FA003DEA3E /* CQBCore in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10D8307697FA003DEA3E /* CQBCore */; };
-		788A10E330769825003DEA3E /* CQBCore in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10E230769825003DEA3E /* CQBCore */; };
 		788A10F030769F19003DEA3E /* CQBFixtures in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10EF30769F19003DEA3E /* CQBFixtures */; };
-		788A10F230769F20003DEA3E /* CQBFixtures in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10F130769F20003DEA3E /* CQBFixtures */; };
 		788A10F530770001003DEA3E /* CQBFirebase in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10F430770001003DEA3E /* CQBFirebase */; };
 		788A10F730770001003DEA3E /* CQBFirebase in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10F630770001003DEA3E /* CQBFirebase */; };
 /* End PBXBuildFile section */
@@ -22,6 +19,19 @@
 		788A1085307682B8003DEA3E /* InstructorApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = InstructorApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		E810D0C02026100900000001 /* Development documents excluded from InstructorApp */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				AGENTS.md,
+				docs/README.md,
+				docs/flows.md,
+				docs/issue-8-implementation.md,
+			);
+			target = 788A1084307682B8003DEA3E /* InstructorApp */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		788A10753076802C003DEA3E /* MemberApp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -30,6 +40,9 @@
 		};
 		788A1086307682B8003DEA3E /* InstructorApp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				E810D0C02026100900000001 /* Development documents excluded from InstructorApp */,
+			);
 			path = InstructorApp;
 			sourceTree = "<group>";
 		};
@@ -58,9 +71,6 @@
 		788A1082307682B8003DEA3E /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
-				788A10E330769825003DEA3E /* CQBCore in Frameworks */,
-				0EA19D503077389000A5F2CF /* CQBDesignSystem in Frameworks */,
-				788A10F230769F20003DEA3E /* CQBFixtures in Frameworks */,
 				788A10F730770001003DEA3E /* CQBFirebase in Frameworks */,
 			);
 		};
@@ -137,10 +147,7 @@
 			);
 			name = InstructorApp;
 			packageProductDependencies = (
-				788A10E230769825003DEA3E /* CQBCore */,
-				788A10F130769F20003DEA3E /* CQBFixtures */,
 				788A10F630770001003DEA3E /* CQBFirebase */,
-				0EA19D4F3077389000A5F2CF /* CQBDesignSystem */,
 			);
 			productName = InstructorApp;
 			productReference = 788A1085307682B8003DEA3E /* InstructorApp.app */;
@@ -529,26 +536,11 @@
 			package = 788A10D7307697FA003DEA3E /* XCLocalSwiftPackageReference "Packages/CQBCore" */;
 			productName = CQBDesignSystem;
 		};
-		0EA19D4F3077389000A5F2CF /* CQBDesignSystem */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 788A10D7307697FA003DEA3E /* XCLocalSwiftPackageReference "Packages/CQBCore" */;
-			productName = CQBDesignSystem;
-		};
 		788A10D8307697FA003DEA3E /* CQBCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = CQBCore;
 		};
-		788A10E230769825003DEA3E /* CQBCore */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 788A10D7307697FA003DEA3E /* XCLocalSwiftPackageReference "Packages/CQBCore" */;
-			productName = CQBCore;
-		};
 		788A10EF30769F19003DEA3E /* CQBFixtures */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 788A10D7307697FA003DEA3E /* XCLocalSwiftPackageReference "Packages/CQBCore" */;
-			productName = CQBFixtures;
-		};
-		788A10F130769F20003DEA3E /* CQBFixtures */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 788A10D7307697FA003DEA3E /* XCLocalSwiftPackageReference "Packages/CQBCore" */;
 			productName = CQBFixtures;
