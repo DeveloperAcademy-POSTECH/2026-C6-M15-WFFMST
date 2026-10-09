@@ -20,6 +20,7 @@ struct RecordingUploadView: View {
                     VStack(alignment: .leading, spacing: 24) {
                         ProgressView(value: normalizedProgress)
                             .tint(DSColor.main)
+                            .animation(.linear(duration: 0.05), value: normalizedProgress)
                             .background(DSColor.area3, in: Capsule())
                             .accessibilityLabel("데이터 전송 진행률")
                             .padding(.bottom, 8)

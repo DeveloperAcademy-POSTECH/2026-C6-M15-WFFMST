@@ -12,7 +12,7 @@ import CQBCore
 struct MemberApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            AppContainer()
         }
     }
 }
