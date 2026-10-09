@@ -1,46 +1,46 @@
 import Foundation
 
 // Issue #8: 앱 실행 중에만 사용하는 데이터. CQBCore/서버 직렬화 계약이 아니다.
-struct LocalPlanPoint: Equatable, Sendable {
+nonisolated struct LocalPlanPoint: Equatable, Sendable {
     var x: Double
     var y: Double
     var isValid: Bool { x.isFinite && y.isFinite && (0...1).contains(x) && (0...1).contains(y) }
 }
 
-enum LocalEditMode: Sendable { case block, open }
+nonisolated enum LocalEditMode: Sendable { case block, open }
 
-struct LocalEditStroke: Equatable, Sendable {
+nonisolated struct LocalEditStroke: Equatable, Sendable {
     var mode: LocalEditMode
     var points: [LocalPlanPoint]
     var normalizedDiameter: Double
 }
 
-struct LocalObstacleGrid: Equatable, Sendable {
+nonisolated struct LocalObstacleGrid: Equatable, Sendable {
     var columns: Int
     var rows: Int
     var cellSizePixels: Int
     var blocked: [UInt8]
 }
 
-struct LocalPlanScale: Equatable, Sendable {
+nonisolated struct LocalPlanScale: Equatable, Sendable {
     var a: LocalPlanPoint
     var b: LocalPlanPoint
     var meters: Double
 }
 
-struct LocalImportedImage: Equatable, Sendable {
+nonisolated struct LocalImportedImage: Equatable, Sendable {
     var pngData: Data
     var width: Int
     var height: Int
     var fileName: String
 }
 
-struct LocalExtractionResult: Sendable {
+nonisolated struct LocalExtractionResult: Sendable {
     var image: LocalImportedImage
     var baseGrid: LocalObstacleGrid
 }
 
-struct LocalRegisteredFloorPlan: Equatable, Sendable {
+nonisolated struct LocalRegisteredFloorPlan: Equatable, Sendable {
     let id: UUID
     let name: String
     let image: LocalImportedImage
@@ -51,15 +51,15 @@ struct LocalRegisteredFloorPlan: Equatable, Sendable {
     let resolvedGrid: LocalObstacleGrid
 }
 
-enum LocalCanvasTool: String, CaseIterable, Sendable {
+nonisolated enum LocalCanvasTool: String, CaseIterable, Sendable {
     case move, block, open, outline, scaleA, scaleB
 }
 
-enum FloorPlanRegistrationStep: Int, Sendable {
+nonisolated enum FloorPlanRegistrationStep: Int, Sendable {
     case information, editing, scaling, reviewing
 }
 
-enum LocalFloorPlanError: LocalizedError, Sendable {
+nonisolated enum LocalFloorPlanError: LocalizedError, Sendable {
     case invalid(String)
     var errorDescription: String? {
         switch self { case .invalid(let message): message }
