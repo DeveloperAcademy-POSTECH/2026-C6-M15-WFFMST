@@ -55,14 +55,39 @@ enum LocalFloorPlanGeometry {
         base: LocalObstacleGrid, width: Int, height: Int,
         strokes: [LocalEditStroke], outline: [LocalPlanPoint]
     ) throws -> LocalObstacleGrid {
+        try validateInput(base: base, width: width, height: height)
+        var result = try replay(base: base, width: width, height: height, strokes: strokes)
+        let outside = try outsideMask(base: base, width: width, height: height, outline: outline)
+        try applyOutside(outside, to: &result)
+        return result
+    }
+
+    nonisolated fileprivate static func validateInput(base: LocalObstacleGrid, width: Int, height: Int) throws {
         try validateImageSize(width: width, height: height)
         try validateGrid(base)
         guard base.columns == (width + base.cellSizePixels - 1) / base.cellSizePixels,
-              base.rows == (height + base.cellSizePixels - 1) / base.cellSizePixels,
-              strokes.count <= 20_000 else {
+              base.rows == (height + base.cellSizePixels - 1) / base.cellSizePixels else {
             throw LocalFloorPlanError.invalid("도면과 장애물 격자의 크기가 맞지 않거나 편집 횟수가 너무 많습니다.")
         }
-        if !outline.isEmpty { try validateOutline(outline) }
+    }
+
+    nonisolated fileprivate static func replay(base: LocalObstacleGrid, width: Int, height: Int,
+                                               strokes: [LocalEditStroke]) throws -> LocalObstacleGrid {
+        try validateStrokes(strokes)
+        var result = base
+        let cellSize = Double(base.cellSizePixels)
+        let extent = (Double(width) / cellSize, Double(height) / cellSize)
+        for stroke in strokes {
+            try Task.checkCancellation()
+            let radius = max(0.5, stroke.normalizedDiameter * Double(min(width, height)) / cellSize / 2)
+            let value: UInt8 = stroke.mode == .block ? 1 : 0
+            try paint(stroke.points, radius: radius, value: value, extent: extent, grid: &result)
+        }
+        return result
+    }
+
+    nonisolated fileprivate static func validateStrokes(_ strokes: [LocalEditStroke]) throws {
+        guard strokes.count <= 20_000 else { throw LocalFloorPlanError.invalid("편집 횟수를 초과했습니다.") }
         var pointCount = 0
         for stroke in strokes {
             try Task.checkCancellation()
@@ -73,15 +98,13 @@ enum LocalFloorPlanGeometry {
             }
             pointCount += stroke.points.count
         }
-        var result = base
-        let cellSize = Double(base.cellSizePixels)
-        let extent = (Double(width) / cellSize, Double(height) / cellSize)
-        for stroke in strokes {
-            try Task.checkCancellation()
-            let radius = max(0.5, stroke.normalizedDiameter * Double(min(width, height)) / cellSize / 2)
-            let value: UInt8 = stroke.mode == .block ? 1 : 0
-            try paint(stroke.points, radius: radius, value: value, extent: extent, grid: &result)
-        }
+    }
+
+    nonisolated fileprivate static func outsideMask(base: LocalObstacleGrid, width: Int, height: Int,
+                                                    outline: [LocalPlanPoint]) throws -> [UInt8] {
+        if !outline.isEmpty { try validateOutline(outline) }
+        let extent = (Double(width) / Double(base.cellSizePixels), Double(height) / Double(base.cellSizePixels))
+        var outside = [UInt8](repeating: 0, count: base.blocked.count)
         // The ceil-sized last row/column can have a center beyond the image.
         // Always block these cells, including when no outline is supplied for preview.
         for y in 0..<base.rows {
@@ -90,11 +113,18 @@ enum LocalFloorPlanGeometry {
                 let point = LocalPlanPoint(x: (Double(x) + 0.5) / extent.0,
                                            y: (Double(y) + 0.5) / extent.1)
                 if point.x >= 1 || point.y >= 1 || (!outline.isEmpty && !contains(point, polygon: outline)) {
-                    result.blocked[y * base.columns + x] = 1
+                    outside[y * base.columns + x] = 1
                 }
             }
         }
-        return result
+        return outside
+    }
+
+    nonisolated fileprivate static func applyOutside(_ outside: [UInt8], to grid: inout LocalObstacleGrid) throws {
+        for index in outside.indices {
+            if index % 16_384 == 0 { try Task.checkCancellation() }
+            if outside[index] == 1 { grid.blocked[index] = 1 }
+        }
     }
 
     nonisolated static func validateGrid(_ grid: LocalObstacleGrid) throws {
@@ -190,5 +220,43 @@ enum LocalFloorPlanGeometry {
             let y = min(grid.rows - 1, max(0, Int(center.y.rounded())))
             grid.blocked[y * grid.columns + x] = value
         }
+    }
+}
+
+/// Bounded, image-scoped cache. Keeps edits BEFORE outline clipping so changing
+/// the boundary can reveal prior open/block edits correctly. No per-stroke grids.
+nonisolated struct LocalFloorPlanReplayCache: Sendable {
+    private let base: LocalObstacleGrid
+    private let width: Int
+    private let height: Int
+    private var edited: LocalObstacleGrid
+    private var appliedStrokes: [LocalEditStroke] = []
+    private var appliedOutline: [LocalPlanPoint]?
+    private var outside: [UInt8] = []
+
+    init(base: LocalObstacleGrid, width: Int, height: Int) throws {
+        try LocalFloorPlanGeometry.validateInput(base: base, width: width, height: height)
+        self.base = base
+        self.edited = base
+        self.width = width
+        self.height = height
+    }
+
+    mutating func resolve(strokes: [LocalEditStroke], outline: [LocalPlanPoint]) throws -> LocalObstacleGrid {
+        try LocalFloorPlanGeometry.validateStrokes(strokes)
+        let isAppend = strokes.count >= appliedStrokes.count && strokes.starts(with: appliedStrokes)
+        let pending = isAppend ? Array(strokes.dropFirst(appliedStrokes.count)) : strokes
+        // Work in local values: cancellation/errors must not partially advance the cache.
+        let nextEdited = try LocalFloorPlanGeometry.replay(base: isAppend ? edited : base,
+            width: width, height: height, strokes: pending)
+        let nextOutside = appliedOutline == outline ? outside :
+            try LocalFloorPlanGeometry.outsideMask(base: base, width: width, height: height, outline: outline)
+        var result = nextEdited
+        try LocalFloorPlanGeometry.applyOutside(nextOutside, to: &result)
+        edited = nextEdited
+        appliedStrokes = strokes
+        appliedOutline = outline
+        outside = nextOutside
+        return result
     }
 }

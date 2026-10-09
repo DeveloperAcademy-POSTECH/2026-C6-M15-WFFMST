@@ -77,7 +77,42 @@ enum FloorPlanGeometryChecks {
         let image = CGImageSourceCreateImageAtIndex(source, 0, nil)!
         check(image.width == 50 && image.height == 50, "mask PNG dimensions")
         check(try resolve(base, [diagonal]) == thin, "preview/final deterministic replay")
+        try cachedReplayMatchesFull()
         print("PASS: 도면 격자 순서·얇은 획·외곽·축척·입력 검증·PNG 생성")
+    }
+
+    static func cachedReplayMatchesFull() throws {
+        // Odd dimensions, a populated base, overlapping block/open strokes, undo,
+        // reset and changed/removed boundaries must all match uncached replay.
+        let width = 101, height = 79
+        var base = grid(width: width, height: height)
+        for i in base.blocked.indices where i % 7 == 0 { base.blocked[i] = 1 }
+        var cache = try LocalFloorPlanReplayCache(base: base, width: width, height: height)
+        let outline = [point(0.2, 0.2), point(0.8, 0.2), point(0.8, 0.8), point(0.2, 0.8)]
+        var history: [LocalEditStroke] = []
+        func assertSame(_ strokes: [LocalEditStroke], _ polygon: [LocalPlanPoint]) throws {
+            let expected = try LocalFloorPlanGeometry.resolve(base: base, width: width, height: height,
+                                                              strokes: strokes, outline: polygon)
+            let actual = try cache.resolve(strokes: strokes, outline: polygon)
+            check(actual == expected, "incremental cache must match every cell of full replay")
+        }
+        for i in 0..<40 {
+            history.append(LocalEditStroke(mode: i % 2 == 0 ? .block : .open,
+                points: [point(Double(i % 11) / 10, 0.1), point(0.6, Double(i % 9) / 8)],
+                normalizedDiameter: i % 3 == 0 ? 0.0001 : 0.04))
+            try assertSame(history, outline)
+        }
+        history.removeLast()
+        try assertSame(history, outline)
+        try assertSame(history, []) // clipped cells must recover their true edit values
+        try assertSame(history, Array(outline.reversed()))
+        try rejects("cache invalid outline") { _ = try cache.resolve(strokes: history, outline: [point(0, 0)]) }
+        try assertSame(history, outline) // failed update must not poison cache
+        history.removeAll()
+        try assertSame(history, outline)
+        try assertSame(history, [])
+        history.append(LocalEditStroke(mode: .open, points: [point(0.5, 0.5)], normalizedDiameter: 0.03))
+        try assertSame(history, outline)
     }
 
     static func point(_ x: Double, _ y: Double) -> LocalPlanPoint { LocalPlanPoint(x: x, y: y) }
