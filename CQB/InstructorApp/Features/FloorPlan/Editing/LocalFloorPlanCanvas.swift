@@ -14,6 +14,8 @@ struct LocalFloorPlanCanvas: UIViewRepresentable {
     var scaleA: LocalPlanPoint?
     var scaleB: LocalPlanPoint?
     var scaleLabel: String? = nil
+    var importPresentation: FloorPlanImportPresentation? = nil
+    var layers = FloorPlanLayerDisplay()
     var onStroke: (LocalEditStroke) -> Void
     var onPoint: (LocalPlanPoint) -> Void
     var onEditingChanged: (Bool) -> Void = { _ in }
@@ -25,12 +27,13 @@ struct LocalFloorPlanCanvas: UIViewRepresentable {
     }
 
     func updateUIView(_ view: LocalFloorPlanCanvasView, context: Context) {
+        importPresentation?.canvas = view
         view.onStroke = onStroke
         view.onPoint = onPoint
         view.onEditingChanged = onEditingChanged
         view.update(image: image, mask: mask, tool: tool,
                     normalizedDiameter: normalizedDiameter, outline: outline,
-                    scaleA: scaleA, scaleB: scaleB, scaleLabel: scaleLabel)
+                    scaleA: scaleA, scaleB: scaleB, scaleLabel: scaleLabel, layers: layers)
     }
 
     static func dismantleUIView(_ view: LocalFloorPlanCanvasView, coordinator: ()) {
@@ -54,11 +57,16 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
     private var normalizedDiameter = 0.01
     private var imageSize: CGSize = .zero
     private var appliedImageSize: CGSize = .zero
+    private var appliedViewportSize: CGSize = .zero
     private var needsFit = true
     private var isUsingTool = false
     private var isClearingDrawing = false
     private var isCommitting = false
     private var editingReported = false
+    private var inputSuspended = false
+    private var appliedInkWidth: CGFloat?
+    private var appliedInkTool: LocalCanvasTool?
+    private var appliedMask: UIImage?
     private var completionTask: DispatchWorkItem?
     private var strokeContext: (mode: LocalEditMode, diameter: Double)?
 
@@ -74,32 +82,47 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        scrollView.frame = bounds
+        if scrollView.frame != bounds { scrollView.frame = bounds }
         configureImageBounds()
-        updateZoomLimits()
+        if needsFit || appliedViewportSize != bounds.size {
+            appliedViewportSize = bounds.size
+            updateZoomLimits()
+        }
     }
 
     func update(image: UIImage, mask: UIImage?, tool: LocalCanvasTool,
                 normalizedDiameter: Double, outline: [LocalPlanPoint],
-                scaleA: LocalPlanPoint?, scaleB: LocalPlanPoint?, scaleLabel: String?) {
-        if imageView.image !== image {
+                scaleA: LocalPlanPoint?, scaleB: LocalPlanPoint?, scaleLabel: String?,
+                layers: FloorPlanLayerDisplay = FloorPlanLayerDisplay()) {
+        let imageChanged = imageView.image !== image
+        if imageChanged {
             discardPendingDrawing()
             needsFit = true
+            imageView.image = image
+            imageSize = CGSize(width: image.cgImage?.width ?? Int(image.size.width),
+                               height: image.cgImage?.height ?? Int(image.size.height))
         }
-        imageView.image = image
-        imageSize = CGSize(width: image.cgImage?.width ?? Int(image.size.width),
-                           height: image.cgImage?.height ?? Int(image.size.height))
-        obstacleImageView.image = mask
-        obstacleImageView.frame = CGRect(origin: .zero, size: mask?.size ?? .zero)
+        let planAlpha = CGFloat(min(1, max(0, layers.planOpacity)))
+        if imageView.alpha != planAlpha { imageView.alpha = planAlpha }
+        if appliedMask !== mask {
+            appliedMask = mask
+            obstacleImageView.image = mask?.withRenderingMode(.alwaysTemplate)
+            let frame = CGRect(origin: .zero, size: mask?.size ?? .zero)
+            if obstacleImageView.frame != frame { obstacleImageView.frame = frame }
+        }
+        let maskAlpha = CGFloat(min(1, max(0, layers.maskOpacity)))
+        if obstacleImageView.alpha != maskAlpha { obstacleImageView.alpha = maskAlpha }
+        if obstacleImageView.tintColor != layers.tint.color { obstacleImageView.tintColor = layers.tint.color }
+        if obstacleImageView.isHidden != !layers.showsMask { obstacleImageView.isHidden = !layers.showsMask }
+        let toolChanged = self.tool != tool
         self.tool = tool
-        self.normalizedDiameter = normalizedDiameter.isFinite ? max(0.0001, normalizedDiameter) : 0.01
-        markersView.outline = outline
-        markersView.scaleA = scaleA
-        markersView.scaleB = scaleB
-        markersView.scaleLabel = scaleLabel
-        markersView.setNeedsDisplay()
-        updateInteraction()
-        setNeedsLayout()
+        let diameter = normalizedDiameter.isFinite ? max(0.0001, normalizedDiameter) : 0.01
+        let diameterChanged = self.normalizedDiameter != diameter
+        self.normalizedDiameter = diameter
+        markersView.update(outline: outline, scaleA: scaleA, scaleB: scaleB, scaleLabel: scaleLabel)
+        if toolChanged || imageChanged { updateInteraction() }
+        else if diameterChanged { updateInkTool() }
+        if imageChanged { setNeedsLayout() }
     }
 
     func tearDown() {
@@ -111,6 +134,24 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
         canvasView.delegate = nil
         scrollView.delegate = nil
         strokeContext = nil
+    }
+
+    /// Called from a button event, never from updateUIView/layoutSubviews.
+    func prepareForFileSelection() -> Bool {
+        guard !isUsingTool, !isCommitting else { return false }
+        completionTask?.cancel()
+        commitCompletedDrawing()
+        inputSuspended = true
+        updateInteraction()
+        canvasView.resignFirstResponder()
+        // Keep any late stroke context: cancelling the picker must not lose that edit.
+        return true
+    }
+
+    func resumeAfterFileSelection() {
+        inputSuspended = false
+        updateInteraction()
+        // Do not becomeFirstResponder here; resume input only on the next user gesture.
     }
 
     private func configureViews() {
@@ -125,6 +166,7 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
         imageView.contentMode = .scaleToFill
         contentView.addSubview(imageView)
         obstacleImageView.contentMode = .scaleToFill
+        obstacleImageView.tintAdjustmentMode = .normal
         obstacleImageView.alpha = 0.65
         obstacleImageView.layer.magnificationFilter = .nearest
         obstacleImageView.layer.minificationFilter = .nearest
@@ -149,17 +191,21 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
 
     private func updateInteraction() {
         let isDrawing = tool == .block || tool == .open
-        canvasView.isUserInteractionEnabled = isDrawing
-        placementTap.isEnabled = tool == .outline || tool == .scaleA || tool == .scaleB
+        canvasView.isUserInteractionEnabled = isDrawing && !inputSuspended
+        placementTap.isEnabled = !inputSuspended && (tool == .outline || tool == .scaleA || tool == .scaleB)
+        scrollView.isUserInteractionEnabled = !inputSuspended
         scrollView.panGestureRecognizer.minimumNumberOfTouches = tool == .move ? 1 : 2
         updateInkTool()
     }
 
     private func updateInkTool() {
-        guard !isUsingTool else { return }
+        guard !isUsingTool, !inputSuspended else { return }
         let width = CGFloat(normalizedDiameter) * max(1, min(imageSize.width, imageSize.height))
+        guard appliedInkWidth != width || appliedInkTool != tool else { return }
         let color: UIColor = tool == .open ? .systemGreen : .systemOrange
         canvasView.tool = PKInkingTool(.monoline, color: color.withAlphaComponent(0.7), width: width)
+        appliedInkWidth = width
+        appliedInkTool = tool
     }
 
     private func configureImageBounds() {
@@ -172,6 +218,7 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
         imageView.frame = frame
         canvasView.frame = frame
         markersView.frame = frame
+        markersView.setNeedsDisplay()
         scrollView.contentSize = imageSize
         appliedImageSize = imageSize
         needsFit = true
@@ -200,12 +247,13 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
     private func centerContent() {
         let horizontal = max(0, (scrollView.bounds.width - scrollView.contentSize.width) / 2)
         let vertical = max(0, (scrollView.bounds.height - scrollView.contentSize.height) / 2)
-        scrollView.contentInset = UIEdgeInsets(top: vertical, left: horizontal, bottom: vertical, right: horizontal)
+        let inset = UIEdgeInsets(top: vertical, left: horizontal, bottom: vertical, right: horizontal)
+        if scrollView.contentInset != inset { scrollView.contentInset = inset }
         markersView.viewScale = scrollView.zoomScale
     }
 
     @objc private func placePoint(_ recognizer: UITapGestureRecognizer) {
-        guard recognizer.state == .ended, !isUsingTool,
+        guard recognizer.state == .ended, !isUsingTool, !inputSuspended,
               tool == .outline || tool == .scaleA || tool == .scaleB else { return }
         let position = recognizer.location(in: contentView)
         guard position.x >= 0, position.y >= 0, position.x <= imageSize.width,
@@ -214,6 +262,7 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
     }
 
     func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) {
+        guard !inputSuspended else { return }
         // A quick next stroke may start before the queued end-of-stroke callback runs.
         completionTask?.cancel()
         commitCompletedDrawing()
@@ -304,7 +353,16 @@ private final class LocalFloorPlanMarkersView: UIView {
     var scaleA: LocalPlanPoint?
     var scaleB: LocalPlanPoint?
     var scaleLabel: String?
-    var viewScale: CGFloat = 1 { didSet { setNeedsDisplay() } }
+    var viewScale: CGFloat = 1 { didSet { if viewScale != oldValue { setNeedsDisplay() } } }
+
+    func update(outline: [LocalPlanPoint], scaleA: LocalPlanPoint?, scaleB: LocalPlanPoint?, scaleLabel: String?) {
+        guard self.outline != outline || self.scaleA != scaleA || self.scaleB != scaleB || self.scaleLabel != scaleLabel else { return }
+        self.outline = outline
+        self.scaleA = scaleA
+        self.scaleB = scaleB
+        self.scaleLabel = scaleLabel
+        setNeedsDisplay()
+    }
 
     override func draw(_ rect: CGRect) {
         guard let context = UIGraphicsGetCurrentContext() else { return }
