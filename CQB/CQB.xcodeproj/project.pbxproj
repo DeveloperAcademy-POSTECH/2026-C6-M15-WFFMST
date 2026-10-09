@@ -10,6 +10,8 @@
 		0EA19D4E3077388900A5F2CF /* CQBDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 0EA19D4D3077388900A5F2CF /* CQBDesignSystem */; };
 		788A10D9307697FA003DEA3E /* CQBCore in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10D8307697FA003DEA3E /* CQBCore */; };
 		788A10F030769F19003DEA3E /* CQBFixtures in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10EF30769F19003DEA3E /* CQBFixtures */; };
+		788A10F530770001003DEA3E /* CQBFirebase in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10F430770001003DEA3E /* CQBFirebase */; };
+		788A10F730770001003DEA3E /* CQBFirebase in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10F630770001003DEA3E /* CQBFirebase */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -63,11 +65,13 @@
 				788A10D9307697FA003DEA3E /* CQBCore in Frameworks */,
 				0EA19D4E3077388900A5F2CF /* CQBDesignSystem in Frameworks */,
 				788A10F030769F19003DEA3E /* CQBFixtures in Frameworks */,
+				788A10F530770001003DEA3E /* CQBFirebase in Frameworks */,
 			);
 		};
 		788A1082307682B8003DEA3E /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				788A10F730770001003DEA3E /* CQBFirebase in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -121,6 +125,7 @@
 			packageProductDependencies = (
 				788A10D8307697FA003DEA3E /* CQBCore */,
 				788A10EF30769F19003DEA3E /* CQBFixtures */,
+				788A10F430770001003DEA3E /* CQBFirebase */,
 				0EA19D4D3077388900A5F2CF /* CQBDesignSystem */,
 			);
 			productName = CQB;
@@ -141,6 +146,9 @@
 				788A1086307682B8003DEA3E /* InstructorApp */,
 			);
 			name = InstructorApp;
+			packageProductDependencies = (
+				788A10F630770001003DEA3E /* CQBFirebase */,
+			);
 			productName = InstructorApp;
 			productReference = 788A1085307682B8003DEA3E /* InstructorApp.app */;
 			productType = "com.apple.product-type.application";
@@ -355,7 +363,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = me.wffmst.cqb.member;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wffmst.cqb.member;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -394,7 +402,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = me.wffmst.cqb.member;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wffmst.cqb.member;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -432,7 +440,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = me.wffmst.cqb.instructor;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wffmst.cqb.instructor;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -470,7 +478,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = me.wffmst.cqb.instructor;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wffmst.cqb.instructor;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -536,6 +544,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 788A10D7307697FA003DEA3E /* XCLocalSwiftPackageReference "Packages/CQBCore" */;
 			productName = CQBFixtures;
+		};
+		788A10F430770001003DEA3E /* CQBFirebase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 788A10D7307697FA003DEA3E /* XCLocalSwiftPackageReference "Packages/CQBCore" */;
+			productName = CQBFirebase;
+		};
+		788A10F630770001003DEA3E /* CQBFirebase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 788A10D7307697FA003DEA3E /* XCLocalSwiftPackageReference "Packages/CQBCore" */;
+			productName = CQBFirebase;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
