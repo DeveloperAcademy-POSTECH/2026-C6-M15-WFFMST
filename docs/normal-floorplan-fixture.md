@@ -187,6 +187,45 @@ swift test --package-path CQB/Packages/CQBCore --filter FloorPlanRepositoryTests
 - MemberApp/InstructorApp generic iOS Simulator 빌드 통과. 실제 화면 주입·Local* 내보내기·Firebase 보안 규칙·두 기기 동기화 검증은 아니다.
 - 문서·소스의 팀 승인과 노션 기록은 자동 완료 처리하지 않았다.
 
+### 페이지 캐시 수정 검증 (2026-10-10)
+
+문제는 ARC 순환 참조가 아니라 backend가 살아 있는 동안 `list`가 매번 새 cursor와 잔여 목록 배열을 보관하는 누적이었다. 같은 cursor를 재시도해도 이전 캐시가 남았고, 페이지를 넘길 때마다 뒤쪽 목록을 복사해 보관했다.
+
+수정은 `CQBFixtures/InMemoryFloorPlanStore`에 한정한다. 목록 한 벌의 불변 요약 배열을 snapshot으로 보관하고 기존 cursor는 해당 snapshot의 위치를 사용한다. 공개 Core 프로토콜·도면 파일·등록 자료·보정 계산은 변경하지 않는다.
+
+#### 동작 기준
+
+- 같은 cursor·pageSize 재시도는 항목과 nextCursor가 같으며 캐시를 늘리지 않는다. 페이지 크기를 바꾸어도 같은 snapshot의 해당 위치부터 조회한다.
+- `cursor: nil`은 새로운 조회다. 다음 페이지가 있으면 snapshot 하나를 만들고, backend 전체에서 최대 **16개**를 생성 순서(FIFO)로 보관한다. 기존 cursor 읽기는 보존 순서를 갱신하지 않는다.
+- 캐시는 요약만 보관한다. 이미지·격자나 cursor별 잔여 배열은 보관하지 않으며, FIFO 보조 배열도 살아 있는 snapshot ID만 가진다.
+- 퇴출된 cursor는 `invalidCursor`다. 기존 목록을 비우고 `cursor: nil`부터 재조회해야 한다. 서로 다른 snapshot의 페이지를 이어 붙이지 않는다.
+- UID/backend 범위, 미완료 등록 비공개, 새 등록 전 snapshot 내용, 마지막 페이지 재시도를 유지한다. 실패·관찰된 취소는 캐시를 생성하거나 퇴출하지 않는다.
+- 이 16개는 Fixture 자원 관리 기준이지 운영 서버의 cursor 만료 정책이 아니다. 요약 개수는 보관된 목록 크기에 비례하므로 고정 MiB 메모리 상한을 보장하지 않는다. 등록 도면·재시도 기록의 보존 정책은 별도다.
+
+#### 수정 전·후 증거
+
+동일한 재현 테스트 9개를 실행해 **수정 전 4개 실패 → 수정 후 9개 모두 통과**를 확인했다. 이후 FIFO 재읽기 검사를 보강하고 여러 UID의 전역 상한 테스트 1개를 추가해 **총 10개 모두 통과**했다.
+
+| 합격 기준·시나리오 | 수정 전 | 수정 후 |
+| --- | --- | --- |
+| 도면 3개, 동일 중간 cursor 100회 재조회: snapshot 1개·같은 nextCursor | snapshot 101개, 요약 102개, nextCursor 100종 | snapshot 1개, 요약 3개, nextCursor 1종 |
+| 도면 12개, 페이지 크기 1→2→3→100 순회: 중복·누락 없이 목록 한 벌 | snapshot 3개, 요약 26개 | snapshot 1개, 요약 12개, 항목 순서 일치 |
+| 도면 3개, 첫 페이지 100회 새 조회: 상한 유지·오래된 cursor 거부 | snapshot 100개, 요약 200개, 이전 cursor 계속 허용 | snapshot 16개, 요약 48개, 퇴출 cursor `invalidCursor`·새 조회 성공 |
+| 동일 cursor 동시 100회: 동일 결과·캐시 증가 없음 | 새 cursor/캐시 누적 | snapshot 1개, 요약 3개, nextCursor 1종 |
+| 실패/취소·권한·잘못된 cursor·미완료 등록·snapshot 불변성 | 기존 기본 동작 유지 | 회귀 통과 |
+| 캐시가 채워진 상태에서 client/backend 소유 참조 해제 | 해제됨 | weak 참조 nil 확인 |
+
+추가 검사는 서로 다른 두 UID가 각각 20번 새 조회한 후 backend 전체 snapshot 16개·요약 40개를 유지하며 서로의 cursor를 거부하는지 확인한다. 가장 오래된 snapshot을 재조회한 뒤 새 목록을 만들더라도 생성 순서대로 퇴출되는지도 확인한다. 빈 목록·한 페이지 목록은 캐시를 만들지 않는다.
+
+검증 코드: [FloorPlanPageCacheTests](../CQB/Packages/CQBCore/Tests/CQBCoreTests/FloorPlanRepositoryTests.swift). 재실행 명령:
+
+```sh
+swift test --package-path CQB/Packages/CQBCore --filter FloorPlanPageCacheTests
+swift test --package-path CQB/Packages/CQBCore
+```
+
+전체 패키지 **109개 테스트**(Core 100개·Fixtures 9개, 기존 빈 example 1개 포함), MemberApp/InstructorApp generic iOS Simulator 빌드 통과. 테스트의 요약 수는 보관 entry 수이며 실제 RAM 측정값은 아니다. Instruments 장시간 측정·실제 앱 화면 연동·Firebase 커서 정책 검증을 대체하지 않는다.
+
 ## 담당자 확인
 
 - [ ] 교관 담당: 도면 표시 방향·장애물·외곽·축척 기대값 확인

@@ -6,6 +6,9 @@ import CQBCore
 /// Actor serialization makes publication/idempotency atomic. Validation runs on
 /// this actor, not MainActor; there are no suspension points inside mutations.
 public actor InMemoryFloorPlanStore {
+    /// Fixture-only resource limit, not a production cursor lifetime policy.
+    public static let maximumPageSnapshots = 16
+
     public enum FailurePoint: Hashable, Sendable {
         case beforeRegistration
         case afterStagingRegistration
@@ -41,7 +44,7 @@ public actor InMemoryFloorPlanStore {
 
     private struct PageSnapshot {
         let uid: String
-        let remaining: [FloorPlanSummary]
+        let items: [FloorPlanSummary]
     }
 
     private let validator: FloorPlanValidator
@@ -50,7 +53,9 @@ public actor InMemoryFloorPlanStore {
     private var revisionOwners: [UUID: UUID] = [:]
     private var sessions: [UUID: SessionEntry] = [:]
     private var sessionRequests: [RequestKey: SessionRequest] = [:]
-    private var pages: [String: PageSnapshot] = [:]
+    private var pages: [UUID: PageSnapshot] = [:]
+    // FIFO order contains only live snapshots and is bounded with `pages`.
+    private var pageSnapshotOrder: [UUID] = []
     private var failures: [FailurePoint: Int] = [:]
 
     public init(imageValidator: any FloorPlanImageValidating) {
@@ -77,6 +82,11 @@ public actor InMemoryFloorPlanStore {
     public var counts: (ready: Int, pending: Int, sessions: Int) {
         let ready = registrations.values.filter(\.ready).count
         return (ready, registrations.count - ready, sessions.count)
+    }
+
+    /// Test diagnostics: retained summary entries, not allocated bytes or map files.
+    public var pageCacheCounts: (snapshots: Int, summaries: Int) {
+        (pages.count, pages.values.reduce(0) { $0 + $1.items.count })
     }
 
     func register(_ request: RegisterFloorPlanRequest, uid: String?) throws -> FloorPlanSummary {
@@ -114,21 +124,42 @@ public actor InMemoryFloorPlanStore {
     func list(pageSize: Int, cursor: String?, uid: String?) throws -> FloorPlanPage {
         let uid = try authenticated(uid)
         guard (1...100).contains(pageSize) else { throw FloorPlanRepositoryError.invalidRequest }
-        let remaining: [FloorPlanSummary]
+        let snapshotID: UUID
+        let snapshot: PageSnapshot
+        let offset: Int
         if let cursor {
-            guard let snapshot = pages[cursor], snapshot.uid == uid else { throw FloorPlanRepositoryError.invalidCursor }
-            remaining = snapshot.remaining
+            // Fixture codec only; callers still treat this as opaque. No registry
+            // or copied tail is allocated for each position/retry in a snapshot.
+            let fields = cursor.split(separator: ":", omittingEmptySubsequences: false)
+            guard fields.count == 2, let id = UUID(uuidString: String(fields[0])),
+                  let start = Int(fields[1]), String(start) == fields[1],
+                  let existing = pages[id], existing.uid == uid,
+                  start > 0, start < existing.items.count else {
+                throw FloorPlanRepositoryError.invalidCursor
+            }
+            snapshotID = id
+            snapshot = existing
+            offset = start
         } else {
-            remaining = registrations.values.filter { $0.ready && $0.key.uid == uid }
+            let items = registrations.values.filter { $0.ready && $0.key.uid == uid }
                 .map(\.summary).sorted { $0.reference.floorPlanID.uuidString < $1.reference.floorPlanID.uuidString }
+            snapshotID = UUID()
+            snapshot = PageSnapshot(uid: uid, items: items)
+            offset = 0
         }
         try failIfNeeded(.beforeRead)
-        let items = Array(remaining.prefix(pageSize))
-        var next: String?
-        if remaining.count > pageSize {
-            let token = UUID().uuidString
-            pages[token] = PageSnapshot(uid: uid, remaining: Array(remaining.dropFirst(pageSize)))
-            next = token
+        let end = offset + min(pageSize, snapshot.items.count - offset)
+        let items = Array(snapshot.items[offset..<end])
+        let next = end < snapshot.items.count ? "\(snapshotID.uuidString):\(end)" : nil
+        try Task.checkCancellation()
+        if cursor == nil, next != nil {
+            // Only a successful, multipage first read changes the cache. Retries
+            // (including terminal pages) neither allocate nor renew its lifetime.
+            if pageSnapshotOrder.count == Self.maximumPageSnapshots {
+                pages.removeValue(forKey: pageSnapshotOrder.removeFirst())
+            }
+            pages[snapshotID] = snapshot
+            pageSnapshotOrder.append(snapshotID)
         }
         return FloorPlanPage(items: items, nextCursor: next)
     }

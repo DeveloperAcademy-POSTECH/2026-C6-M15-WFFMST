@@ -26,6 +26,248 @@ private func backend() -> InMemoryFloorPlanStore {
     InMemoryFloorPlanStore(imageValidator: PNGFloorPlanImageValidator())
 }
 
+@Suite struct FloorPlanPageCacheTests {
+    private func populate(_ client: InMemoryFloorPlanClient, count: Int) async throws -> [FloorPlanSummary] {
+        var summaries: [FloorPlanSummary] = []
+        for _ in 0..<count {
+            summaries.append(try await client.register(registration(newIdentity: true)))
+        }
+        return summaries.sorted { $0.reference.floorPlanID.uuidString < $1.reference.floorPlanID.uuidString }
+    }
+
+    @Test func repeatedCursorReusesSnapshotAndNextCursor() async throws {
+        let store = backend(), owner = store.client(authenticatedUID: "owner")
+        let expected = try await populate(owner, count: 3)
+        let first = try await owner.list(pageSize: 1, cursor: nil)
+        let cursor = try #require(first.nextCursor)
+        var nextCursors: Set<String> = []
+        for _ in 0..<100 {
+            let page = try await owner.list(pageSize: 1, cursor: cursor)
+            #expect(page.items == [expected[1]])
+            nextCursors.insert(try #require(page.nextCursor))
+        }
+        let counts = await store.pageCacheCounts
+        print("Page cache retry evidence: 100 retries, snapshots=\(counts.snapshots), summaries=\(counts.summaries), distinct next cursors=\(nextCursors.count)")
+        #expect(counts.snapshots == 1)
+        #expect(counts.summaries == 3)
+        #expect(nextCursors.count == 1)
+        // A terminal page remains retryable; reading it must not discard the snapshot.
+        let terminalCursor = try #require(nextCursors.first)
+        for _ in 0..<2 {
+            let last = try await owner.list(pageSize: 1, cursor: terminalCursor)
+            #expect(last.items == [expected[2]])
+            #expect(last.nextCursor == nil)
+        }
+        #expect(await store.pageCacheCounts.snapshots == 1)
+        #expect(await store.pageCacheCounts.summaries == 3)
+    }
+
+    @Test func changingPageSizeTraversesOneSnapshotWithoutTailCopies() async throws {
+        let store = backend(), owner = store.client(authenticatedUID: "owner")
+        let expected = try await populate(owner, count: 12)
+        var cursor: String?
+        var actual: [FloorPlanSummary] = []
+        for pageSize in [1, 2, 3, 100] {
+            let page = try await owner.list(pageSize: pageSize, cursor: cursor)
+            actual += page.items
+            cursor = page.nextCursor
+        }
+        #expect(cursor == nil)
+        #expect(actual == expected)
+        let counts = await store.pageCacheCounts
+        print("Page cache traversal evidence: 12 maps, snapshots=\(counts.snapshots), summaries=\(counts.summaries)")
+        #expect(counts.snapshots == 1)
+        #expect(counts.summaries == 12)
+    }
+
+    @Test func freshQueriesAreBoundedAndEvictedCursorsCanRestart() async throws {
+        let store = backend(), owner = store.client(authenticatedUID: "owner")
+        let expected = try await populate(owner, count: 3)
+        var cursors: [String] = []
+        for _ in 0..<100 {
+            let page = try await owner.list(pageSize: 1, cursor: nil)
+            cursors.append(try #require(page.nextCursor))
+        }
+        let limit = InMemoryFloorPlanStore.maximumPageSnapshots
+        let counts = await store.pageCacheCounts
+        print("Page cache refresh evidence: 100 fresh queries, snapshots=\(counts.snapshots), summaries=\(counts.summaries), limit=\(limit)")
+        #expect(counts.snapshots == limit)
+        #expect(counts.summaries == limit * expected.count)
+        for cursor in [cursors[0], cursors[cursors.count - limit - 1]] {
+            await #expect(throws: FloorPlanRepositoryError.invalidCursor) {
+                try await owner.list(pageSize: 1, cursor: cursor)
+            }
+        }
+        // All retained snapshots, including the oldest, still work.
+        for cursor in cursors.suffix(limit) {
+            #expect(try await owner.list(pageSize: 100, cursor: cursor).items == Array(expected.dropFirst()))
+        }
+        let oldest = cursors[cursors.count - limit]
+        // Refreshing the oldest snapshot must not renew FIFO retention as LRU would.
+        #expect(try await owner.list(pageSize: 100, cursor: oldest).items == Array(expected.dropFirst()))
+        let restarted = try await owner.list(pageSize: 1, cursor: nil)
+        #expect(restarted.items == [expected[0]])
+        #expect(restarted.nextCursor != nil)
+        #expect(await store.pageCacheCounts.snapshots == limit)
+        await #expect(throws: FloorPlanRepositoryError.invalidCursor) {
+            try await owner.list(pageSize: 1, cursor: oldest)
+        }
+        // Eviction affects only list snapshots, not the registered maps.
+        #expect(await store.counts.ready == expected.count)
+        #expect(try await owner.loadOwned(expected[0].reference).reference == expected[0].reference)
+    }
+
+    @Test func snapshotLimitIsGlobalAndDoesNotMixOwners() async throws {
+        let store = backend()
+        let a = store.client(authenticatedUID: "owner-a"), b = store.client(authenticatedUID: "owner-b")
+        let mapsA = try await populate(a, count: 3), mapsB = try await populate(b, count: 2)
+        var latestA: String?, latestB: String?
+        for _ in 0..<20 {
+            let pageA = try await a.list(pageSize: 1, cursor: nil)
+            let pageB = try await b.list(pageSize: 1, cursor: nil)
+            #expect(pageA.items == [mapsA[0]])
+            #expect(pageB.items == [mapsB[0]])
+            let nextA = try #require(pageA.nextCursor), nextB = try #require(pageB.nextCursor)
+            latestA = nextA
+            latestB = nextB
+        }
+        let cursorA = try #require(latestA), cursorB = try #require(latestB)
+        #expect(await store.pageCacheCounts.snapshots == 16)
+        #expect(await store.pageCacheCounts.summaries == 8 * 3 + 8 * 2)
+        #expect(try await a.list(pageSize: 100, cursor: cursorA).items == Array(mapsA.dropFirst()))
+        #expect(try await b.list(pageSize: 100, cursor: cursorB).items == Array(mapsB.dropFirst()))
+        await #expect(throws: FloorPlanRepositoryError.invalidCursor) { try await b.list(pageSize: 1, cursor: cursorA) }
+        await #expect(throws: FloorPlanRepositoryError.invalidCursor) { try await a.list(pageSize: 1, cursor: cursorB) }
+    }
+
+    @Test func snapshotStaysFrozenAcrossPendingAndSuccessfulRegistration() async throws {
+        let store = backend(), owner = store.client(authenticatedUID: "owner")
+        let original = try await populate(owner, count: 3)
+        let first = try await owner.list(pageSize: 1, cursor: nil)
+        let cursor = try #require(first.nextCursor)
+        let newMap = try registration(newIdentity: true)
+        await store.failOnce(at: .afterStagingRegistration)
+        await #expect(throws: FloorPlanRepositoryError.unavailable) { try await owner.register(newMap) }
+        #expect(try await owner.list(pageSize: 100, cursor: nil).items == original)
+        _ = try await owner.register(newMap)
+        let oldTail = try await owner.list(pageSize: 100, cursor: cursor)
+        #expect(first.items + oldTail.items == original)
+        #expect(oldTail.nextCursor == nil)
+        let fresh = try await owner.list(pageSize: 100, cursor: nil)
+        #expect(Set(fresh.items.map(\.reference)) == Set(original.map(\.reference) + [newMap.reference]))
+        #expect(await store.pageCacheCounts.snapshots == 1)
+    }
+
+    @Test func invalidRequestsAndForeignCursorsCannotChangeCache() async throws {
+        let store = backend(), owner = store.client(authenticatedUID: "owner")
+        _ = try await populate(owner, count: 3)
+        let first = try await owner.list(pageSize: 1, cursor: nil)
+        let cursor = try #require(first.nextCursor)
+        let counts = await store.pageCacheCounts
+        await #expect(throws: FloorPlanRepositoryError.invalidCursor) {
+            try await store.client(authenticatedUID: "other").list(pageSize: 1, cursor: cursor)
+        }
+        let otherStore = backend()
+        await #expect(throws: FloorPlanRepositoryError.invalidCursor) {
+            try await otherStore.client(authenticatedUID: "owner").list(pageSize: 1, cursor: cursor)
+        }
+        await #expect(throws: FloorPlanRepositoryError.unauthenticated) {
+            try await store.client(authenticatedUID: nil).list(pageSize: 1, cursor: cursor)
+        }
+        // Backend codec robustness only: app callers must treat cursors as opaque.
+        let id = String(cursor.split(separator: ":")[0])
+        let invalid = ["", "unknown", cursor + ":extra", "\(id):-1", "\(id):0", "\(id):3",
+                       "\(id):\(Int.max)", "\(id):9999999999999999999999999999999",
+                       "\(id):+1", "\(id):01", "\(id):", ":1"]
+        for value in invalid {
+            await #expect(throws: FloorPlanRepositoryError.invalidCursor) {
+                try await owner.list(pageSize: 1, cursor: value)
+            }
+        }
+        for size in [0, -1, 101, Int.max] {
+            await #expect(throws: FloorPlanRepositoryError.invalidRequest) {
+                try await owner.list(pageSize: size, cursor: cursor)
+            }
+        }
+        let after = await store.pageCacheCounts
+        #expect(after.snapshots == counts.snapshots && after.summaries == counts.summaries)
+    }
+
+    @Test func failuresAndCancellationDoNotAllocateOrEvictSnapshots() async throws {
+        let store = backend(), owner = store.client(authenticatedUID: "owner")
+        let expected = try await populate(owner, count: 3)
+        var firstCursor: String?
+        for _ in 0..<InMemoryFloorPlanStore.maximumPageSnapshots {
+            let page = try await owner.list(pageSize: 1, cursor: nil)
+            if firstCursor == nil { firstCursor = page.nextCursor }
+        }
+        let cursor = try #require(firstCursor)
+        let before = await store.pageCacheCounts
+        for requestedCursor: String? in [nil, cursor] {
+            await store.failOnce(at: .beforeRead)
+            await #expect(throws: FloorPlanRepositoryError.unavailable) {
+                try await owner.list(pageSize: 1, cursor: requestedCursor)
+            }
+            let task = Task {
+                withUnsafeCurrentTask { $0?.cancel() }
+                return try await owner.list(pageSize: 1, cursor: requestedCursor)
+            }
+            do { _ = try await task.value; Issue.record("Expected CancellationError") }
+            catch is CancellationError { }
+            catch { Issue.record("Unexpected error: \(error)") }
+        }
+        let after = await store.pageCacheCounts
+        #expect(after.snapshots == before.snapshots && after.summaries == before.summaries)
+        #expect(try await owner.list(pageSize: 100, cursor: cursor).items == Array(expected.dropFirst()))
+    }
+
+    @Test func emptyAndSinglePageListsDoNotAllocateSnapshots() async throws {
+        let store = backend(), owner = store.client(authenticatedUID: "owner")
+        let empty = try await owner.list(pageSize: 1, cursor: nil)
+        #expect(empty.items.isEmpty && empty.nextCursor == nil)
+        let expected = try await populate(owner, count: 1)
+        for _ in 0..<100 {
+            let page = try await owner.list(pageSize: 1, cursor: nil)
+            #expect(page.items == expected && page.nextCursor == nil)
+        }
+        #expect(await store.pageCacheCounts.snapshots == 0)
+        #expect(await store.pageCacheCounts.summaries == 0)
+    }
+
+    @Test func concurrentCursorRetriesDoNotAccumulateSnapshots() async throws {
+        let store = backend(), owner = store.client(authenticatedUID: "owner")
+        let expected = try await populate(owner, count: 3)
+        let first = try await owner.list(pageSize: 1, cursor: nil)
+        let cursor = try #require(first.nextCursor)
+        let pages = try await withThrowingTaskGroup(of: FloorPlanPage.self) { group in
+            for _ in 0..<100 { group.addTask { try await owner.list(pageSize: 1, cursor: cursor) } }
+            var pages: [FloorPlanPage] = []
+            for try await page in group { pages.append(page) }
+            return pages
+        }
+        #expect(pages.count == 100)
+        #expect(pages.allSatisfy { $0.items == [expected[1]] && $0.nextCursor != nil })
+        #expect(Set(pages.compactMap(\.nextCursor)).count == 1)
+        #expect(await store.pageCacheCounts.snapshots == 1)
+        #expect(await store.pageCacheCounts.summaries == 3)
+    }
+
+    @Test func populatedCacheDoesNotRetainBackendAfterClientsAreReleased() async throws {
+        weak var released: InMemoryFloorPlanStore?
+        func exercise() async throws {
+            let store = backend(), owner = store.client(authenticatedUID: "owner")
+            released = store
+            _ = try await populate(owner, count: 3)
+            let first = try await owner.list(pageSize: 1, cursor: nil)
+            let cursor = try #require(first.nextCursor)
+            _ = try await owner.list(pageSize: 1, cursor: cursor)
+            #expect(await store.pageCacheCounts.snapshots > 0)
+        }
+        try await exercise()
+        #expect(released == nil)
+    }
+}
+
 @Test func repositoryRegistersWithoutSessionAndSharesOneMapAcrossTwoSessions() async throws {
     let store = backend()
     let owner = store.client(authenticatedUID: "owner-a")
