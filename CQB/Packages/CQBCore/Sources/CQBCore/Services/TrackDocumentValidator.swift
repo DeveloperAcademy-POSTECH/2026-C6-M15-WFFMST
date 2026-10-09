@@ -156,7 +156,15 @@ public enum TrackDocumentValidator {
             if let p = previous {
                 guard vertex.t >= p.t else { throw TrackValidationError.invalidResult }
                 if p.part == vertex.part {
-                    while breakIndex < breaks.count && breaks[breakIndex].1 < p.t { breakIndex += 1 }
+                    // Positive-duration gaps are open at their valid endpoints:
+                    // an edge starting at the resume time cannot cross that old
+                    // gap. Advance to the next one instead of letting it hide a
+                    // later break. Equal-time breaks remain inclusive, however.
+                    while breakIndex < breaks.count {
+                        let gap = breaks[breakIndex]
+                        guard gap.1 < p.t || (gap.1 == p.t && gap.0 < gap.1) else { break }
+                        breakIndex += 1
+                    }
                     if breakIndex < breaks.count {
                         let gap = breaks[breakIndex]
                         if (gap.0 < vertex.t && gap.1 > p.t) ||

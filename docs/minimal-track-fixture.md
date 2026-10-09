@@ -162,11 +162,37 @@ swift test --package-path CQB/Packages/CQBCore --filter 'TrackDocumentTests|Trac
 ### 실행한 검증 (2026-10-10)
 
 - 읽기 전용 샘플 검사: 사례 4개·공개/선택 기대값 6개·변형 검사 6개 통과.
-- 패키지 전체: 의미 있는 테스트 85개와 기존 빈 example 1개 통과(CQBFixturesTests 9개 + CQBCoreTests 77개). 공통 변환 13개, 문서 검증 14개, 동선 repository 13개 포함.
+- 패키지 전체: 의미 있는 테스트 91개와 기존 빈 example 1개 통과(CQBFixturesTests 9개 + CQBCoreTests 83개). 공통 변환 13개, 문서 검증 14개, 단절 회귀 6개, 동선 repository 13개 포함.
 - 추가 경고 검사: done/partial의 headingAmbiguous 인코딩·검증 후 좌표/상태 보존, 미지원 경고 거부, 발행 응답 유실 후 재시도·교관 조회의 경고 보존. 원본 합성 리소스 6개를 바꾸지 않고 테스트에서 경고를 주입한다.
 - 기존 도면 normal-v1 생성 규칙/바이트 검사 통과, 도면 파일과 hash 유지.
 - 동선 문서/가짜 서비스 추가 후 MemberApp/InstructorApp generic iOS Simulator 빌드 통과. 리소스/의존성 및 기존 앱 회귀 빌드이며 화면 주입 검증은 아니다. sandbox의 캐시 접근 제한은 승인 후 재실행했다. MemberApp의 AppIntents 메타데이터 추출 생략 경고는 빌드 실패가 아니다.
 - 위 합성 Fixture 검증에는 실제 V13 실행을 포함하지 않는다. 별도로 수행한 실제 자료 재실행은 아래 추가 검증을 참고한다. 실기기·Firebase 서비스·팀 승인 검증은 수행하지 않았으며 가짜 서비스 해제 검사는 장시간 Instruments 측정을 대신하지 않는다.
+
+### 다중 단절 검사 수정 검증 (2026-10-10)
+
+원인은 검사 위치가 **이전 단절의 복구 시각과 현재 선분 시작 시각이 같을 때** 이전 단절에 머무는 것이었다. 예를 들어 raw 단절이 (1.4, 2.4), (3.4, 4.4)이고 결과 선분이 2.4→4.4이면, 첫 단절은 더 이상 겹치지 않지만 두 번째 단절을 검사하지 않고 통과시켰다.
+
+수정은 검증기의 순회 조건만 바꾼다. 길이가 있는 단절의 끝에서 출발하는 선분은 다음 단절을 검사한다. 길이 0인 단절은 기존의 보수적 판정(해당 시각에 닿거나 가로지르는 연결 거부)을 유지한다. 인덱스는 앞으로만 이동하므로 단절 B개·경로점 V개의 해당 교차 검사 비용은 O(B+V)이며 새 배열·비동기 작업·UI 상태를 추가하지 않는다.
+
+아래 기대값은 검증기에서 생성하지 않고 [TrackDiscontinuityTests](../CQB/Packages/CQBCore/Tests/CQBCoreTests/TrackDiscontinuityTests.swift)에 시간·구간을 직접 작성했다. **생산 코드를 고치기 전에 같은 테스트를 실행**해 실패를 확인한 뒤 수정 후 재실행했다.
+
+| 완료 기준 / 테스트 | 수정 전 | 수정 후 |
+| --- | --- | --- |
+| secondBreakIsRejectedForSparseAndDenseVertices: 성긴/촘촘한 경로 모두 두 번째 단절 연결 거부 | 실패: 성긴 경로만 통과 | 통과: 둘 다 disconnectedPath |
+| thirdBreakIsNotHiddenBehindTwoSeparatedParts: 앞의 두 구간을 분리해도 세 번째 단절 연결 거부 | 실패: 잘못 통과 | 통과: disconnectedPath |
+| repeatedNilTrackingGapsCannotBeJoined: nil 추적 구간을 연결하지 않음 | 통과 | 통과 |
+| correctlySeparatedPartsKeepBoundaryVerticesUnchanged: 올바른 part 분리·단절 직전 종료/복구 시각 시작은 허용 | 통과 | 통과: 문서·바이트 그대로 보존 |
+| zeroDurationBreakAfterPositiveGapIsStillRejected: 길이 0 단절을 만료된 이전 단절과 함께 건너뛰지 않음 | 실패: 잘못 통과 | 통과: disconnectedPath |
+| crossingResultCannotBePublishedOrSelected: 잘못 연결된 결과가 공개·최초 선택되지 않음 | 실패: 공개·선택됨 | 통과: ready=0, pending=0, 선택=nil |
+
+수정 전 6개 중 4개 실패(실패 assertion 6개), 수정 후 6개 모두 통과. 전체 패키지 92개 테스트와 MemberApp/InstructorApp 시뮬레이터 빌드도 통과했다. 재실행 명령:
+
+```sh
+swift test --package-path CQB/Packages/CQBCore --filter TrackDiscontinuityTests
+swift test --package-path CQB/Packages/CQBCore
+```
+
+검증 대상은 공통 validator와 가짜 발행 서비스다. V13 보정 코어·파일 schema·합성 원본 바이트·UI를 바꾸지 않았고, 실제 보정 정확도 개선을 주장하지 않는다. 리뷰에서 별도로 발견한 Float 허용오차와 페이지 캐시 문제는 이 수정에 포함하지 않았다.
 
 ## 추가 검증: 실제 PoC 실험 회귀 (2026-10-10)
 
