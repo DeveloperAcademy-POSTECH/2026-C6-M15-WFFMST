@@ -125,8 +125,6 @@
 				788A1086307682B8003DEA3E /* InstructorApp */,
 			);
 			name = InstructorApp;
-			packageProductDependencies = (
-			);
 			productName = InstructorApp;
 			productReference = 788A1085307682B8003DEA3E /* InstructorApp.app */;
 			productType = "com.apple.product-type.application";
