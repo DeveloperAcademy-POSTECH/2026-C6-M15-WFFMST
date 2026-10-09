@@ -1,0 +1,443 @@
+# 양쪽 앱 공통 데이터 계약 — 도면 전달과 소비
+
+상태: **최근 논의에서 수락한 협업 기준을 정리한 문서. 공통 코드 구현·팀원 3명 승인·노션 변경 기록 완료를 의미하지 않는다.** (2026-10-09)
+
+작업 이슈: [#14 — 도면·동선 공통 계약 확정 및 Fixture 검증](https://github.com/DeveloperAcademy-POSTECH/2026-C6-M15-WFFMST/issues/14)
+
+작업 브랜치: `schema/14-floorplan-contract`
+
+이 문서는 생산자와 소비자가 맞춰야 할 데이터의 의미·전달 흐름·책임·실패 처리를 정의한다. 도면 기준은 본문을 사용한다. 담당자 검토 전의 상세 raw/보정 Swift 선언과 과거 전체 초안은 [이력 문서](archive/shared-data-contract-draft-2026-10-09.md)에 보존하며 현재 구현 규칙으로 사용하지 않는다.
+
+참고: [공통 아키텍처](architecture.md), [교관 앱 흐름](../CQB/InstructorApp/docs/flows.md)
+
+## 1. 제품 정책과 작업 범위
+
+### 제품 정책
+
+- 도면은 세션 생성 전에 등록하고 여러 훈련 세션에서 재사용한다.
+- 기존 훈련은 당시 도면 revision을 유지한다. MVP에는 등록 도면 수정·삭제 UI가 없다.
+- 도면은 **세션 생성 시 고정**한다. 생성 전에는 선택할 수 있지만, 생성 후 다른 도면을 쓰려면 새 세션을 만든다. 준비·훈련·종료 상태에서 기존 참조를 바꾸지 않는다.
+- MVP의 한 세션에는 도면 하나, 팀 배정 한 번, 훈련 시작 명령 한 번을 사용한다.
+- 별도 회원가입·로그인 UI 없이 Firebase 익명 인증을 사용한다. 등록한 익명 UID가 도면을 소유하고 재사용한다. 대원은 참가한 세션에 연결된 도면만 읽는다.
+- 대원의 시작 방향 기준은 **촬영 시작 카메라 방향**이다. 첫 직진 방향으로 대체하지 않는다.
+- 아이폰은 AR 이동의 도면 좌표 변환·보정을 수행한다. 아이패드는 같은 도면 위에 결과를 표시하며 축척을 다시 적용하지 않는다.
+
+도면 재사용·당시 버전 유지·훈련 중 변경 금지는 팀 합의로 전달받은 정책이고, 나머지는 추가 대화에서 수락한 기준이다. 기술 계약 전체에 대한 팀 승인 여부와 구분한다.
+
+### 이번 작업의 초점
+
+**데이터 흐름을 정의하고 이를 공통 모델·서비스·Fixture로 구현·검증하는 것**에 집중한다. 이미지 해상도·압축률·용량·메모리 최적화는 이번 단계에서 확대하지 않으며 기존 입력 제한은 유지한다.
+
+#14에는 도면뿐 아니라 원본 동선·보정 결과 계약 검토도 포함되어 있다. 도면 전달을 먼저 검증하되, 아이폰/AAR 담당자 검토를 생략하고 이슈 전체를 완료 처리하지 않는다. GitHub Issue의 범위는 이 문서 정리만으로 변경하지 않는다.
+
+실제 앱 화면·Store 전체 연결, Firebase 저장·인증·보안 규칙 구현, 실제 두 기기 통신, 보정 알고리즘 이관, 상세/수정/삭제, 작업본 영속 저장과 디자인 시스템 적용은 현재 이슈의 제외 범위다. 앱 연동은 후속 이슈에서 진행하거나 먼저 이슈 범위를 명시적으로 조정한다.
+
+## 2. 데이터 흐름과 담당 경계
+
+### 도면 등록에서 대원 소비까지
+
+| 단계 | 생산/실행 측 | 전달하는 결과 | 소비 측의 행동 |
+| --- | --- | --- | --- |
+| 이미지 정규화 | 교관 앱 이미지 서비스 | 방향·크기·색상 정규화 이미지 | 추출·편집의 기준으로 사용 |
+| 장애물 편집·외곽·축척 확정 | 교관 앱 | 검수한 최종 격자, 외곽, 축척 | 등록 가능 조건 확인 |
+| 공통 형식으로 내보내기 | 교관 앱 서비스 | PNG + 격자 + manifest + 도면 참조 | 공통 검증 후 등록 요청 |
+| 등록 | 도면 Repository | 검증·공개 완료된 도면 요약 | 목록·세션 생성에서 선택 |
+| 세션 생성 | 세션 서비스 | sessionID와 고정 FloorPlanReference | 이후 동일 참조로 조회 |
+| 세션 도면 조회 | 대원 앱 → Repository | 같은 revision의 검증된 도면 | 표시·시작점/방향 설정·보정 입력 구성 |
+| 보정 결과 소비 | 아이폰 → 결과 저장 서비스 → AAR | 지도 참조를 가진 도면 px 좌표 결과 | 교관은 화면 표시 변환만 적용 |
+
+등록은 세션을 만들지 않는다. 세션 생성 시 도면 전체를 복제하지 않고 확정 revision을 참조한다. 서버 없이 검증할 때도 같은 서비스 경계를 유지한다.
+
+### 협업 책임
+
+| 담당 | 주도할 정의/구현 | 상대 담당자에게 확인받을 내용 |
+| --- | --- | --- |
+| 교관 앱 | 정규화 이미지·최종 격자·외곽·축척, 도면 등록/조회 입력 | 이 자료로 대원이 표시·시작점 설정·보정 입력을 구성할 수 있는가 |
+| 아이폰 | AR 기록·추적 복구·원점 관리·보정 입출력과 계산 | 도면 규칙과 맞는가, AAR에서 해석 가능한가 |
+| AAR | 결과 조회·좌표/시간 표시·단절 구간 표현 | 아이폰의 결과 좌표·시간·품질 의미와 같은가 |
+| 서버 | 인증 문맥·소유·접근·공개 상태·저장/재시도 | 공통 서비스의 성공/실패 규칙을 만족하는가 |
+| 공통 계약 검토 | 모델·단위·참조·오류·Fixture 해석 | 팀원 3명 승인 및 변경 기록 |
+
+교관 담당자가 상세 raw schema나 AR 복구 정책을 단독 확정하지 않는다. 아이폰 담당자는 제공된 도면 입력의 충분성을 확인하고 동선 계약을 제안한다.
+
+### 기존 앱과 공통 모듈 연결
+
+- 편집 중에는 기존 `Local*` 모델, base 격자, PencilKit/편집 획과 캐시를 사용한다.
+- 등록을 확정하는 경계에서 공통 전달 형식으로 변환하고 검증한다. View에서 파일 인코딩이나 서버 호출을 하지 않는다.
+- 등록 이후 소비자는 도면 참조와 서비스 조회 결과를 사용한다.
+- 앱 연동 시 실제/가짜 서비스 주입은 `AppContainer`가 담당한다.
+- `CQBCore`: 공통 모델·프로토콜·순수 계산/검증. 앱, SwiftUI, Firebase 타입에 의존하지 않는다.
+- `CQBFixtures`: 공통 샘플과 가짜 서비스. `CQBFirebase`: 서버 입출력 구현.
+- 이미지 디코딩·정규화는 이미지 처리 계층의 책임이다. 공통 모델에 UIKit 이미지를 넣지 않는다.
+
+## 3. 전달 파일과 JSON 표현
+
+### 전달 파일
+
+| 자료 | 정의 | 이유 |
+| --- | --- | --- |
+| `original.png` | 방향 보정·크기 정규화·흰 배경 합성이 끝난 sRGB·8bit 단일 정지 PNG | 양쪽 앱의 표시·좌표 기준을 일치시킴 |
+| `resolved-mask.bin` | 편집과 외곽 처리가 끝난 격자. 헤더·압축 없는 행 우선 UInt8 배열 | 현재 격자에 직접 대응하고 검증이 단순함 |
+| `navigation-map.json` | 이미지/격자 크기·축척·외곽·좌표계·버전·파일 hash를 담은 UTF-8 JSON | 세 파일을 같은 도면으로 해석 |
+| `FloorPlanReference` | 도면 ID + revision ID + manifest hash | 세션이 사용한 정확한 파일 조합 식별 |
+
+`original.png`는 업로드 전 원본 파일이 아니라 **정규화 결과**다. base 격자·편집 획·PKDrawing·편집 미리보기는 대원에게 전달하지 않는다. 보정기는 PNG를 재분석하지 않고 최종 격자와 메타데이터를 사용한다.
+
+최종 격자는 사용자가 확정한 장애물 정보이며 실제 공간의 모든 벽·가구를 포함한다고 보장하지 않는다. 격자에서 free라는 뜻과 실제 공간의 안전성은 동일하지 않다.
+
+### 정규화와 현재 입력 제한
+
+- 입력은 실제 형식을 확인한 PNG/JPEG이며 현재 파일 가져오기 제한 40MiB를 유지한다.
+- 방향을 보정하고 종횡비를 유지하며 긴 변을 최대 4,096px로 축소한다. 작은 이미지를 확대하거나 정사각형으로 자르지 않는다.
+- 출력의 실제 가로·세로는 각각 1~4,096px다. 회전 보정에 따라 가로·세로가 바뀔 수 있다.
+- 이후 축척·격자·시작점·보정 결과의 기준은 정규화된 이미지다. 소비자는 4,096px를 고정 크기로 가정하지 않는다.
+- 이미지 최적화와 추가 출력 PNG 용량 상한은 후속 검토로 둔다. 앞서 논의한 80MiB는 현재 코드에 적용된 제한도, 이번 문서에서 성능을 보장하는 기준도 아니다.
+- 입력 파일 바이트, 출력 PNG 바이트, 디코딩 픽셀 메모리는 서로 다른 값이다. 기존 제한을 제거하거나 입력을 무제한 허용하지 않는다.
+
+### 메타데이터 필드
+
+아래 필드는 모두 필수이며 누락·null을 허용하지 않는다. 이름·소유 UID·서버 경로는 계산용 manifest에 추가하지 않고 목록/권한 메타데이터 또는 서비스 문맥에서 관리한다.
+
+| 필드 | 타입/단위·조건 | 생성/사용 목적 |
+| --- | --- | --- |
+| schemaVersion | 정수 1 | 공통 도면 파일 v1. PoC 버전과 별개 |
+| floorPlanID / revisionID | UUID | 외부 참조와 일치해야 함 |
+| coordinateSystem | `image-top-left-row-major` | 이미지 왼쪽 위 원점·격자 행 우선 |
+| imageWidth / imageHeight | 정수 px, 1~4,096 | 실제 PNG와 일치 |
+| imageSHA256 | 소문자 64자리 hex | 정확한 PNG 바이트 검증 |
+| scale | a/b: 이미지 px, meters: 실제 m | 축척 계산의 단일 입력 |
+| indoorOutline | 정규화 좌표 배열, 유효한 3~512점 | 확정 도면의 실내 외곽. 빈 배열 불가 |
+| navigationGrid | 아래 격자 설명 | 이진 파일 해석·검증 |
+| extractionAlgorithmVersion | 생성기 버전 문자열 | 생성 이력 식별 |
+| rasterizationVersion | 생성기의 정수 버전 | 편집/외곽 격자 생성 이력 식별 |
+| manuallyReviewed | Bool, 발행 시 true | 자동 추출 초안과 사용자 검수 결과 구분 |
+
+격자 설명의 필수 필드:
+
+| 필드 | 정의 |
+| --- | --- |
+| columns / rows | 각각 ceil(imageWidth 또는 imageHeight / cellSizePixels) |
+| cellSizePixels | 정수 1~4,096, 현재 생성기 기본값 2 |
+| encoding | `uint8-row-major` |
+| freeValue / blockedValue | 각각 0 / 1 |
+| outsideIsBlocked | true |
+| maskSHA256 | 정확한 격자 바이트의 SHA-256 |
+
+### JSON 작성·읽기 규칙
+
+| 항목 | 기준 | 이유 |
+| --- | --- | --- |
+| 문서/바이트 | UTF-8, manifest 최대 1MiB | 외곽 최대 512점 등을 수용하면서 비정상 입력 제한 |
+| 숫자 | 정수 필드는 정수, 좌표·거리는 유한한 실수. 문자열 숫자·NaN·무한대 거부 | 임의 변환과 계산 오류 방지 |
+| UUID 작성 | 소문자 하이픈 포함 표준 문자열 | 직렬화 표현 통일 |
+| hash | SHA-256 소문자 64자리 hex | 비교 방식 통일 |
+| writer | 공통 writer, 키 정렬, 불필요한 들여쓰기 없음 | 생성 결과 비교가 쉽도록 함 |
+| 추가 필드 | 지원 schema 안의 알 수 없는 추가 필드는 무시 | 해석을 바꾸지 않는 부가 정보 수용 |
+| 미지원 값 | schema·좌표계·격자 인코딩·장애물 값은 거부 | 의미를 추측해 사용하지 않음 |
+| 생성기 버전 | 파일 schema/인코딩을 지원하면 낯선 생성기 버전만으로 거부하지 않음 | 소비자는 확정 격자를 읽으며 재추출하지 않음 |
+| PoC 호환 | 기존 PoC 파일을 공통 v1로 자동 인정하지 않음 | 서로 다른 schema/hash 의미를 혼용하지 않음 |
+
+manifest에는 날짜 필드가 없다. raw/결과의 날짜·enum 등 세부 직렬화는 아이폰/AAR 담당자의 동선 schema 검토 대상이며 도면 규칙만으로 자동 확정하지 않는다.
+
+## 4. 좌표·축척·격자 규칙
+
+현재 `LocalFloorPlanGeometry`의 기준을 유지한다. 정규화 좌표와 이미지 px는 다른 타입으로 구분하고 내보내는 경계에서 명시적으로 변환한다.
+
+| 데이터 | 단위/방향 |
+| --- | --- |
+| 외곽·앱 내부 편집 획 | 0...1 정규화 좌표 |
+| 공통 축척 A/B·시작점·방향점·보정 결과 | 정규화 PNG 기준 연속 픽셀 좌표 |
+| 원본 이동 | 기록 원점 기준 AR X/Z의 m. 높이 AR Y와 구분 |
+| 격자 | 정수 column/row, 위쪽 행부터 각 행의 왼쪽에서 오른쪽 |
+
+이미지 원점은 왼쪽 위, 오른쪽 +x, 아래쪽 +y다. SwiftUI pt·화면 확대율·정규화 전 이미지 크기는 저장 좌표가 아니다.
+
+```text
+pixelX = normalizedX × imageWidth
+pixelY = normalizedY × imageHeight
+pixelsPerMeter = hypot(B.x - A.x, B.y - A.y) / meters
+
+columns = ceil(imageWidth / cellSizePixels)
+rows    = ceil(imageHeight / cellSizePixels)
+column  = floor(pixelX / cellSizePixels)
+row     = floor(pixelY / cellSizePixels)
+index   = row × columns + column
+```
+
+- 축척 기준점은 유효한 이미지 좌표이고 두 점의 간격은 10px 이상이다. 실제 거리는 0 초과 1,000m 이하이며 계산 결과는 유한해야 한다.
+- 외곽은 3~512개의 유효한 정규화 점이다. 연속 중복점·겹치는 선분·자기 교차·면적 없는 도형을 거부한다.
+- 외곽·축척에는 정규화 경계 1을 허용한다. 격자 조회는 `0 <= x < width`, `0 <= y < height` 밖이면 blocked다. 시작점을 안쪽으로 몰래 clamp하지 않는다.
+- 격자는 1셀당 1바이트, 0=free, 1=blocked다. 파일 길이는 정확히 columns×rows이며 크기·곱셈 범위를 검사한 뒤 할당한다.
+- 외곽 판정은 셀 중심 기준이다. 외곽 선분 위 중심은 내부이며, 이미지 범위 밖 중심은 blocked다. 홀수 이미지의 마지막 셀에도 적용한다.
+- 편집 획을 순서대로 적용한 뒤 외곽 밖을 최종 차단한다. 소비자는 resolved 격자를 재생성하거나 임의 수정하지 않는다.
+- 시작점은 범위 내 free 셀이어야 한다. 방향점은 방향 표시용이므로 반드시 free 셀일 필요는 없다.
+- **선분이 지나는 셀·경계·모서리의 충돌 판정은 이번에 확정하지 않았다.** 점의 free 판정과 경로 전체 검증은 구분한다. 전체 경로의 장애물 비관통을 현재 검증 완료 조건으로 주장하지 않는다.
+
+예: 1000×600 이미지에서 정규화 A=(0.1,0.2), B=(0.3,0.2)는 픽셀 (100,120), (300,120)이다. 거리가 10m이면 20px/m다. 셀 크기 2px이면 500×300셀이고 (100,120)은 column 50, row 60, index 30050이다.
+
+## 5. 식별·무결성·소유·재시도
+
+### 식별과 무결성
+
+- `floorPlanID`: 재사용하는 도면 UUID.
+- `revisionID`: 이미지·최종 격자·축척·외곽이 고정된 버전 UUID. 최초 등록부터 발급한다.
+- MVP는 도면당 revision 하나로 시작한다. 내용 변경 시 새 revision을 만들며 확정 파일과 기존 세션 참조는 덮어쓰지 않는다.
+- 세션·시작 설정·기록·보정 결과는 동일한 `FloorPlanReference`를 사용한다. 도면 ID만으로 최신 버전을 다시 찾아 대체하지 않는다.
+- imageSHA256과 maskSHA256은 각각 저장할 PNG와 격자의 정확한 바이트로 계산한다.
+- navigationSHA256은 확정 manifest의 정확한 UTF-8 바이트로 계산하고 **JSON 자신이 아닌 외부 참조**에 둔다.
+- 수신자는 원본 JSON 바이트의 hash를 검사한다. decode→재encode 결과로 비교하지 않는다. 키 순서·공백만 달라도 hash는 달라질 수 있다.
+- 발행자는 최초 확정한 바이트를 재시도에 재사용한다. hash는 무결성 검증이며 권한 증명이 아니다.
+
+### 동일 등록 요청의 의미
+
+동일 요청은 **한 번의 도면 등록 의도**를 뜻한다. 저장 버튼 중복 입력뿐 아니라, 서버 저장 후 응답 유실로 성공 여부를 몰라 재시도하는 경우도 포함한다.
+
+- 최초 등록 시 requestID·도면 ID·revision ID와 전송 바이트를 확정한다.
+- 동일 인증 문맥에서 같은 요청 ID·같은 이름/참조/파일 내용이면 기존 결과를 반환한다.
+- 같은 요청 ID 또는 확정 revision ID로 다른 내용을 덮어쓰려 하면 conflict다.
+- 별도 도면을 의도적으로 등록할 때는 새 요청과 도면 ID를 사용한다.
+- UI 중복 클릭 차단과 서비스의 중복 처리 방지는 둘 다 필요하다. 시간 초과를 저장 실패 확정으로 해석하지 않는다.
+
+### 소유와 공개
+
+논리 구조는 **도면 라이브러리 → 확정 revision → 파일**, **세션 → FloorPlanReference**다.
+
+- 인증된 등록 UID를 ownerUID로 사용한다. 호출자가 보내는 UID·도면 ID만으로 소유권을 인정하지 않는다.
+- 교관은 자신의 라이브러리를 등록·목록 조회한다. 세션 생성 UID는 선택 도면의 ownerUID와 일치해야 한다.
+- 대원은 서버가 확인한 참가 세션과 그 세션의 고정 참조를 기준으로 읽는다.
+- 파일과 메타데이터의 검증이 끝난 뒤 ready로 공개한다. 중간 실패 자료는 목록·세션 선택에서 제외한다.
+- 실제 저장 경로·Firebase 타입을 공통 프로토콜에 노출하지 않는다. 익명 UID는 사람의 교관 자격이나 기기 고유 ID가 아니다.
+- 가짜 서비스의 권한 검증은 실제 Firebase 보안 규칙 검증을 대신하지 않는다.
+
+## 6. 검증 책임과 서비스 행동
+
+### 파일 검증 순서
+
+1. 현재 입력 제한과 manifest 바이트 상한을 확인한다.
+2. 외부 참조에 대해 manifest 원본 바이트의 hash를 검증한다.
+3. JSON schema·필수 필드·숫자·ID·좌표계·격자 인코딩을 검증한다.
+4. 이미지·격자 hash, 격자 길이·값·크기 관계를 검증한다.
+5. 이미지 처리 계층에서 실제 PNG 디코딩·크기·정규화 조건을 확인한다.
+6. 축척·외곽·외곽 밖 차단 규칙을 검증한다.
+7. 서비스가 권한·세션 참조·공개 상태를 확인한 결과만 소비자에게 제공한다.
+
+위 순서는 데이터 검증 순서다. 서버는 파일을 내려주기 전에도 접근 권한을 확인해야 한다. 이미지 처리 계층이 확인한 조건을 포함해 검증을 통과하지 않은 객체를 `ValidatedFloorPlan`으로 생성하지 않는다.
+
+### 행동별 계약
+
+| 행동 | 입력 | 성공 결과 | 실패 시 처리 |
+| --- | --- | --- | --- |
+| 도면 등록 | 요청 ID·이름·참조·세 파일 | ready 도면 요약 | draft 유지. 동일 요청 재시도, 잘못된 입력/권한은 중단 |
+| 목록 조회 | 페이지 크기·불투명 cursor | 권한 있는 ready 요약·다음 cursor | 기존 목록 유지. 오류를 빈 목록으로 숨기지 않음 |
+| 교관 도면 조회 | 참조·library 문맥 | 검증된 지도 | 선택 차단. 다른 revision으로 대체하지 않음 |
+| 세션 생성 | 요청 ID·이름·참조 | 참조가 고정된 sessionID | 선택 유지. 동일 요청으로 다른 도면을 보내면 conflict |
+| 대원 지도 조회 | sessionID와 고정 참조·session 문맥 | 같은 revision의 지도 | 준비 완료 금지. 재시도 가능, 불일치 지속 시 중단 |
+| 시작점 설정 | 검증된 지도·좌표 | 유효한 시작점 | blocked/범위 밖이면 재설정. 자동 이동시키지 않음 |
+
+생성 후 도면을 바꾸는 메서드는 제공하지 않는다. 세션 생성은 참조 기록과 함께 성공해야 한다. 취소는 `CancellationError`로 구분하며 빈 결과나 성공으로 숨기지 않는다. 쓰기 취소/시간 초과가 서버 롤백을 보장하지 않으므로 같은 요청으로 결과를 확인할 수 있어야 한다.
+
+### 도면 모델·프로토콜 참조 선언
+
+아래 선언은 본문 데이터 경계를 보여 주는 초안이며 아직 패키지에 구현된 API가 아니다. 실제 코드에는 공개 생성자·검증 factory·오류 매핑이 필요하다. 특히 `Codable`만으로 유효성 검증이 수행되지는 않는다.
+
+```swift
+import Foundation
+
+public struct ImagePoint: Codable, Hashable, Sendable {
+    public let x: Double
+    public let y: Double
+}
+public struct NormalizedPoint: Codable, Hashable, Sendable {
+    public let x: Double
+    public let y: Double
+}
+public struct MapScale: Codable, Hashable, Sendable {
+    public let a: ImagePoint
+    public let b: ImagePoint
+    public let meters: Double
+}
+public struct FloorPlanReference: Codable, Hashable, Sendable {
+    public let floorPlanID: UUID
+    public let revisionID: UUID
+    public let navigationSHA256: String
+}
+public struct NavigationGridDescriptor: Codable, Hashable, Sendable {
+    public let columns: Int
+    public let rows: Int
+    public let cellSizePixels: Int
+    public let encoding: String // v1: uint8-row-major
+    public let freeValue: UInt8 // 0
+    public let blockedValue: UInt8 // 1
+    public let outsideIsBlocked: Bool // true
+    public let maskSHA256: String
+}
+public struct FloorPlanManifest: Codable, Sendable {
+    public let schemaVersion: Int
+    public let floorPlanID: UUID
+    public let revisionID: UUID
+    public let coordinateSystem: String // image-top-left-row-major
+    public let imageWidth: Int
+    public let imageHeight: Int
+    public let imageSHA256: String
+    public let scale: MapScale
+    public let indoorOutline: [NormalizedPoint]
+    public let navigationGrid: NavigationGridDescriptor
+    public let extractionAlgorithmVersion: String
+    public let rasterizationVersion: Int
+    public let manuallyReviewed: Bool
+    // navigationSHA256은 포함하지 않는다. 이 JSON 바이트의 hash는 외부 참조에 둔다.
+}
+public struct FloorPlanSummary: Codable, Sendable {
+    public let reference: FloorPlanReference
+    public let name: String
+}
+public struct FloorPlanFiles: Sendable {
+    public let imagePNG: Data
+    public let navigationMapJSON: Data
+    public let resolvedMask: Data
+}
+public struct PublishFloorPlanRequest: Sendable {
+    public let requestID: UUID
+    public let reference: FloorPlanReference
+    public let name: String
+    public let files: FloorPlanFiles
+}
+public struct FloorPlanPageRequest: Sendable {
+    public let limit: Int
+    public let cursor: String?
+}
+public struct FloorPlanPage: Sendable {
+    public let items: [FloorPlanSummary]
+    public let nextCursor: String?
+}
+public enum FloorPlanReadContext: Sendable {
+    case library
+    case session(UUID)
+}
+public struct ValidatedFloorPlan: Sendable {
+    public let reference: FloorPlanReference
+    public let manifest: FloorPlanManifest
+    public let imagePNG: Data
+    public let resolvedMask: Data
+    // Production implementation restricts construction to the validator.
+}
+public protocol FloorPlanRepository: Sendable {
+    func publish(_ request: PublishFloorPlanRequest) async throws -> FloorPlanSummary
+    func list(_ request: FloorPlanPageRequest) async throws -> FloorPlanPage
+    func load(_ reference: FloorPlanReference,
+              context: FloorPlanReadContext) async throws -> ValidatedFloorPlan
+}
+
+// 도면 연결 관점의 최소 세션 생성 입력. PIN/참가 등 전체 세션 계약은 별도 검토.
+public struct CreateTrainingSessionRequest: Sendable {
+    public let requestID: UUID
+    public let name: String
+    public let floorPlan: FloorPlanReference
+}
+public struct SessionFloorPlanBinding: Codable, Sendable {
+    public let sessionID: UUID
+    public let floorPlan: FloorPlanReference
+}
+public protocol SessionFloorPlanRepository: Sendable {
+    func createSession(_ request: CreateTrainingSessionRequest) async throws -> SessionFloorPlanBinding
+    func binding(for sessionID: UUID) async throws -> SessionFloorPlanBinding
+}
+public enum FloorPlanServiceError: Error, Sendable {
+    case invalidInput(String)
+    case unsupportedSchema(Int)
+    case unsupportedEncoding(String)
+    case integrityMismatch
+    case referenceMismatch
+    case notFound
+    case notReady
+    case accessDenied
+    case conflict
+    case sessionLocked
+    case temporarilyUnavailable
+}
+```
+
+`SessionFloorPlanRepository`는 도면 연결 관점의 최소 경계이며 전체 PIN·참가·세션 상태 계약을 대신하지 않는다. 공통 SessionRepository가 확정되면 생성/참조 조회 기능을 중복 서비스로 만들지 않고 통합한다.
+
+## 7. 동선 담당자에게 전달할 기준
+
+교관이 제공하는 입력은 **같은 revision의 이미지·최종 격자·축척·외곽·참조**다. 아이폰 담당자는 이 자료로 표시·시작 위치/방향 설정·보정 입력 구성이 가능한지 확인한다.
+
+- 시작 방향 기준은 촬영 시작 카메라 방향이다. 도면 위 방향과 AR 좌표계의 방향을 정렬하는 책임은 아이폰에 있다.
+- 원본 이동의 m를 도면 px로 변환하고 보정하는 쪽은 아이폰이다. 교관에게는 지도 참조를 포함한 도면 px 결과를 제공한다.
+- AAR은 화면 크기·확대율에 맞춘 표시 변환만 적용한다. 축척을 다시 곱하거나 보정을 다시 실행하지 않는다.
+- 로컬 보정 계산의 반환과 결과 업로드/교관 조회는 다른 단계다. 함수 반환만으로 다른 기기에 전달되었다고 판단하지 않는다.
+- 세션 기준 시간·경로 단절·품질·미해결 구간·원본 식별 정보를 양쪽이 함께 해석해야 한다. 상세 raw/결과 schema와 서비스 API는 아이폰/AAR/서버 담당자 검토 전의 선언을 자동 채택하지 않는다.
+- 서로 다른 경로 구간을 직선으로 이어 붙이거나, 추적이 없는 곳에 (0,0) 같은 가짜 위치를 넣지 않는다.
+- 세션당 훈련 한 번은 대원 기록 파일 하나와 같은 뜻이 아니다. 일시적 추적 단절·기록 재시작·팀 훈련 재시작을 구분하며 복수 기록 지원 여부를 이 문서에서 새로 확정하지 않는다.
+- 추적 단절이 항상 원점 변경을 뜻하지는 않는다. 원점이 바뀐 좌표를 이전 원점 기준으로 해석하지 않으며 복구·재정렬 정책은 아이폰 담당자가 정의한다.
+
+예: 축척 20px/m, 시작점 (100,120), AR→지도 회전 0도일 때 상대 이동 (3,0)m의 **보정 전 변환 위치**는 (160,120)px다. 교관은 결과에 20을 다시 곱하지 않는다. 이는 변환 예시이며 실제 보정 결과나 경로 유효성을 보장하는 예시가 아니다.
+
+도면 데이터의 의미와 역할 분리는 본문 기준을 따른다. 기록 재시작·원점 복구·선분 충돌·상세 결과 모델·raw 업로드 선행 정책은 [이력 문서의 협업 확인 항목](archive/shared-data-contract-draft-2026-10-09.md#협업-확인-항목)에 모아 담당자 검토 자료로만 보존한다.
+
+## 8. Fixture로 확인하는 흐름
+
+### 무엇을 검증하는가
+
+첫 연결 흐름은 **교관 등록 결과 내보내기 → 공통 검증/등록 → 목록 → 세션 참조 고정 → 대원 도면 조회**다.
+
+| 검증 영역 | 확인할 결과 |
+| --- | --- |
+| 생산 측 | 실제 로컬 등록 결과를 공통 형식으로 변환하고 다시 읽을 수 있음 |
+| 소비 측 | 동일 형식의 비대칭 Fixture를 읽어 좌표·축척·장애물을 같은 의미로 해석 |
+| 서비스 | 등록/조회, 중복 요청, 실패/재시도, ready 이전 차단, 소유/참가 범위 |
+| 세션 | 같은 도면을 여러 세션에서 사용하되 생성 후 참조 불변 |
+| 동선 연결 | 담당자가 확인한 형식으로 입력 구성, 결과 px 표시, 단절 구간 분리 |
+
+고정 Fixture와 기대값은 미리 정한다. 기대값을 검증 대상 함수로만 생성해 같은 오류를 놓치지 않는다. 정상·손상·미지원·참조 불일치 자료를 포함한다.
+
+### 가짜 서비스의 한계
+
+- 같은 `CQBFixtures`를 import해도 iPad의 메모리 변경이 iPhone으로 전달되지는 않는다. 두 앱의 메모리는 별개다.
+- 고정 Fixture는 양쪽에서 같은 샘플을 읽는 자료다. 메모리 가짜 서비스는 해당 실행/테스트 안에서만 등록·조회를 제공한다.
+- 메모리 등록은 종료 후 복원되지 않는다. 서버 저장·실제 통신·인증 구현 완료처럼 표시하지 않는다.
+- 공통 테스트에서 생산→소비 경로를 연결할 수 있지만 이는 실기기 간 동기화 검증과 다르다.
+- 실제 보정 알고리즘이 만든 결과가 아닌 고정 결과 샘플은 결과 형식/표시 검증용이다. 알고리즘 정확도 증거로 사용하지 않는다.
+
+raw 업로드 선행 조건을 검토할 때는 가짜 저장소에 검증된 원본의 식별 정보·hash·대원·도면 참조를 사전 등록해 성공/미준비/불일치를 재현할 수 있다. 이는 **조건부 테스트 방법**이지 raw 업로드 선행 정책의 팀 승인이나 실제 업로드 기능 구현을 뜻하지 않는다.
+
+## 9. 적용 상태와 검증 기준
+
+### 문서와 실제 구현의 구분
+
+- 본문은 사용자가 수락한 도면 전달 규칙과 협업 책임을 반영한다.
+- 공통 모델·서비스·파일 검증·Fixture 테스트는 아직 구현 완료가 아니다. 현재 CQBFixtures의 이름 샘플을 도면 호환성 증거로 간주하지 않는다.
+- 팀원 3명 승인과 노션 변경 기록은 미완료다. 담당자 확인 없이 보류 항목을 확정값으로 구현하지 않는다.
+- 해상도·용량 최적화는 후속 범위이며 이번에 숫자를 추가 조정하거나 성능 보장을 선언하지 않는다.
+- #14 완료에는 도면 검증뿐 아니라 이슈에 적힌 동선 담당자 검토·관련 테스트도 필요하다. 이번 문서 정리는 이슈 완료 선언이 아니다.
+
+### 검증 기준
+
+- [ ] 문서와 CQBCore 모델·프로토콜·검증 코드가 일치한다.
+- [ ] PNG/manifest/격자 및 좌표·축척·외곽·hash·revision을 검증한다.
+- [ ] 20px/m, index 30050 예시와 경계/홀수 크기를 양쪽에서 동일하게 해석한다.
+- [ ] 등록 중복·실패/재시도·미완료 자료 조회 차단을 검증한다.
+- [ ] 같은 도면 재사용과 세션 참조 불변·소유/참가 접근 범위를 검증한다.
+- [ ] 아이폰 담당자가 전달 자료로 입력 구성이 가능함을 확인한다.
+- [ ] 동선 담당자 검토 후 확정한 결과 형식으로 시간·단절·축척 중복 적용 방지를 검증한다.
+- [ ] 관련 패키지 테스트와 영향받는 앱 빌드를 확인한다.
+- [ ] 팀원 3명 동의와 노션 변경 기록을 남긴다.
+
+## 10. 근거와 변경 기록
+
+### 현재 코드 근거
+
+- [로컬 도면 모델](../CQB/InstructorApp/Models/LocalFloorPlan.swift): 교관 편집 정보와 등록 결과. 전체를 전달 모델로 복사하지 않는다.
+- [격자·축척 계산](../CQB/InstructorApp/Services/Geometry/LocalFloorPlanGeometry.swift): 좌표 변환, 10px/1000m, 외곽 3~512점, 외곽 최종 적용.
+- [이미지 정규화](../CQB/InstructorApp/Services/Import/LocalFloorPlanImportService.swift): PNG/JPEG 40MiB 입력, 방향·크기·sRGB·흰 배경 정규화.
+- [이미지 입력 테스트](../Tests/FloorPlanImportChecks.swift): 작은 이미지 유지·회전·다운샘플링 검사. 링크는 이번 문서 작업에서 테스트를 실행했다는 뜻이 아니다.
+- [이전 계약/기술 선언 보존본](archive/shared-data-contract-draft-2026-10-09.md): 과거 schema·PoC 대조·동선 선언. 현재 규칙보다 우선하지 않는다.
+
+### 변경 기록
+
+- 2026-10-09: 미커밋 계약 초안을 develop 기반 schema/14-floorplan-contract로 분리했다.
+- 2026-10-09: 익명 UID 소유, 촬영 시작 카메라 방향, 세션 생성 시 도면 고정을 반영했다.
+- 2026-10-09: 후속 논의를 반영해 파일/JSON/좌표 규칙·중복 저장·담당 책임·Fixture 한계를 협업 기준으로 정리했다. 세션당 팀 배정/훈련 시작 한 번을 명시했다.
+- 2026-10-09: 이미지 최적화는 후속 범위로 남기고 기존 제한을 유지했다. 보류한 선분 충돌 규칙과 미검토 동선 선언은 필수 계약에서 분리했다.
+- 2026-10-09: 기존 문서 전체를 이력 파일로 보존했다. 문서 링크 외 앱 코드·Xcode 설정·GitHub Issue는 변경하지 않았다.
