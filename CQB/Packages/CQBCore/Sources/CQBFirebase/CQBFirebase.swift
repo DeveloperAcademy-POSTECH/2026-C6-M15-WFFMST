@@ -17,4 +17,13 @@ public enum CQBFirebaseModule {
         }
         FirebaseApp.configure()
     }
+
+    /// 앱 시작 시 미리 익명 로그인해 둔다. 이미 로그인돼 있으면 아무것도 하지 않는다.
+    /// 실패해도 Firebase에 접근할 때 다시 시도하므로 호출하는 쪽은 앱을 멈추지 않는다.
+    public static func signInAnonymously() async throws {
+        let uid = try await AnonymousAuth.shared.uid()
+        #if DEBUG
+        print("[CQBFirebase] 익명 로그인 uid: \(uid)")
+        #endif
+    }
 }
