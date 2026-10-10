@@ -46,7 +46,7 @@ struct SessionJoinView: View {
                     }
                     
                     Text("지휘관이 알아볼 수 있는 이름을 입력해주세요.")
-                        .font(DSTypography.body2)
+                        .font(DSTypography.bodySmall)
                         .foregroundStyle(DSColor.darkGreen)
                         .padding(.top, 24)
                     
@@ -58,7 +58,7 @@ struct SessionJoinView: View {
                     }
                     .disabled(!canJoin)
                 }
-                .font(DSTypography.body1)
+                .font(DSTypography.body)
                 .padding(.horizontal, 24)
                 .padding(.top, 8)
                 .padding(.bottom, 16)

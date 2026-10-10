@@ -21,7 +21,7 @@ private struct ActionButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(DSTypography.body1)
+            .font(DSTypography.body)
             .frame(maxWidth: .infinity, minHeight: 52)
             .foregroundStyle(isEnabled ? DSColor.background : DSColor.darkGreen)
             .background(isEnabled ? DSColor.main : Color("MemberActionDisabled"))

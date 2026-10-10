@@ -26,7 +26,7 @@ struct TextField: View {
             prompt: Text(placeholder).foregroundStyle(DSColor.white)
         )
         .textFieldStyle(.plain)
-        .font(DSTypography.body1)
+        .font(DSTypography.body)
         .foregroundStyle(DSColor.white)
         .tint(DSColor.main)
         .padding(.horizontal, 12)

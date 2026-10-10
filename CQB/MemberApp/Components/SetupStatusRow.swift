@@ -22,10 +22,10 @@ struct SetupStatusRow: View {
     var body: some View {
         HStack {
             Text(title)
-                .font(DSTypography.body1)
+                .font(DSTypography.body)
                 .foregroundStyle(DSColor.white)
             Spacer()
-            Text(value).font(DSTypography.body2)
+            Text(value).font(DSTypography.bodySmall)
                 .foregroundStyle(isSet ? DSColor.main : DSColor.darkGreen)
         }
         .padding(.horizontal, 16)

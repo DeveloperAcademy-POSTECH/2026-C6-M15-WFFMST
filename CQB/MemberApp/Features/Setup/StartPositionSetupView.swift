@@ -24,7 +24,7 @@ struct StartPositionSetupView: View {
                 Text(startPoint == nil
                      ? "도면 위 터치를 통해 본인의 출발위치를 선택해주세요."
                      : "이후 선택한 위치에서 바라보는 방향을 한번 더 터치하여 방향을 설정해주세요.")
-                    .font(DSTypography.body2)
+                    .font(DSTypography.bodySmall)
                     .foregroundStyle(DSColor.darkGreen)
                     .frame(maxWidth: .infinity, minHeight: 42, alignment: .topLeading)
                 VStack(spacing: 24) {
@@ -71,7 +71,7 @@ struct StartPositionSetupView: View {
                         .fill(DSColor.main)
                     }
                     Text("1")
-                        .font(DSTypography.etc.weight(.bold))
+                        .font(DSTypography.caption.weight(.bold))
                         .foregroundStyle(DSColor.background)
                         .frame(width: 22, height: 22)
                         .background(DSColor.main, in: Circle())

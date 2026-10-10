@@ -25,7 +25,7 @@ struct CameraPreviewView: View {
                         }
                     }
                 }
-                .font(DSTypography.body2)
+                .font(DSTypography.bodySmall)
                 .foregroundStyle(DSColor.white)
                 .tint(DSColor.main)
                 .padding(20)

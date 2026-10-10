@@ -3,7 +3,7 @@ import CQBDesignSystem
 
 /// iPhone 05(대기) · 06(기록). 후면 카메라 미리보기 위에 상태 UI를 표시한다.
 struct TrainingRecordingView: View {
-    let phase: MemberAppPhase
+    let phase: MemberPhase
     let startedAt: Date?
     let onFinish: () -> Void
     var onStart: (() -> Void)? = nil
@@ -35,13 +35,13 @@ struct TrainingRecordingView: View {
                     }
                     Spacer()
                     Text(isWaiting ? "카메라 미리보기" : "Body cam")
-                        .font(DSTypography.etc)
+                        .font(DSTypography.caption)
                 }
                 .padding(24)
 
                 if isWaiting && isCameraReady {
                     Text("중앙에서 통제하기 전까지 방탄 캐리어에\n가로로 넣고 대기해주세요.")
-                        .font(DSTypography.body1)
+                        .font(DSTypography.body)
                         .multilineTextAlignment(.center)
                         .lineSpacing(4)
                         .frame(maxWidth: .infinity, minHeight: 48)
@@ -69,7 +69,7 @@ struct TrainingRecordingView: View {
                                 }
                             } label: {
                                 Text("목업 제어")
-                                    .font(DSTypography.etc)
+                                    .font(DSTypography.caption)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 8)
                                     .background(DSColor.area1.opacity(0.94), in: RoundedRectangle(cornerRadius: 4))
@@ -90,7 +90,7 @@ struct TrainingRecordingView: View {
                 .font(DSTypography.h3)
                 .frame(minHeight: 24)
             Text("네트워크가 끊겨도 기기에 계속 저장")
-                .font(DSTypography.body2)
+                .font(DSTypography.bodySmall)
                 .foregroundStyle(DSColor.darkGreen)
                 .frame(minHeight: 21)
         }
@@ -109,7 +109,7 @@ struct TrainingRecordingView: View {
             TimelineView(.periodic(from: startedAt, by: 1)) { context in
                 let seconds = max(0, Int(context.date.timeIntervalSince(startedAt)))
                 Text(String(format: "%02d:%02d", seconds / 60, seconds % 60))
-                    .font(DSTypography.body1.weight(.medium))
+                    .font(DSTypography.body.weight(.medium))
                     .monospacedDigit()
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }

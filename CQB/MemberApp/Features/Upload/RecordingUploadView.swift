@@ -29,17 +29,17 @@ struct RecordingUploadView: View {
                                 .font(DSTypography.h3)
                             Spacer(minLength: 12)
                             Text("\(Int(normalizedProgress * 100))%")
-                                .font(DSTypography.body1)
+                                .font(DSTypography.body)
                                 .monospacedDigit()
                         }
                         Text("완료 전까지 앱을 종료하지 않고 대기해주세요.")
-                            .font(DSTypography.body2)
+                            .font(DSTypography.bodySmall)
                             .foregroundStyle(DSColor.darkGreen)
                     }
                     Spacer(minLength: 100)
                     VStack(spacing: 24) {
                         Text(isComplete ? "완료되었습니다." : "완료되면 종료할 수 있습니다.")
-                            .font(DSTypography.body2)
+                            .font(DSTypography.bodySmall)
                             .foregroundStyle(DSColor.darkGreen)
                         ActionButton("홈으로", action: onHome)
                             .disabled(!isComplete)

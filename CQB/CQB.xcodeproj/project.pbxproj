@@ -20,13 +20,13 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		E810D0C02026100900000001 /* Development documents excluded from InstructorApp */ = {
+		E810D0C02026100900000001 /* Exceptions for "InstructorApp" folder in "InstructorApp" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				AGENTS.md,
-				docs/README.md,
 				docs/flows.md,
-				docs/issue-8-implementation.md,
+				"docs/issue-8-implementation.md",
+				docs/README.md,
 			);
 			target = 788A1084307682B8003DEA3E /* InstructorApp */;
 		};
@@ -41,7 +41,7 @@
 		788A1086307682B8003DEA3E /* InstructorApp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				E810D0C02026100900000001 /* Development documents excluded from InstructorApp */,
+				E810D0C02026100900000001 /* Exceptions for "InstructorApp" folder in "InstructorApp" target */,
 			);
 			path = InstructorApp;
 			sourceTree = "<group>";
