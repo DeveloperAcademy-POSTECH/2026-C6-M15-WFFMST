@@ -30,11 +30,21 @@
 			);
 			target = 788A1084307682B8003DEA3E /* InstructorApp */;
 		};
+		E827D0C02026101100000001 /* Exceptions for MemberApp documentation */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"docs/issue-27-implementation.md",
+			);
+			target = 788A10723076802C003DEA3E /* MemberApp */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		788A10753076802C003DEA3E /* MemberApp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				E827D0C02026101100000001 /* Exceptions for MemberApp documentation */,
+			);
 			path = MemberApp;
 			sourceTree = "<group>";
 		};
