@@ -25,14 +25,20 @@ struct RootView: View {
                 } else {
                     ContentUnavailableView("도면을 불러올 수 없습니다", systemImage: "map")
                 }
-            case .waiting, .recording:
+            case .waiting, .recording, .saving:
                 TrainingRecordingView(
                     phase: store.phase,
                     startedAt: store.recordingStartedAt,
-                    onFinish: { store.startUploading() },
-                    onStart: { store.startRecording() },
-                    onReset: { store.resetPosition() }
+                    onFinish: { Task { await store.finishRecording() } },
+                    onStart: { Task { await store.startRecording() } },
+                    onReset: { store.resetPosition() },
+                    cameraService: store.cameraService,
+                    onStopRecording: { await store.finishRecording() }
                 )
+            case .saved:
+                RecordingSaveTestView(recordingURL: store.savedRecordingURL) {
+                    store.startUploading()
+                }
             case .uploading:
                 RecordingUploadView(
                     progress: store.uploadProgress,
@@ -41,6 +47,17 @@ struct RootView: View {
                 )
                 .task { await store.simulateUpload() }
             }
+        }
+        .alert(
+            "녹화 오류",
+            isPresented: Binding(
+                get: { store.recordingError != nil },
+                set: { if !$0 { store.clearRecordingError() } }
+            )
+        ) {
+            Button("확인", role: .cancel) { store.clearRecordingError() }
+        } message: {
+            Text(store.recordingError ?? "녹화 중 문제가 발생했습니다.")
         }
     }
 }

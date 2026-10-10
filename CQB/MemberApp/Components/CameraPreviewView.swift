@@ -2,12 +2,14 @@ import AVFoundation
 import SwiftUI
 import CQBDesignSystem
 
-/// 라이브 미리보기만 제공한다. 영상 파일 녹화와 ARKit 추적은 별도 연동 대상이다.
+/// Store가 소유한 카메라 세션의 라이브 미리보기를 표시한다.
 struct CameraPreviewView: View {
+    let service: CameraPreviewService
+    var isRecording = false
+    var onStopRecording: () async -> Void = {}
     var onAvailabilityChange: (Bool) -> Void = { _ in }
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openURL) private var openURL
-    @State private var service = CameraPreviewService()
     @State private var message: String?
     @State private var needsSettings = false
     @State private var isReady = false
@@ -15,7 +17,7 @@ struct CameraPreviewView: View {
     var body: some View {
         ZStack {
             DSColor.background
-            CameraPreviewLayer(session: service.session)
+            CameraPreviewLayer(session: service.session, service: service)
             if let message {
                 VStack(spacing: 12) {
                     Text(message).multilineTextAlignment(.center)
@@ -37,6 +39,7 @@ struct CameraPreviewView: View {
         }
         .task(id: scenePhase) {
             guard scenePhase == .active else {
+                if isRecording { await onStopRecording() }
                 service.stop()
                 isReady = false
                 return
@@ -51,6 +54,7 @@ struct CameraPreviewView: View {
         .onReceive(NotificationCenter.default.publisher(for: AVCaptureSession.wasInterruptedNotification, object: service.session)) { _ in
             isReady = false
             message = "카메라 사용이 일시 중단되었습니다."
+            if isRecording { Task { await onStopRecording() } }
         }
         .onReceive(NotificationCenter.default.publisher(for: AVCaptureSession.interruptionEndedNotification, object: service.session)) { _ in
             isReady = true
@@ -59,6 +63,7 @@ struct CameraPreviewView: View {
         .onReceive(NotificationCenter.default.publisher(for: AVCaptureSession.runtimeErrorNotification, object: service.session)) { _ in
             isReady = false
             message = "카메라 오류가 발생했습니다. 화면에 다시 진입해주세요."
+            if isRecording { Task { await onStopRecording() } }
         }
     }
 
@@ -94,15 +99,18 @@ struct CameraPreviewView: View {
 
 private struct CameraPreviewLayer: UIViewRepresentable {
     let session: AVCaptureSession
+    let service: CameraPreviewService
 
     func makeUIView(context: Context) -> PreviewSurface {
         let view = PreviewSurface()
         view.previewLayer.session = session
         view.previewLayer.videoGravity = .resizeAspectFill
+        view.onRotationChange = service.setVideoRotationAngle
         return view
     }
 
     func updateUIView(_ view: PreviewSurface, context: Context) {
+        view.onRotationChange = service.setVideoRotationAngle
         view.setNeedsLayout()
     }
 
@@ -113,6 +121,7 @@ private struct CameraPreviewLayer: UIViewRepresentable {
     final class PreviewSurface: UIView {
         override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
         var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
+        var onRotationChange: ((CGFloat) -> Void)?
 
         override func layoutSubviews() {
             super.layoutSubviews()
@@ -127,6 +136,7 @@ private struct CameraPreviewLayer: UIViewRepresentable {
             }
             if connection.isVideoRotationAngleSupported(angle) {
                 connection.videoRotationAngle = angle
+                onRotationChange?(angle)
             }
         }
     }
