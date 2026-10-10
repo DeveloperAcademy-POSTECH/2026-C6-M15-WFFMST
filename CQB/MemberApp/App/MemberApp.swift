@@ -12,6 +12,8 @@ import os
 
 @main
 struct MemberApp: App {
+    @UIApplicationDelegateAdaptor(MemberAppDelegate.self) private var appDelegate
+    
     private static let logger = Logger(subsystem: "com.wffmst.cqb", category: "MemberApp")
 
     init() {
@@ -27,7 +29,7 @@ struct MemberApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            AppContainer()
         }
     }
 }

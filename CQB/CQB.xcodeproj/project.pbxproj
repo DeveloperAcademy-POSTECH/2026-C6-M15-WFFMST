@@ -20,13 +20,13 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		E810D0C02026100900000001 /* Development documents excluded from InstructorApp */ = {
+		E810D0C02026100900000001 /* Exceptions for "InstructorApp" folder in "InstructorApp" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				AGENTS.md,
-				docs/README.md,
 				docs/flows.md,
-				docs/issue-8-implementation.md,
+				"docs/issue-8-implementation.md",
+				docs/README.md,
 			);
 			target = 788A1084307682B8003DEA3E /* InstructorApp */;
 		};
@@ -41,7 +41,7 @@
 		788A1086307682B8003DEA3E /* InstructorApp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				E810D0C02026100900000001 /* Development documents excluded from InstructorApp */,
+				E810D0C02026100900000001 /* Exceptions for "InstructorApp" folder in "InstructorApp" target */,
 			);
 			path = InstructorApp;
 			sourceTree = "<group>";
@@ -352,6 +352,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
+				INFOPLIST_KEY_NSCameraUsageDescription = "훈련 중 후면 카메라 영상을 화면에 표시하기 위해 카메라 접근이 필요합니다.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -391,6 +392,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
+				INFOPLIST_KEY_NSCameraUsageDescription = "훈련 중 후면 카메라 영상을 화면에 표시하기 위해 카메라 접근이 필요합니다.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
