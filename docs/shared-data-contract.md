@@ -13,12 +13,13 @@
 - **구현됨:** 소스·테스트 링크로 구현 범위를 확인한다. 도면 모델·검증·가짜 서비스, 동선 좌표/시간 변환·저장 모델/검증·결과 발행/선택/조회 가짜 서비스가 해당한다. 동선은 아래 **1.5의 schema 1 검토용 구현안**이 코드 기준이며, **구현 완료는 팀 합의 완료와 별개**다.
 - **팀 승인 및 변경 기록:** 팀원 3명 승인과 노션 변경 기록은 미완료다. 완료 여부는 별도로 확인하고 기록한다.
 - **후속 범위:** 실제 Firebase·앱 전체 연결·편집 작업본 영속 저장 등은 선언만으로 구현됐다고 판단하지 않는다.
+- **#20 후속 도메인:** 세션·대원·기록·영상과 보정 요약의 값 모델·관계 Fixture 구현안을 1.2~1.4에 반영한다. 세부 표현은 팀 승인 전이며 Repository·Storage 구현은 Firebase 담당자 영역이다. [이관 대응표와 검증 기록](core-domain-models.md)을 함께 읽는다.
 
 기준 자료: 첨부된 「데이터 계약 v2 (도메인 · 저장 · 모듈) (확정X)」, [공통 아키텍처](architecture.md), [교관 앱 흐름](../CQB/InstructorApp/docs/flows.md).
 
 기존 스펙: [스펙 문서 최종](https://app.notion.com/p/3f201ce28fac8025b24dc24997ec62fc?pvs=21), [v1 초안](https://app.notion.com/p/3f101ce28fac802288bfc06e3a8c5390?pvs=21). 링크는 출처이며 이번 수정에서 외부 문서의 최신 상태를 재검증한 것은 아니다.
 
-현재 작업: [#14 — 도면·동선 공통 계약 확정 및 Fixture 검증](https://github.com/DeveloperAcademy-POSTECH/2026-C6-M15-WFFMST/issues/14), `schema/14-floorplan-contract`.
+선행 작업: [#14 — 도면·동선 공통 계약 확정 및 Fixture 검증](https://github.com/DeveloperAcademy-POSTECH/2026-C6-M15-WFFMST/issues/14), PR #16의 `c46f709`. 현재 후속 작업: [#20 — 세션·대원·기록 공통 도메인 모델 추가](https://github.com/DeveloperAcademy-POSTECH/2026-C6-M15-WFFMST/issues/20), `schema/20-core-domain-models`. 선행 PR 머지 전 분기한 의존 브랜치이며 승인이나 merge 완료를 의미하지 않는다.
 
 이 문서는 아이폰(A), AAR(B), 교관 준비·서버(C)가 공유하는 **도면·세션·대원·기록·동선·AAR**의 약속이다. 이번 구현이 도면부터 진행됐다는 이유로 문서 전체를 도면 전용 계약으로 축소하지 않는다.
 
@@ -71,13 +72,15 @@
 
 도면 재사용·당시 버전 유지·훈련 중 변경 금지는 팀 합의로 전달받은 정책이고, 나머지는 추가 대화에서 수락한 기준이다. 기술 계약 전체에 대한 팀 승인 여부와 구분한다.
 
-#### 현재 이슈의 초점
+#### 선행 #14의 초점과 후속 #20
 
 **데이터 흐름을 정의하고 이를 공통 모델·서비스·Fixture로 구현·검증하는 것**에 집중한다. 이미지 해상도·압축률·용량·메모리 최적화는 이번 단계에서 확대하지 않으며 기존 입력 제한은 유지한다.
 
 #14에는 도면뿐 아니라 원본 동선·보정 결과 계약 검토도 포함되어 있다. 도면 전달을 먼저 검증하되, 아이폰/AAR 담당자 검토를 생략하고 이슈 전체를 완료 처리하지 않는다. GitHub Issue의 범위는 이 문서 정리만으로 변경하지 않는다.
 
 실제 앱 화면·Store 전체 연결, Firebase 저장·인증·보안 규칙 구현, 실제 두 기기 통신, 보정 알고리즘 이관, 상세/수정/삭제, 작업본 영속 저장과 디자인 시스템 적용은 현재 이슈의 제외 범위다. 앱 연동은 후속 이슈에서 진행하거나 먼저 이슈 범위를 명시적으로 조정한다.
+
+#20은 기존 도면·동선 타입을 재사용해 세션·대원·기록·영상 값 모델과 최소 관계 Fixture를 추가한다. Repository·Storage는 Firebase 담당자의 구현 범위이며, 상태 전이·준비 판정·실제 녹화·시계 동기화·앱 View/Store 연결은 포함하지 않는다. AAR 수동 시간 조정은 보류한다. 구현 착수는 팀 계약 승인 완료와 별개다.
 
 ## 1부. 도메인 모델
 
@@ -126,177 +129,80 @@ Firebase의 Timestamp·DocumentReference·UIKit 이미지를 공통 모델에 �
 
 ### 1.2 세션
 
-**상태:** 세션 생성 시 도면 참조 고정은 현재 기준이다. 아래 전체 Session 선언과 상태 enum은 기존 초안을 갱신한 설계안이며 아직 CQBCore 구현이 아니다.
+**상태: #20 값 모델 구현안 추가 · 팀 승인 전.** [Session.swift](../CQB/Packages/CQBCore/Sources/CQBCore/Models/Session.swift)를 기준으로 한다. 상태 전이·PIN 발급·준비 판정·서버 저장은 구현하지 않는다.
 
-```swift
-/// 세션 진행 단계. 앞에서 뒤로만 진행한다.
-public enum SessionStatus: String, Codable {
-    case preparing
-    case waiting
-    case running
-    case ended
-}
+| 필드 | 의미 |
+| --- | --- |
+| id / pin / name | 세션 UUID / 6자리 숫자 문자열 / 훈련 이름 |
+| status | preparing(준비 구성), waiting(시작 대기), running(훈련 중), ended(종료)의 보고 상태 |
+| createdAt / startedAt? / endedAt? | 저장소가 확정해 전달한 시각. 아직 없는 시작·종료 시각은 nil |
+| excludedMemberIDs | 제외된 참가자의 UUID. 제외 실행·팀 배정 로직은 아님 |
+| floorPlan | 생성 시 고정되는 기존 FloorPlanReference |
 
-/// 훈련 1회
-public struct Session: Codable, Identifiable {
-    public let id: UUID
-    public var pin: String
-    public var name: String
-    public var status: SessionStatus
-    public var createdAt: Date
-    public var startedAt: Date?
-    public var endedAt: Date?
-    public var excludedMemberIDs: [UUID]
+Session은 불변 값 snapshot이다. 같은 상태에서 어떤 명령이 허용되는지, 시작 전 취소를 어떻게 표현하는지 등 상태 머신 전체를 구현한 것이 아니다. 최소 검증은 PIN·이름·중복 제외 ID·확보된 시각의 유한성/순서만 검사하며 status로 시각을 자동 생성하지 않는다.
 
-    /// 생성 시 선택한 확정 도면. 생성 이후 교체하지 않는다.
-    public let floorPlan: FloorPlanReference
-}
-```
-
-세션 생성은 준비된 도면의 참조를 함께 기록해야 성공이다. 기존 `activeFloorPlanRevisionID?`·`activeFloorPlanDraftID?`를 제거한 이유는 **등록과 세션 생성을 분리하고 생성 순간부터 참조를 고정**하기 위해서다. 준비·훈련·종료 중 도면 교체 메서드를 제공하지 않는다. 새 도면이 필요하면 새 세션을 만든다.
-
-이번 단계에서는 전체 Session 대신 `SessionFloorPlanBinding`과 `FloorPlanSessionCreating`만 구현했다. 메모리 서비스의 세션은 ID·이름·불변 도면 참조만 가지며 PIN·훈련 신호·팀 배정은 구현하지 않는다. 실제 SessionRepository 연동 시 세션과 도면 참조를 한 번에 생성해야 하며, 생성 후 별도 attach/교체 API로 이어 붙이지 않는다.
+`floorPlanBinding`은 Session의 ID·이름·도면 참조를 기존 `SessionFloorPlanBinding`으로 추출한다. 반대 방향으로는 PIN·상태·시각이 부족하므로 임의 값을 채워 전체 Session을 만들지 않는다. 기존 `FloorPlanSessionCreating` 프로토콜은 그대로 유지한다. 실제 SessionRepository는 세션과 도면 참조를 한 번에 생성해야 하며 생성 후 attach/교체 API로 이어 붙이지 않는다.
 
 ### 1.3 대원과 준비 상태
 
-**상태:** 시작 방향은 `cameraAtRecordingStart`로 정했다. 나머지 Member·DeviceStatus·StartPose 필드와 AR 정렬 계산은 아이폰/서버 담당자 검토 전의 기존 초안이다. 지도 식별 필드는 현재 `FloorPlanReference`에 맞춰 정리했다.
+**상태: #20 값 모델 구현안 추가 · 팀 승인 전.** [Member.swift](../CQB/Packages/CQBCore/Sources/CQBCore/Models/Member.swift)를 기준으로 한다. 실제 준비 판정·AR 캡처·보고 주기·시계 동기화는 포함하지 않는다.
 
-```swift
-public enum DirectionReferenceMode: String, Codable {
-    /// 기록 시작 순간 휴대폰 카메라가 향하는 방향
-    case cameraAtRecordingStart
-    case unknown
-}
+| 타입/필드 | 의미 |
+| --- | --- |
+| Member.id / sessionID | 세션 참가자의 UUID / 소속 세션 UUID. 인증 UID와 동일하지 않음 |
+| name / displayName | 입력 이름 / 소비 화면에 전달할 표시 이름. 가공·중복 이름 해결 정책은 자동 구현하지 않음 |
+| joinedAt | 저장소가 확정해 전달한 참가 시각 |
+| clockOffsetToServer? | 서버 시계−기기 시계의 초. 음수 가능, 미측정은 nil이며 0으로 대체하지 않음 |
+| startConfiguration? | 촬영 전 위치·방향 설정. 미지정/무효화 시 nil |
+| MemberStartConfiguration | FloorPlanReference + positionNormalized + directionPointNormalized |
+| DeviceStatus.sessionID / memberID | 보고가 속한 세션과 참가자 |
+| startPointSet | 같은 도면에서 유효한 위치·방향 설정을 마쳤다는 보고값 |
+| trackingReady / recording | 추적 준비 / 녹화 중이라는 보고값. 최종 ready 판정이나 권한 증명이 아님 |
+| updatedAt | 저장소가 확정해 전달한 보고 시각 |
 
-/// 대원이 도면에 지정한 시작 위치와 방향.
-public struct StartPose: Codable, Hashable {
-    public var start: ImagePoint
-    public var directionPoint: ImagePoint
-    public var directionMode: DirectionReferenceMode
+촬영 전 설정은 두 개의 `NormalizedPoint`를 사용한다. 이전 StartPose 초안의 px 좌표·필수 회전각·선택 카메라 방향을 그대로 복제하지 않는다. `trackStartPose(cameraDirectionRadians:)`는 **실제로 측정한 촬영 시작 카메라 방향을 명시적으로 받아** 기존 `TrackStartPose`에 연결한다. 해당 함수 자체는 검증기가 아니며, 원본을 만들 때 기존 validator가 도면·방향을 검사한다. 방향 미확보를 0이나 firstWalk로 대신하지 않는다. 회전각은 기존 좌표 변환에서 계산하고 중복 정본으로 저장하지 않는다.
 
-    /// AR 평면 벡터를 이미지 평면으로 변환하는 회전각.
-    /// 이미지 오른쪽 0°, 아래쪽 90°이며 V13 rotationDegrees와 같은 의미다.
-    public var arToMapRotationDegrees: Double
+최초 raw nil 허용은 준비 조건 완화와 다르다. `startPointSet`의 Bool만으로 도면/참가 검증을 건너뛰지 않는다. Member와 DeviceStatus는 별도로 도착할 수 있으므로 최소 검증이 보고 시점의 readiness를 재판정하지 않는다. 실제 ready·신선도 판정은 3.5의 후속 영역이다.
 
-    /// 촬영 시작 카메라 방향을 저장하는 안. 프레임 안정화 방식은 아이폰 담당자 검토 대상.
-    public var cameraDirectionRadians: Double?
-
-    /// 시작점과 방향점을 지정한 도면 revision
-    public var floorPlan: FloorPlanReference
-}
-
-public struct Member: Codable, Identifiable {
-    public let id: UUID
-    public var name: String
-    public var displayName: String
-    public var joinedAt: Date
-
-    /// 서버 시계 − 아이폰 시계(초). 아이폰 시각에 더하면 서버 시각이 된다.
-    public var clockOffsetToServer: TimeInterval
-
-    /// 아직 지정하지 않았거나 추적 재시작 등으로 무효가 되면 nil.
-    public var startPose: StartPose?
-}
-
-public struct DeviceStatus: Codable {
-    public var memberID: UUID
-    public var startPointSet: Bool
-    public var trackingReady: Bool
-    public var recording: Bool
-    public var updatedAt: Date
-}
-```
-
-기존 V13 초안은 기록 시작 카메라 위치를 원점으로 두는 안이다. `markedDeviceAt`·4×4 `arTransform`의 필요성과 재시작 시 원점 복구 방식은 아이폰 담당자가 검토한다. `unknown`을 `firstWalk`으로 대신 해석하지 않는다.
-
-- **기존 초안의 표시 규칙:** 마커 번호는 저장하지 않는다. `displayName` 가나다순으로 매번 계산한다(K3).
-- **준비됨**은 3.5의 `ReadinessRule`로 계산한다(G-1).
+Member UUID의 발급·재참가 재사용·인증 UID 대응은 Firebase/아이폰 담당자의 연결 확인 사항이다. 기존 마커 번호의 표시 규칙은 displayName 기반 계산안으로 유지하되 공통 모델에 UI 번호를 추가하지 않는다. AR 원점 복구·4×4 transform 보존은 후속이다.
 
 ### 1.4 기록
 
-**상태: 기존 초안 유지·아이폰/AAR/서버 담당자 검토 필요.** 아래는 구현된 공통 모델이 아니다. 특히 `Recording.id == memberID`는 대원당 기록 하나를 가정한 기존 안이다. 세션당 훈련 한 번이라는 정책만으로 재촬영/복수 기록 미지원까지 확정하지 않는다. 복수 기록을 지원한다면 recordingID와 2부의 저장 경로를 함께 검토한다.
+**상태: #20 값 모델·보정 요약 구현안 추가 · 팀 승인 전.** [Recording.swift](../CQB/Packages/CQBCore/Sources/CQBCore/Models/Recording.swift), [Video.swift](../CQB/Packages/CQBCore/Sources/CQBCore/Models/Video.swift), [TrackResultSummary.swift](../CQB/Packages/CQBCore/Sources/CQBCore/Models/TrackResultSummary.swift)를 기준으로 한다.
 
-기록 ID 분리와 재시작 처리 기준은 3.6의 [동선 최소 입출력 계약 제안](#동선-최소-입출력-계약-제안)에 있다. 현재 동선 구현의 TrackIdentity는 memberID와 recordingID를 분리한다. 아래 Recording 선언과 2부의 대원당 단일 기록 경로는 현재 동선 schema 1을 반영한 운영 저장 계약이 아니다.
+| 타입/필드 | 의미 |
+| --- | --- |
+| Recording.identity / id | 기존 TrackIdentity(sessionID, memberID, recordingID) / 계산된 recordingID |
+| floorPlan | 이 기록의 고정 FloorPlanReference, 세션과 일치 |
+| signalReceivedDeviceAt / recordingStartedDeviceAt / recordingEndedDeviceAt? | 신호 수신·실제 녹화 시작·종료의 기기 시각. 신호 수신 후 시작된 기록 snapshot |
+| endReason? | signal / manual / error. 종료 시각과 함께 설정하며 종료 전에는 둘 다 nil |
+| rawUploaded | 저장소 확인 상태를 나타내는 Bool. raw 검증·공개 권한의 증거가 아님 |
+| video? | 메타데이터 미확보 시 nil. 영상 생략 기능을 새로 허용하는 의미가 아님 |
+| state | recording(녹화 중), uploading(자료 전송 중), done(자료 전송 완료). 보정 상태와 별개 |
+| latestAttempt? | 아직 시도가 없으면 nil. 최근 시도의 예약 resultID·작업 상태·완료 결과 요약 |
+| selectedResult? / selectedResultID | 현재 확보된 선택 결과 요약 / 요약에서 계산한 ID. 선택 없음은 nil |
 
-```swift
-public enum EndReason: String, Codable {
-    case signal
-    case manual
-    case error
-}
+기존 `Recording.id == memberID`를 적용하지 않는다. 같은 대원의 서로 다른 기록을 구분하는 모델이며, 실제 MVP 재촬영·복수 기록 AAR 통합 기능을 구현했다는 뜻은 아니다. 2부의 memberID 중심 과거 저장 경로는 운영 연결 전 Firebase 담당자가 이 격리 단위에 맞춰 갱신해야 한다.
 
-public enum RecordingState: String, Codable {
-    case recording
-    case uploading
-    case done
-}
+#### 계산 시도와 선택 결과
 
-public struct VideoInfo: Codable {
-    public var codec: String
-    public var width: Int
-    public var height: Int
-    public var fps: Int
-    public var chunkSeconds: TimeInterval
-    public var totalChunks: Int?
-    public var uploadedChunks: Int
-}
+`ReconstructionAttemptState`는 pending/running/completed/failed/cancelled다. completed는 결과 문서가 만들어졌다는 뜻이며 해당 `TrackResultStatus`가 failed일 수도 있다. 작업 failed는 문서를 만들지 못한 실행 오류, cancelled는 취소다. completed만 결과 요약을 가지며 요약의 resultID는 시도의 예약 ID와 같아야 한다. 이는 상태 표현이며 작업 실행·전이 코드는 아니다.
 
-public struct VideoChunk: Codable, Identifiable {
-    public var index: Int
-    public var startSeconds: TimeInterval
-    public var durationSeconds: TimeInterval
-    public var uploadedAt: Date?
-    public var id: Int { index }
-}
+`TrackResultSummary`는 기존 identity/resultID·도면 참조·sourceRawSHA256·TrackAlgorithmIdentity·TrackResultStatus·searchIncomplete·TrackResultWarning·failureReason을 그대로 사용한다. `finishedAt?`은 저장소 기준의 완료 시각 메타데이터이며 공통 결과 파일에는 없는 값이므로 모르면 nil이다. `ValidatedTrackResult`로부터 요약을 만들 수 있다. 경로 정점·sampleCoverage·전체 미해결 진단을 복제하거나 점 개수로 done/partial을 다시 판정하지 않는다.
 
-public enum ReconstructionStatus: String, Codable {
-    case pending
-    case done
-    case partial
-    case failed
-}
-```
+선택 요약은 done/partial만 허용한다. 최신 시도 실패·취소와 이전 partial 선택을 동시에 표현할 수 있으며 최신 시도가 선택을 자동 교체하지 않는다. 선택된 결과와 같은 ID의 최신 시도는 completed이고 요약도 일치해야 한다. 선택 ID만 알고 요약을 아직 읽지 못한 상황은 Repository/앱 로딩 상태다. 이를 selectedResult=nil로 만들어 ‘선택 없음’이라고 전달하지 않는다. 요약은 권한/원본 확인을 대신하지 않고 실패 진단의 서버 공개 정책도 새로 정하지 않는다.
 
-**변경: 예시 JSON에만 있던 `algorithmVersion`을 모델에 추가하고, 사용한 원본과 지도 hash 및 탐색 한도 상태를 저장한다.**
+#### 영상 메타데이터
 
-```swift
-public struct ReconstructionSummary: Codable {
-    public var status: ReconstructionStatus
+VideoInfo는 codec·width·height·fps·목표 chunkSeconds·totalChunks?·uploadedChunks를 가진다. 총수 미확정은 nil, 업로드 수는 확인된 완료 수다. 크기/fps/목표 길이는 양수, 개수는 비음수이고 총수가 있으면 업로드 수가 총수를 넘지 않는다.
 
-    /// 예: "v13-context-aware-1"
-    public var algorithmVersion: String
+VideoChunk는 TrackIdentity·0-based index·startSeconds·durationSeconds·uploadedAt?을 가진다. startSeconds는 **기록 시작 기준 초**이고 durationSeconds는 실제 조각 길이다. ID는 TrackIdentity와 index의 조합이므로 다른 기록의 index 0을 구분한다. uploadedAt은 저장소 확인 전 nil이다. 현재 선택한 영상 codec·해상도·분할 길이를 제품 정책으로 고정하지 않으며 실제 녹화·업로드·시계 정렬은 담당자 후속 구현이다.
 
-    /// 예: "contextAware"
-    public var engine: String
+#### #20 공통 구현 경계
 
-    /// 입력 재현과 불일치 검사용
-    public var sourceRawSHA256: String
-    public var floorPlan: FloorPlanReference
+모델은 불변 값 타입이며 공개 생성자·Codable·Equatable·Sendable을 제공한다. 생성/디코딩이 검증을 대신하지 않는다. [TrainingDomainValidator](../CQB/Packages/CQBCore/Sources/CQBCore/Services/TrainingDomainValidator.swift)는 최소 수치·참조·ID·요약/시도 정합성을 검사하고, 준비 판정·상태 전이·네트워크·권한 검증은 하지 않는다. 새 enum의 미지원 값은 디코딩 오류이며 자동 unknown/success 변환을 하지 않는다.
 
-    /// 제한 시간 때문에 모든 후보를 검사하지 못했는지
-    public var searchIncomplete: Bool
-
-    public var warnings: [ReconstructionWarning]
-    public var finishedAt: Date?
-}
-
-public struct Recording: Codable, Identifiable {
-    public var memberID: UUID
-    public var signalReceivedDeviceAt: Date
-    public var recordingStartedDeviceAt: Date
-    public var recordingEndedDeviceAt: Date?
-    public var endReason: EndReason?
-    public var rawUploaded: Bool
-    public var video: VideoInfo
-    public var reconstruction: ReconstructionSummary
-
-    /// 여러 번 재보정한 경우 AAR에서 사용할 결과
-    public var selectedReconstructionID: UUID?
-
-    public var state: RecordingState
-    public var id: UUID { memberID }
-}
-```
+새 모델의 Codable 표현은 Firestore DTO나 운영 파일 schema가 아니다. #14 도면/동선 schema 1·바이트·프로토콜은 변경하지 않는다. 상세 이관 대응표·담당자 확인·검증 기록은 [#20 구현안](core-domain-models.md)을 참고한다.
 
 ### 1.5 동선
 
@@ -531,7 +437,7 @@ public struct Reconstruction: Codable, Identifiable {
 
 ### 1.6 AAR 설정
 
-**상태: 기존 초안 유지·AAR 담당자 검토 필요.** 수동 시간 미세조정의 포함 여부가 확정되지 않았으며 아래 모델은 아직 구현하지 않았다.
+**상태: #20 구현 제외·AAR 담당자 검토 필요.** 수동 시간 미세조정의 포함 여부가 확정되지 않아 아래 기존 초안은 보류한다. 모델·새 schema·수동 시간 계산을 이번 구현에 추가하지 않는다.
 
 **추가: 기존 Firestore 경로와 시간 변환 설명에 사용됐지만 빠져 있던 모델이다.**
 
@@ -1055,7 +961,7 @@ V13은 결과가 있으면 `selectMatchCandidate(0)`을 호출하며 미해결 �
 
 이유: 훈련, 원본 기록, 재보정 결과를 같은 ID로 묶으면 중단·재시도·재계산에서 기존 자료가 덮어써지거나 다른 원점의 좌표가 섞일 수 있다.
 
-확인 필요: 같은 원점 복구와 원점 재설정을 아이폰에서 어떻게 판별하는지, 재정렬/재개를 MVP에서 어디까지 지원할지. 채택 시 `Recording.id == memberID`와 대원당 raw 파일 하나를 가정한 경로를 함께 재검토한다.
+확인 필요: 같은 원점 복구와 원점 재설정을 아이폰에서 어떻게 판별하는지, 재정렬/재개를 MVP에서 어디까지 지원할지. #20 모델은 이미 recordingID를 memberID와 분리한다. 실제 재개를 연결할 때에는 대원당 raw 파일 하나를 가정한 과거 경로도 Firebase 담당자가 수정해야 한다.
 
 ##### 2. 시작 카메라 방향을 얻지 못한 경우
 
@@ -1449,16 +1355,27 @@ try map.validateStart(at: ImagePoint(x: 100, y: 120))
 
 ## 적용 상태와 검증 기준
 
+### 후속 #20 모델·관계 검증 (2026-10-10)
+
+세션·대원·촬영 전 설정·준비 보고·기록·영상·보정 요약 값 모델, 최소 구조 검증, 관계 Fixture를 추가했다. 공통 의미는 1.2~1.4, 초안 필드의 이관 대응과 제한은 [#20 구현안](core-domain-models.md)을 따른다. AARSettings는 보류했으며 Repository·Storage·앱 상태 머신은 구현하지 않았다.
+
+- 패키지 **169개 테스트**(Core 160개 + Fixtures 9개, 기존 빈 example 1개 포함) 통과. #20의 모델/검증/관계 테스트 35개를 추가했다.
+- MemberApp·InstructorApp generic iOS Simulator 빌드 통과. UI 주입·실기기·서버 연결 검증은 아니다.
+- 같은 대원의 다른 기록, 기록별 영상 조각 0, 보정 결과 없음, 최신 실패/취소와 기존 선택 유지, 같은 시각 및 복구점 진단의 partial 의미를 관계 Fixture로 확인했다.
+- 독립 리뷰의 요약 알고리즘 식별자 공백 검사와 업로드 개수 문서 표현을 수정했다. 공백 회귀 테스트는 수정 전 3개 assertion 실패, 수정 후 통과했다.
+- 기존 #14 공통 타입·프로토콜·리소스·파일 schema·V13 코어는 변경하지 않았다. 아래 #14 검증 수치는 선행 이력이며 #20 결과와 구분한다.
+- 양쪽 앱/Firebase 담당자의 모델 사용 확인·다른 작업과의 중복 확인·팀원 3명 승인·노션 기록은 남아 있다. 구현/검증 완료만으로 #20을 Close하지 않는다.
+
 ### 문서와 실제 구현의 구분
 
-- 본문은 프로젝트 전체의 도메인·저장·모듈 계약을 다룬다. 사용자가 수락한 도면 전달 규칙과 기존 비도면 초안의 검토 상태를 구분한다.
+- 본문은 프로젝트 전체의 도메인·저장·모듈 계약을 다룬다. #14 도면·동선 구현, #20의 후속 도메인 구현안, 기존 서버/운영 초안의 검토 상태를 구분한다.
 - 동선 minimal-v1은 합성 파일과 공통 좌표/시간 변환에 이어 schema 1 저장 모델/validator, 계산 프로토콜, 결과 repository/메모리 가짜 구현을 검증한다. 실제 V13 어댑터·상태/미해결 범위 자동 생성·팀 승인은 미완료다.
 - 공통 도면 모델·파일 검증·좌표 계산·서비스 프로토콜·메모리 가짜 구현과 normal-v1 소비 테스트를 구현했다. Firebase·앱 전체 연동은 아직 구현하지 않았고 팀 승인을 대신하지 않는다.
 - 팀원 3명 승인과 노션 변경 기록은 미완료다. 담당자 확인 없이 보류 항목을 확정값으로 구현하지 않는다.
 - 해상도·용량 최적화는 후속 범위이며 이번에 숫자를 추가 조정하거나 성능 보장을 선언하지 않는다.
 - #14 완료에는 도면 검증뿐 아니라 이슈에 적힌 동선 담당자 검토·관련 테스트도 필요하다. 이번 문서 정리는 이슈 완료 선언이 아니다.
 
-### 검증 기준
+### 선행 #14 검증 기준과 이력
 
 - [x] #14의 구현 범위(도면·동선 schema 1, 좌표/시간, 검증, 서비스)에서 문서와 코드를 대조했다. 기존 세션/영상/서버 설계 예시는 미구현으로 구분했으며 팀 승인을 의미하지 않는다.
 - [x] 작은 동선 합성 샘플 4개와 수동 기대값을 작성하고 schema 1 모델/validator 소비 테스트에 연결했다. 원본 샘플 바이트는 유지한다.
@@ -1472,7 +1389,7 @@ try map.validateStart(at: ImagePoint(x: 100, y: 120))
 - [x] 페이지 캐시 보완 후 패키지 테스트 109개(기존 빈 example 1개 포함)와 MemberApp/InstructorApp 시뮬레이터 빌드를 재확인했다(2026-10-10, PR #16 리뷰 반영 이전 검증 이력). [단절 검사 증거](minimal-track-fixture.md#다중-단절-검사-수정-검증-2026-10-10), [Float 검사 증거](minimal-track-fixture.md#float-상대좌표-검증-수정-2026-10-10), [페이지 캐시 증거](normal-floorplan-fixture.md#페이지-캐시-수정-검증-2026-10-10)를 참고한다. 이 수치를 리뷰 반영 후 실행 결과로 재사용하지 않는다.
 - [ ] 팀원 3명 동의와 노션 변경 기록을 남긴다.
 
-### 최종 정합성 점검과 종료 범위 (2026-10-10)
+### 선행 #14 최종 정합성 점검과 종료 범위 (2026-10-10)
 
 | 대조 항목 | 현재 기준 / 점검 결과 |
 | --- | --- |
@@ -1530,3 +1447,4 @@ PR #16 리뷰 반영 후 패키지 **134개 테스트**(Core 125개 + Fixtures 9
 - 2026-10-10: Fixture 목록 조회의 페이지별 잔여 배열 누적을 snapshot 한 벌과 위치 cursor로 수정했다. 동일 cursor 재시도는 캐시를 추가하지 않으며, 새 조회 snapshot은 backend 전체에서 최대 16개 FIFO로 보관한다. 퇴출 시 invalidCursor로 처음부터 재조회한다. 재현 테스트 9개 중 수정 전 4개가 실패했고 수정 후 모두 통과했으며, 전역 UID 상한 검사를 추가해 관련 10개·전체 109개 테스트 및 양쪽 앱 빌드를 확인했다. Core 프로토콜·파일/schema·V13·등록 자료 보존은 변경하지 않았다. 이 캐시 상한은 Fixture 전용이며 운영 서버 정책·팀 승인을 확정한 것이 아니다.
 - 2026-10-10: 팀 공유 전 문서 검토를 반영해 현재 코드 기준의 읽기 안내, raw/provenance 필수 필드, 연속 part 연결, invalidCursor 재조회, 방향 미확보 원본의 로컬 보존 경계를 명확히 했다. raw 확인 선행 검증의 구현 상태를 바로잡고 Local* 내보내기·6명/영상 AAR Fixture를 후속 범위로 구분했다. 문서 설명만 수정했으며 정책·공통 코드·파일/schema·Fixture 바이트·팀 승인 상태는 변경하지 않았다.
 - 2026-10-10: PR #16의 동일 시간 샘플·초기 위치 확보 리뷰를 반영했다. 승인 전 동선 schema 1 결과에 필수 sampleCoverage와 진단 samples, 선택적 sourceReason을 추가하고 좌표 처리 범위와 연결 미확인 진단을 분리했다. 진단 겹침·정상 좌표와의 공존을 허용하되 raw nil/segment/좌표 미해결을 건너는 연결은 거부한다. 초기 nil 뒤 최초 정상 위치는 같은 segment를 허용하고 중간 복구의 증가 검사는 유지한다. V13 코어·원본 순서/시간/좌표·정적 합성 샘플은 바꾸지 않으며 실제 어댑터·팀 승인·노션 동기화는 미완료다. 이전 결과 JSON과 호환되는 추가가 아니므로 양쪽 소비자는 동일 계약 리비전으로 맞춘다. 검증 기준과 재실행 범위는 [리뷰 반영 검증 안내](minimal-track-fixture.md#pr-16-리뷰-반영-검증-기준)를 따른다.
+- 2026-10-10: #20의 세션·대원·촬영 전 설정·기록·영상·보정 요약 값 모델과 최소 검증·관계 Fixture를 추가했다. 기존 도면/동선 타입을 재사용하고 촬영 전/확정 입력, recordingID/memberID, 최근 계산 시도/선택 결과를 구분했다. 35개 새 테스트 포함 전체 169개와 양쪽 앱 시뮬레이터 빌드를 확인했다. 독립 리뷰 보완을 반영했으며 Repository·Storage·상태 전이·앱 연결·AAR 수동 보정·팀 승인·노션 기록은 완료하지 않았다. 이관 대응표와 제한은 [#20 구현안](core-domain-models.md)을 따른다.
