@@ -8,11 +8,21 @@
 import SwiftUI
 import CQBCore
 import CQBFirebase
+import os
 
 @main
 struct MemberApp: App {
+    private static let logger = Logger(subsystem: "com.wffmst.cqb", category: "MemberApp")
+
     init() {
         CQBFirebaseModule.configure()
+        Task {
+            do {
+                try await CQBFirebaseModule.signInAnonymously()
+            } catch {
+                Self.logger.error("익명 로그인 실패: \(error.localizedDescription)")
+            }
+        }
     }
 
     var body: some Scene {
