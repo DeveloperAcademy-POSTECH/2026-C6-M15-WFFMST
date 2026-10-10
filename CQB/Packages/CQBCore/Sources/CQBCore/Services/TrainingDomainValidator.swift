@@ -9,6 +9,8 @@ public enum TrainingDomainValidationError: Error, Equatable, Sendable {
 /// authorization check, upload receipt or replacement for TrackDocumentValidator.
 /// Construction and Codable decoding alone do not perform these checks.
 public enum TrainingDomainValidator {
+    public static let maximumAARVideoMemberCount = 4
+
     public static func validate(_ session: Session) throws {
         guard !session.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               session.pin.utf8.count == 6,
@@ -145,6 +147,32 @@ public enum TrainingDomainValidator {
                     throw TrainingDomainValidationError.invalidSelection
                 }
             }
+        }
+    }
+
+    /// Validate display intent using the complete roster for this session.
+    /// The caller must finish loading the roster first; completeness cannot be
+    /// inferred here. Mixed-session or duplicate entries are invalid input.
+    /// This does not check readiness, media availability, session phase or access,
+    /// and never trims a selection or executes an app state transition.
+    public static func validate(_ settings: AARSettings, in session: Session,
+                                members: [Member]) throws {
+        guard settings.sessionID == session.id else {
+            throw TrainingDomainValidationError.identityMismatch
+        }
+        var memberIDs = Set<UUID>()
+        for member in members {
+            guard member.sessionID == session.id else {
+                throw TrainingDomainValidationError.identityMismatch
+            }
+            guard memberIDs.insert(member.id).inserted else {
+                throw TrainingDomainValidationError.invalidMember
+            }
+        }
+        guard settings.selectedMemberIDs.isSubset(of: memberIDs),
+              settings.selectedMemberIDs.isDisjoint(with: session.excludedMemberIDs),
+              settings.displayMode != .video || settings.selectedMemberIDs.count <= maximumAARVideoMemberCount else {
+            throw TrainingDomainValidationError.invalidSelection
         }
     }
 

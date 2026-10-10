@@ -13,7 +13,7 @@
 - **구현됨:** 소스·테스트 링크로 구현 범위를 확인한다. 도면 모델·검증·가짜 서비스, 동선 좌표/시간 변환·저장 모델/검증·결과 발행/선택/조회 가짜 서비스가 해당한다. 동선은 아래 **1.5의 schema 1 검토용 구현안**이 코드 기준이며, **구현 완료는 팀 합의 완료와 별개**다.
 - **팀 승인 및 변경 기록:** 팀원 3명 승인과 노션 변경 기록은 미완료다. 완료 여부는 별도로 확인하고 기록한다.
 - **후속 범위:** 실제 Firebase·앱 전체 연결·편집 작업본 영속 저장 등은 선언만으로 구현됐다고 판단하지 않는다.
-- **#20 후속 도메인:** 세션·대원·기록·영상과 보정 요약의 값 모델·관계 Fixture 구현안을 1.2~1.4에 반영한다. MVP AARSettings도 이번 이슈의 구현 대상이며 1.6에 필드·검증 기준을 정리했다. AARSettings의 공통 모델·Fixture·테스트는 아직 미구현이다. 세부 표현은 팀 승인 전이며 Repository·Storage 구현은 Firebase 담당자 영역이다. [이관 내역과 구현·검증 기록](issue-20-domain-implementation.md)을 함께 읽는다.
+- **#20 후속 도메인:** 세션·대원·기록·영상과 보정 요약의 값 모델·관계 Fixture 구현안을 1.2~1.4에 반영한다. MVP AARSettings의 공통 값 모델·최소 검증·단위 테스트도 1.6에 따라 구현했으며 기존 관계 Fixture 연결은 남아 있다. 세부 표현은 팀 승인 전이며 Repository·Storage 구현은 Firebase 담당자 영역이다. [이관 내역과 구현·검증 기록](issue-20-domain-implementation.md)을 함께 읽는다.
 
 기준 자료: 첨부된 「데이터 계약 v2 (도메인 · 저장 · 모듈) (확정X)」, [공통 아키텍처](architecture.md), [교관 앱 흐름](../CQB/InstructorApp/docs/flows.md).
 
@@ -452,7 +452,7 @@ public struct Reconstruction: Codable, Identifiable {
 
 ### 1.6 AAR 설정
 
-**상태: #20 구현안 정리 · 공통 모델·Fixture·테스트 미구현 · 팀 승인 전** (2026-10-10). 수동 시간 조정의 MVP 제외 합의와 AAR 설정 모델의 구현 여부를 구분한다. 아래는 기존 교관 앱의 선택 유지·영상 인원 제한을 공통 값 모델로 표현하기 위한 구현 기준이며, 팀원 3명 승인·노션 기록을 대신하지 않는다.
+**상태: #20 공통 모델·최소 검증·단위 테스트 구현 · 관계 Fixture 미연결 · 팀 승인 전** (2026-10-10). 수동 시간 조정의 MVP 제외 합의와 AAR 설정 모델의 구현 여부를 구분한다. 아래는 기존 교관 앱의 선택 유지·영상 인원 제한을 공통 값 모델로 표현한 구현 기준이며, 팀원 3명 승인·노션 기록을 대신하지 않는다.
 
 #### 목적과 필드
 
@@ -464,7 +464,7 @@ AARSettings는 **어느 세션에서 누구를 어떤 모드로 표시할지** �
 | `selectedMemberIDs` | `Set<UUID>` | 필수. 표시할 세션 참가자의 `Member.id` 집합. 인증 UID·recordingID가 아님. 빈 집합 허용 |
 | `displayMode` | `AARDisplayMode` | 필수. `movement`(동선) 또는 `video`(영상). 미지원 값은 디코딩 오류 |
 
-구현 시 public 생성자와 `Codable`·`Equatable`·`Sendable`을 제공하는 값 타입으로 구성하고 세 필드를 명시적으로 받는다. 임의 UUID나 미로딩 상태를 숨기는 기본값을 생성하지 않는다. Set은 선택 여부만 표현하며 표시 순서를 보장하지 않는다. 화면 순서는 앱의 대원 목록을 기준으로 정하고, Codable 왕복은 집합의 의미를 비교하며 JSON 배열 순서에 의존하지 않는다. Codable 채택만으로 새 운영 파일 schema를 확정하지 않는다.
+public 생성자와 `Codable`·`Equatable`·`Sendable`을 제공하는 불변 값 타입이며 세 필드를 명시적으로 받는다. 임의 UUID나 미로딩 상태를 숨기는 기본값을 생성하지 않는다. Set은 선택 여부만 표현하며 표시 순서를 보장하지 않는다. 화면 순서는 앱의 대원 목록을 기준으로 정하고, Codable 왕복은 집합의 의미를 비교하며 JSON 배열 순서에 의존하지 않는다. Codable 채택만으로 새 운영 파일 schema를 확정하지 않는다.
 
 #### 초기 구성과 선택 규칙
 
@@ -485,13 +485,16 @@ AARSettings는 **어느 세션에서 누구를 어떤 모드로 표시할지** �
 - 영상·보정 결과가 아직 없거나 로딩/실패 중이라는 이유로 선택을 자동 해제하지 않는다. **표시 의도와 자료 이용 가능 여부는 별개**다. 앱이 대원별 로딩·없음·실패 표시를 관리한다.
 - 이 검증은 값의 정합성 검사다. 참가 권한·AAR 진입 조건·Session 상태 전이·어느 기록을 재생할지 결정하는 정책을 대신하지 않는다. `Session.status == ended`를 AARSettings 자체의 필수 조건으로 추가하지 않는다.
 
+구현 API는 `TrainingDomainValidator.validate(_:in:members:)`다. `members`는 해당 세션의 완전한 참가자 목록이며, 로딩 완료 여부는 호출자가 확인한다. 검증기는 목록 완전성을 추론하지 않는다. 입력 목록의 다른 세션 대원은 `identityMismatch`, 중복 Member ID는 `invalidMember`로 거부한다. 설정의 세션 불일치도 `identityMismatch`, 선택 ID 누락·제외 대원 선택·영상 인원 초과는 `invalidSelection`이다. 준비 상태·이름·시계 측정값까지 연쇄 검사하지 않는다. 공통 인원 상한은 `TrainingDomainValidator.maximumAARVideoMemberCount`로 제공한다.
+
 #### 책임과 기존 앱 연결
 
 | 영역 | #20의 역할·경계 |
 | --- | --- |
-| `CQBCore/Models` | AARSettings·AARDisplayMode 값 표현 추가 예정 |
-| `CQBCore/Services` | 기존 도메인 검증 경계에서 위 순수 정합성 검사 추가 예정. 상태 변경·UI 안내는 하지 않음 |
-| `CQBFixtures`·패키지 테스트 | 기존 Session·Member 관계에 AAR 설정과 정상/경계 기대값 연결 예정 |
+| `CQBCore/Models` | [AARSettings·AARDisplayMode](../CQB/Packages/CQBCore/Sources/CQBCore/Models/AARSettings.swift) 구현 |
+| `CQBCore/Services` | [TrainingDomainValidator](../CQB/Packages/CQBCore/Sources/CQBCore/Services/TrainingDomainValidator.swift)에 위 순수 검사 구현. 상태 변경·UI 안내는 하지 않음 |
+| 패키지 단위 테스트 | [AARSettingsTests](../CQB/Packages/CQBCore/Tests/CQBCoreTests/AARSettingsTests.swift)로 값 생성·codec·정상/오류 입력 검증. 앱 전환 실행 검증은 아님 |
+| `CQBFixtures` | 기존 Session·Member·Recording 관계 Fixture에 AAR 설정 연결은 다음 단계 |
 | 앱 Store·View | Store가 초기화·선택·전환 요청과 거부 시 기존 상태 유지를 담당하고, View가 이벤트 전달·안내·로딩을 표시. 공통 모델 연결은 후속 |
 
 현재 앱의 `InstructorStore.aarMode`와 `selectedParticipantIDs`는 위 `displayMode`·`selectedMemberIDs`에 대응할 앱 내부 상태다. 기존 `AARMode`·Mock의 String ID를 이번 문서 작업에서 교체하거나 UUID로 임의 변환하지 않는다. 실제 연결 시에는 공통 Session·Member 식별자를 사용한다. 상호작용 구현은 [교관 앱 흐름](../CQB/InstructorApp/docs/flows.md#aar)을 참고한다.
@@ -505,7 +508,7 @@ AARSettings는 **어느 세션에서 누구를 어떤 모드로 표시할지** �
 - 팝오버·포커스·레이아웃·로딩·안내 문구·재생 위치·재생 중 여부·플레이어 객체: 앱 UI/실행 상태이며 공통 값 모델에 넣지 않는다. `isBodycamEnabled`도 표시 모드와 중복 저장하지 않는다.
 - 별도 Team 모델/ID: MVP의 팀 표시를 이유로 추가하지 않는다.
 
-구현 후에는 공개 생성자·필수 필드·Codable 집합 왕복·미지원 모드 거부, 정상 관계, 빈 선택, 영상 4명/5명, 동선 5명 이상, 다른 세션/제외/목록에 없는 대원 참조를 검사한다. 같은 선택을 가진 두 모드와 자료 미확보 대원 선택을 표현할 수 있는지도 검증한다. 값 검증 테스트로 실제 UI 전환·거부 후 화면 상태 유지·영상 재생까지 실행했다고 주장하지 않는다. 구체적 남은 작업은 [#20 AAR 구현·검증 계획](issue-20-domain-implementation.md#aar-설정-구현검증-계획)을 따른다.
+검증 기준은 공개 생성자·필수 필드·Codable 집합 왕복·미지원 모드 거부, 정상 관계, 빈 선택, 영상 4명/5명, 동선 5명 이상, 다른 세션/제외/목록에 없는 대원 참조다. 같은 선택을 가진 두 모드와 자료 미확보 대원 선택을 표현할 수 있어야 한다. 값 검증 테스트로 실제 UI 전환·거부 후 화면 상태 유지·영상 재생까지 실행했다고 주장하지 않는다. 단위 테스트의 실행 증거와 관계 Fixture 등 남은 작업은 [#20 AAR 구현·검증 계획](issue-20-domain-implementation.md#aar-설정-구현검증-계획)에서 확인한다.
 
 수동 시간 dictionary 중심의 과거 AARSettings 예시는 [이력 문서](archive/shared-data-contract-draft-2026-10-09.md)에 보존하며 현재 모델 기준으로 사용하지 않는다.
 
@@ -523,7 +526,7 @@ AARSettings는 **어느 세션에서 누구를 어떤 모드로 표시할지** �
 | 세션 생성 | 세션 서비스 | sessionID와 고정 FloorPlanReference | 이후 동일 참조로 조회 |
 | 세션 도면 조회 | 대원 앱 → Repository | 같은 revision의 검증된 도면 | 표시·시작점/방향 설정·보정 입력 구성 |
 | 보정 결과 소비 | 아이폰 → 결과 저장 서비스 → AAR | 지도 참조를 가진 도면 px 좌표 결과 | 교관은 화면 표시 변환만 적용 |
-| AAR 표시 대상·모드 구성 | 교관 앱 Store | 세션·대원 참조를 가진 AARSettings(1.6, 공통 모델 미구현) | 선택한 대원의 자료를 표시. 기록의 보정 결과 선택을 중복 저장하지 않음 |
+| AAR 표시 대상·모드 구성 | 교관 앱 Store | 세션·대원 참조를 가진 AARSettings(1.6, 값 모델 구현·앱 연결 후속) | 선택한 대원의 자료를 표시. 기록의 보정 결과 선택을 중복 저장하지 않음 |
 
 등록은 세션을 만들지 않는다. 세션 생성 시 도면 전체를 복제하지 않고 확정 revision을 참조한다. 서버 없이 검증할 때도 같은 서비스 경계를 유지한다.
 
@@ -1415,9 +1418,9 @@ try map.validateStart(at: ImagePoint(x: 100, y: 120))
 
 ### 후속 #20 모델·관계 검증 (2026-10-10)
 
-계약 기준은 1.2~1.4와 1.6이다. 세션·대원·기록·영상·보정 요약 및 최소 검증·관계 Fixture는 구현했고, AARSettings는 문서 기준 정리까지 진행했다. 팀 승인 전 상태이며 문서 정리만으로 #20을 Close하지 않는다.
+계약 기준은 1.2~1.4와 1.6이다. 세션·대원·기록·영상·보정 요약 및 최소 검증·관계 Fixture는 구현했다. AARSettings의 값 모델·최소 검증·단위 테스트를 구현했으며 기존 관계 Fixture 연결은 남아 있다. 팀 승인 전 상태이며 구현만으로 #20을 Close하지 않는다.
 
-현재 구현 위치·테스트별 결과·빌드 이력·미검증 범위는 [#20 구현·검증 기록](issue-20-domain-implementation.md)에 모은다. [기존 실행 기록](issue-20-domain-implementation.md#기존-도메인의-실행-기록-2026-10-10)과 [AARSettings의 남은 작업](issue-20-domain-implementation.md#aar-설정-구현검증-계획)을 구분하며, 아직 AARSettings 테스트가 통과한 것은 아니다. 아래 #14 검증 수치는 선행 이력이다.
+현재 구현 위치·테스트별 결과·빌드 이력·미검증 범위는 [#20 구현·검증 기록](issue-20-domain-implementation.md)에 모은다. [기존 실행 기록](issue-20-domain-implementation.md#기존-도메인의-실행-기록-2026-10-10)과 [AARSettings의 구현·남은 작업](issue-20-domain-implementation.md#aar-설정-구현검증-계획)을 구분한다. AARSettings 단위 테스트 통과를 전체 관계 Fixture 연결이나 앱 동작 검증으로 해석하지 않는다. 아래 #14 검증 수치는 선행 이력이다.
 
 ### 문서와 실제 구현의 구분
 
@@ -1503,3 +1506,4 @@ PR #16 리뷰 반영 후 패키지 **134개 테스트**(Core 125개 + Fixtures 9
 - 2026-10-10: #20의 세션·대원·촬영 전 설정·기록·영상·보정 요약 값 모델과 최소 검증·관계 Fixture를 추가했다. 기존 도면/동선 타입을 재사용하고 촬영 전/확정 입력, recordingID/memberID, 최근 계산 시도/선택 결과를 구분했다. 35개 새 테스트 포함 전체 169개와 양쪽 앱 시뮬레이터 빌드를 확인했다. 독립 리뷰 보완을 반영했으며 Repository·Storage·상태 전이·앱 연결·AAR 수동 보정·팀 승인·노션 기록은 완료하지 않았다. 이관·검증 내역은 [#20 구현·검증 기록](issue-20-domain-implementation.md)을 참고한다.
 - 2026-10-10: #20 범위 보완에 맞춰 MVP AARSettings의 세션·선택 대원·표시 모드, 초기 구성·선택 유지·영상 4명 제한·최소 관계 검증과 앱 책임을 1.6에 정리했다. 수동 재생 시간 조정은 MVP 제외로 갱신하고 과거 dictionary·저장 경로·시간 공식과 구분했다. 문서만 수정했으며 AARSettings 공통 모델·Fixture·테스트는 아직 미구현이다. 기존 169개 테스트 기록은 AARSettings 검증을 포함하지 않으며 팀 승인·노션 기록을 완료 처리하지 않았다.
 - 2026-10-10: 계약 규칙을 이 문서에 모으고 #20 작업 기록의 필드·상태·검증 규칙 중복을 해당 절 참조로 교체했다. 작업 기록에만 있던 임시 Date() 사용 주의사항은 1.4로 옮겼고, 작업 기록에는 구현 위치·실행 결과·남은 작업을 남겼다. 코드·정책·승인 상태는 변경하지 않았다.
+- 2026-10-10: 권장 순서 1~3에 따라 작업 기록을 issue-20-domain-implementation.md로 변경하고 문서 기준을 먼저 커밋했다. AARSettings·AARDisplayMode와 최소 관계 검증·단위 테스트를 구현했다. 완전한 참가자 목록은 호출자 전제로 두고 잘못된 목록·선택의 오류 분류를 명시했다. 기존 관계 Fixture·앱 연결·서버 저장·팀 승인 상태는 변경하지 않았다. 실행 결과는 [#20 AAR 검증 기록](issue-20-domain-implementation.md#aar-모델최소-검증-실행-기록-2026-10-10)을 참고한다.

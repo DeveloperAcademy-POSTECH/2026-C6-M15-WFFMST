@@ -2,7 +2,7 @@
 
 ## 상태와 범위
 
-**세션·대원·기록·영상·보정 요약 구현·자동 검증 완료 / MVP AAR 설정은 문서 기준 정리·코드 미구현 / 팀 승인 전** (2026-10-10). [#20](https://github.com/DeveloperAcademy-POSTECH/2026-C6-M15-WFFMST/issues/20)의 작업 기록이다. 선행 PR #16의 `c46f709`를 기준으로 작업했으며, 팀원 3명 승인·노션 기록은 미완료다.
+**공통 값 모델·최소 검증·단위 테스트 구현 / AAR 관계 Fixture 연결 미완료 / 팀 승인 전** (2026-10-10). [#20](https://github.com/DeveloperAcademy-POSTECH/2026-C6-M15-WFFMST/issues/20)의 작업 기록이다. 선행 PR #16의 `c46f709`를 기준으로 작업했으며, 팀원 3명 승인·노션 기록은 미완료다.
 
 **계약 규칙은 [공통 데이터 계약](shared-data-contract.md) 한 곳에서 관리한다.** 이 문서는 이관 내역·구현 위치·진행 상태·검증 증거만 기록하며 필드 의미·검증 조건·제품 정책을 별도로 정의하지 않는다. 계약 변경 시 기준 문서를 먼저 갱신하고, 이 문서에는 관련 절 링크와 작업 결과를 남긴다.
 
@@ -23,11 +23,11 @@
 | ReconstructionStatus·ReconstructionSummary | ReconstructionAttempt와 [TrackResultSummary](../CQB/Packages/CQBCore/Sources/CQBCore/Models/TrackResultSummary.swift)로 분리·기존 동선 타입 재사용 | [계산 시도와 선택 결과](shared-data-contract.md#계산-시도와-선택-결과) |
 | VideoInfo·VideoChunk | 필드 조정 후 [Video.swift](../CQB/Packages/CQBCore/Sources/CQBCore/Models/Video.swift)에 구현 | [영상 메타데이터](shared-data-contract.md#영상-메타데이터) |
 | 최소 도메인 검증 | [TrainingDomainValidator](../CQB/Packages/CQBCore/Sources/CQBCore/Services/TrainingDomainValidator.swift) 추가 | [#20 공통 구현 경계](shared-data-contract.md#20-공통-구현-경계) |
-| AARSettings | 문서 정리 완료·공통 모델/검증/Fixture/테스트 미구현 | [1.6 AAR 설정](shared-data-contract.md#16-aar-설정) |
+| AARSettings | [AARSettings.swift](../CQB/Packages/CQBCore/Sources/CQBCore/Models/AARSettings.swift)의 모델·enum과 기존 검증기 overload·단위 테스트 추가. 관계 Fixture는 미연결 | [1.6 AAR 설정](shared-data-contract.md#16-aar-설정) |
 
 ## 기존 도메인의 검증 결과
 
-아래 완료 항목은 세션·대원·기록·영상·보정 요약에 대한 기록이다. 아직 미구현인 AARSettings를 검증한 것은 아니다.
+아래 완료 항목은 AARSettings 추가 전 세션·대원·기록·영상·보정 요약에 대한 기록이다. AARSettings 단위 테스트의 실행은 다음 절에서 별도로 기록한다.
 
 - [x] 외부 모듈에서 public 생성자 사용, Codable 왕복·필수/선택 필드·미지원 enum 검사
 - [x] Session → Member → Recording → VideoChunk → 선택된 결과 관계 Fixture
@@ -44,14 +44,24 @@
 다음은 [공통 계약 1.6](shared-data-contract.md#16-aar-설정)에 대응하는 작업 목록이다. 필드·조건·기대 판정은 링크된 계약 절에서만 관리하며, 구현 전 항목을 검증 완료로 표시하지 않는다.
 
 - [x] 필드·식별자·초기 구성·선택 규칙·책임과 제외 범위를 공통 계약에 정리
-- [ ] [목적과 필드](shared-data-contract.md#목적과-필드)에 맞춰 CQBCore 값 타입과 codec 테스트 추가
-- [ ] [최소 정합성 검증과 로딩 경계](shared-data-contract.md#최소-정합성-검증과-로딩-경계)의 조건별 정상·오류 테스트와 검증 구현 추가
+- [x] [목적과 필드](shared-data-contract.md#목적과-필드)에 맞춰 CQBCore 값 타입과 codec 테스트 추가
+- [x] [최소 정합성 검증과 로딩 경계](shared-data-contract.md#최소-정합성-검증과-로딩-경계)의 조건별 정상·오류 테스트와 검증 구현 추가
 - [ ] [초기 구성과 선택 규칙](shared-data-contract.md#초기-구성과-선택-규칙)을 표현하는 관계 Fixture·경계 사례 추가
 - [ ] [책임과 기존 앱 연결](shared-data-contract.md#책임과-기존-앱-연결)에 맞춰 기존 도메인과의 연결을 확인
-- [ ] [포함하지 않는 값](shared-data-contract.md#포함하지-않는-값과-검증-계획)의 필드 혼입 여부 확인
-- [ ] 관련 패키지 테스트·영향받는 앱 타깃 빌드 후 실행 기록 갱신
+- [x] [포함하지 않는 값](shared-data-contract.md#포함하지-않는-값과-검증-계획)의 필드 혼입 여부 확인
+- [x] 관련 패키지 빌드·단위 테스트·전체 회귀 테스트 후 실행 기록 갱신
+- [ ] AAR 관계 Fixture 연결 이후 영향받는 앱 타깃 빌드와 전체 검증 결과 갱신
 
-테스트 추가 후 이 목록에 실제 테스트 파일·실행 결과·미검증 항목을 연결한다. AARSettings 테스트는 아직 없으며, 아래 기존 실행 기록에 포함되지 않는다.
+### AAR 모델·최소 검증 실행 기록 (2026-10-10)
+
+사용자가 요청한 권장 순서 1~3까지 수행했다. 문서 파일명·링크 정리와 계약 기준은 `ccad8c6`으로 먼저 커밋한 뒤 모델·검증·단위 테스트를 추가했다.
+
+- [AARSettingsTests](../CQB/Packages/CQBCore/Tests/CQBCoreTests/AARSettingsTests.swift) **11개 통과**. `@testable` 없이 공개 API를 소비한다. 생성·필수 필드·미지원 값·집합 codec, 정상/오류 참조, 인원 경계, 검증 시 입력 보존을 확인했다. 기대 판정의 기준은 1.6이다.
+- `swift build --package-path CQB/Packages/CQBCore` 성공.
+- `swift test --package-path CQB/Packages/CQBCore --filter AARSettingsTests` 성공.
+- `swift test --package-path CQB/Packages/CQBCore`: **180개 통과**(Core 171개 + Fixtures 9개, 기존 빈 example 1개 포함). 기존 169개에 AAR 단위 테스트 11개를 추가했다.
+- 새 테스트 내부에서 작은 Session·Member 값을 직접 생성했다. 기존 `TrainingDomainFixture`·`CQBFixtures` 리소스는 수정하지 않았으며 기록·선택 결과까지 포함한 AAR 관계 Fixture 연결은 다음 단계다.
+- 이번 추가 후 MemberApp·InstructorApp 빌드와 UI/실기기 실행은 하지 않았다. 모드 전환·거부 시 앱 상태 보존을 실행한 것이 아니라 값 표현과 순수 검증만 확인했다.
 
 ## 기존 도메인의 실행 기록 (2026-10-10)
 
@@ -64,7 +74,7 @@
 
 ## 남은 확인과 검증 한계
 
-- AARSettings 공통 모델·순수 검증·관계 Fixture·테스트 구현과 추가 검증이 남아 있다. 문서 기준 정리는 코드 구현이나 팀 승인 완료를 의미하지 않는다.
+- AARSettings의 기존 관계 Fixture 연결, 통합 검증과 양쪽 앱 빌드가 남아 있다. 값 모델·단위 테스트 완료는 전체 이슈나 팀 승인 완료를 의미하지 않는다.
 - 팀원 3명 승인·노션 동기화, 양쪽 앱/Firebase 담당자의 필드 사용 확인 및 진행 중인 도메인 작업과의 중복 확인은 자동 완료 처리하지 않았다.
 - 담당자 확인 기준: [1.2 세션](shared-data-contract.md#12-세션), [1.3 대원과 준비 상태](shared-data-contract.md#13-대원과-준비-상태), [1.4 기록](shared-data-contract.md#14-기록), [1.6 AAR 설정](shared-data-contract.md#16-aar-설정), [2.1 변환 규칙](shared-data-contract.md#21-변환-규칙). 확인 결과와 이견은 이 작업 기록에 남기되 규칙 변경은 공통 계약에 반영한다.
 - 실제 앱 View/Store 주입·두 기기 통신·업로드·준비 판정·시계 동기화·영상/V13 이관은 이번 검증에 포함하지 않는다. 상태 snapshot 테스트는 실제 실행 정책을 검증한 것이 아니다.
