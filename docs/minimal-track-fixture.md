@@ -8,6 +8,8 @@
 
 샘플 JSON·바이트 보존 로더에 이어 **공통 좌표/시간 변환, schema 1 동선 문서 검증, 가짜 발행/선택/조회 서비스**의 소비 테스트를 작성했다. 실제 V13 어댑터·앱 연결·Firebase는 없다. 기존 `fixtureFormatVersion`은 **샘플 전용 형식 버전**이며 새 저장 문서의 `schemaVersion`이나 V13 v15와 별개다. 공통 타입/enum과 제한은 [계약 1.5의 검토용 구현안](shared-data-contract.md#동선-schema-1-검토용-구현안)을 따른다. 구현은 팀 승인을 대신하지 않는다.
 
+**PR #16 리뷰 반영:** 정적 6개 샘플 파일은 그대로 유지한다. 메모리 변환 결과에는 필수 `sampleCoverage`와 미해결 진단의 원본 `samples` 인덱스 범위를 추가한다. 시간-only 표현은 같은 시각의 샘플을 식별할 수 없으므로 현재 공통 파일을 대신하지 않는다. 실제 V13의 연결 미확인 진단·초기 위치 확보 사례는 별도 합성 회귀 테스트로 확인하며, 아래 과거 실행 기록을 이번 변경의 통과 기록으로 재사용하지 않는다.
+
 ## 파일과 읽기
 
 위치: [CQBFixtures/Resources/Tracks/minimal-v1](../CQB/Packages/CQBCore/Sources/CQBFixtures/Resources/Tracks/minimal-v1)
@@ -65,8 +67,8 @@ normal의 `selected = 2`는 **이미 선택된 경로의 전달/복원**을 검�
 원본 6개 중 위치가 있는 것은 4개이고, 그 4개에 해당하는 선택 결과가 있다. 이 샘플의 유효 샘플 처리 비율은 **4/4 = 100%**다. 그러나 위치가 없는 인덱스 2·3 때문에 결과 상태는 partial이다. 내부 V13 완료율이나 점수를 수정하지 않는다.
 
 - 0→1, 4→5는 연결 가능. **1→4 연결 금지**.
-- solver snapshot은 재개 인덱스 4 하나에만 연결 미확인 사유를 남긴다. 단순 인덱스→시간 변환만으로는 실제 누락 시간을 표현하지 못함을 보여준다.
-- 기대하는 미해결 시간은 마지막 유효점과 복구점 사이 **세션 (1.4,4.4)초**다. 끝점 자체에는 위치가 있으므로 양 끝은 제외한다.
+- 손으로 작성한 solver snapshot은 재개 인덱스 4 하나에만 연결 미확인 사유를 남긴다. 실제 누락 인덱스 2·3과 ‘좌표는 있지만 이전 연결을 모르는’ 복구점 4는 다른 정보다.
+- 정적 expected의 표시용 미해결 시간은 마지막 유효점과 복구점 사이 **세션 (1.4,4.4)초**다. 현재 공통 문서 변환에서는 이 표시를 `samples: 1...4`인 합성 진단으로 표현하고, 실제 좌표 미해결 여부는 coverage의 `2...3 → nil`로 분리한다. 시간의 열린 끝점이 samples의 양 끝 포함 규칙을 바꾸지 않는다. 이 bridge는 일반 V13 어댑터가 아니며 없는 원문 sourceReason을 만들어 넣지 않는다.
 - 서로 다른 part를 유지하며 원점은 동일하다. 새 AR 원점 복구나 자동 재정렬을 검증하지 않는다.
 
 ### 탐색 제한: 경로가 있으므로 실패로 바꾸지 않음
@@ -81,10 +83,10 @@ normal의 `selected = 2`는 **이미 선택된 경로의 전달/복원**을 검�
 
 아래는 검토를 위해 명시한 가정이며 추가 공통 정책의 자동 승인이 아니다.
 
-- `bounds`: `()` 양 끝 제외, `(]` 시작 제외/끝 포함, `[]` 양 끝 포함. 새 schema 1 구현안도 이 의미를 사용하고 `[)`를 추가로 지원한다. 팀 승인 전 표현이다.
+- `bounds`: `()` 양 끝 제외, `(]` 시작 제외/끝 포함, `[]` 양 끝 포함. 현재 schema 1 구현안도 표시 시간에 이 의미를 사용하고 `[)`를 추가로 지원한다. 원본 인덱스 범위는 항상 양 끝 포함이며 bounds와 무관하다. 팀 승인 전 표현이다.
 - `missingSampleIndices`는 원본 위치 없음뿐 아니라 **전달 결과에서 위치를 제공하지 못하는 인덱스**를 뜻한다. 탐색 제한·이동량 부족도 포함한다.
 - `validSampleCoverage`는 이 작은 샘플에서 대응 결과가 있는 유효 원본 샘플 비율이다. 실제 V13은 희소 vertices와 보간 samplePoints가 다르므로 운영 코드에서 vertices 수로 완료율을 계산하지 않는다.
-- 이 샘플의 ‘사용 가능한 경로’는 같은 part에 서로 다른 위치의 두 점 이상이 있는 경우다. 단일 점·시간 중복·복잡한 범위 겹침·복수 기록 정렬 등 일반 기준을 확정하지 않는다.
+- 이 샘플의 ‘사용 가능한 경로’는 같은 part에 서로 다른 위치의 두 점 이상이 있는 경우다. 시간 중복·진단 겹침은 [공통 계약 1.5](shared-data-contract.md#동선-schema-1-검토용-구현안)와 아래 별도 회귀 사례를 따른다. 이 네 정적 파일만으로 단일 점·복수 기록 정렬 등의 일반 지원을 증명하지 않는다.
 - algorithm/version과 실제 실행 설정을 위조하지 않기 위해 `source = hand-authored-selected-candidate-snapshots-not-v13-execution`을 사용한다. schema 1 변환 결과에도 `hand-authored-not-v13-execution`과 `minimal-v1`을 기록한다.
 - 원본 JSON의 공백·줄바꿈까지 포함한 SHA-256을 expected에 고정한다. 재인코딩 fingerprint를 원본 파일 hash로 대신하지 않는다.
 
@@ -123,7 +125,18 @@ expected의 publicationExamples는 **수동 입력/기대값 표**다. 파일 �
 
 ## 저장 모델·가짜 서비스로 소비하는 단계
 
-[TrackContractFixture](../CQB/Packages/CQBCore/Sources/CQBFixtures/TrackContractFixture.swift)는 기존 6개 샘플 파일을 읽어 `RawTrackDocument`/`TrackResultDocument`를 메모리에 만든다. 파일을 덮어쓰지 않는다. 기대 좌표·시간·상태·범위는 기존 수동 기대값에서 가져오며, 원본 hash만 새 schema 1 바이트로 다시 계산한다. 원본 검토 샘플의 hash를 새 파일 hash로 재사용하지 않는다.
+[TrackContractFixture](../CQB/Packages/CQBCore/Sources/CQBFixtures/TrackContractFixture.swift)는 기존 6개 샘플 파일을 읽어 `RawTrackDocument`/`TrackResultDocument`를 메모리에 만든다. 파일을 덮어쓰지 않는다. 기대 좌표·시간·상태는 기존 수동 기대값에서 가져오고, 원본 인덱스별 미해결 기대값과 선택 경로에 대응하는 coverage·진단 samples를 추가한다. 원본 hash는 새 schema 1 바이트로 다시 계산하며 원본 검토 샘플의 hash를 새 파일 hash로 재사용하지 않는다. 이 bridge는 네 합성 사례 전용이며 실제 V13 결과의 일반 변환기는 아니다.
+
+아래 범위는 모두 **0-based·양 끝 포함**이다. 원본 샘플 범위와 결과 정점 범위를 혼동하지 않는다.
+
+| 사례 | 원본 samples → 결과 vertices coverage |
+| --- | --- |
+| normal | `0...2 → 0...2` |
+| tracking-gap | `0...1 → 0...1`, `2...3 → nil`, `4...5 → 2...3` |
+| search-limit | `0...1 → 0...1`, `2...3 → nil` |
+| insufficient-movement | `0...1 → nil` |
+
+예를 들어 tracking-gap의 결과 정점 2는 원본 샘플 4에 대응한다. 진단이 해결된 양 끝을 포함하거나 같은 시각의 정상 점과 겹쳐도 이 coverage는 바뀌지 않는다. 희소·생성 정점이 있는 일반 결과에서는 정점 개수나 선택적 sampleIndex만으로 위 대응을 추론하지 않는다.
 
 ```swift
 let rawBytes = try TrackContractFixture.rawJSON(.trackingGap)
@@ -135,6 +148,8 @@ let result = try TrackDocumentValidator.result(resultBytes, raw: raw, floorPlan:
 `validatedMap`은 normal-v1을 기존 FloorPlanValidator/CQBImageIO로 검증한 값이다. 이 호출은 알고리즘을 실행하지 않는다.
 
 - [TrackDocumentTests](../CQB/Packages/CQBCore/Tests/CQBCoreTests/TrackDocumentTests.swift): 4개 사례의 왕복, 정확한 바이트 hash, 미지원 버전/enum, 잘못된 원점/추적/시간/segment, 도면/원본 불일치, 단절 연결, 희소/생성 점, 결과 상태/미해결 범위, 취소를 검사한다.
+- [TrackIndexCoverageTests](../CQB/Packages/CQBCore/Tests/CQBCoreTests/TrackIndexCoverageTests.swift): 같은 시각의 서로 다른 원본 인덱스, 처리 범위와 진단 분리, V13식 복구점/해결 끝점 진단·원문 보존, 잘못된 coverage와 연결을 검사한다. 실제 V13 실행 대신 손으로 만든 경계 사례를 사용한다.
+- [TrackRawWarmupTests](../CQB/Packages/CQBCore/Tests/CQBCoreTests/TrackRawWarmupTests.swift): 초기 nil 뒤 최초 위치 확보와 기록 중 추적 복구를 구분하고 원본 보존·기존 검증 조건 유지를 검사한다.
 - [TrackResultRepositoryTests](../CQB/Packages/CQBCore/Tests/CQBCoreTests/TrackResultRepositoryTests.swift): 원본 미확인·staged 비공개·최초 partial 선택·기존 선택 유지·응답 유실/중복 재시도·조건부 선택/과거 재시도·권한 회수·동시 발행·객체 해제를 검사한다.
 - `seedSession`/`confirmRaw`는 테스트 조립용으로만 사용한다. 교관/대원 역할의 클라이언트는 같은 actor 저장소를 공유하며 기기 간 통신은 하지 않는다.
 - 저장 형식, 최소 usable 기준, 권한, 오류, 지원 한도의 단일 기준은 [공통 계약 1.5](shared-data-contract.md#동선-schema-1-검토용-구현안)다. 기존 문서의 초안 `RawTrack`/`Reconstruction` 전체를 구현한 것은 아니다.
@@ -148,6 +163,7 @@ node scripts/check-minimal-track-fixture.mjs
 swift test --package-path CQB/Packages/CQBCore --filter MinimalTrackFixtureTests
 swift test --package-path CQB/Packages/CQBCore --filter TrackCoordinateTests
 swift test --package-path CQB/Packages/CQBCore --filter 'TrackDocumentTests|TrackResultRepositoryTests'
+swift test --package-path CQB/Packages/CQBCore --filter 'TrackIndexCoverageTests|TrackRawWarmupTests|TrackDiscontinuityTests'
 ```
 
 - [읽기 전용 검사](../scripts/check-minimal-track-fixture.mjs): 도면/원본 hash, 4개 사례의 좌표·시간·상태·원본 대응·연결 쌍, 공개 기대값 6개를 확인한다.
@@ -159,7 +175,43 @@ swift test --package-path CQB/Packages/CQBCore --filter 'TrackDocumentTests|Trac
 
 문서·코드·이슈 범위의 기술 대조를 마쳤다. 다음은 schema 1의 제한/필드·권한을 담당자가 검토하고 동일 Fixture 해석을 확인하는 것이다. 팀 승인은 여전히 필요하다. V13 어댑터·실기기 회귀·Firebase 구현은 별도이며 현재 단계만으로 #14를 완료 처리하지 않는다.
 
+### PR #16 리뷰 반영 검증 기준
+
+이번 변경은 V13의 보정 계산을 바꾸는 것이 아니라 **원본 처리 범위·미해결 진단의 전달과 공통 검증**을 바꾸는 것이다. sampleCoverage와 진단 samples가 없는 이전 결과 JSON은 새 decoder가 거부한다. 승인 전 schema 1 수정이므로 양쪽 앱을 같은 계약 리비전으로 맞춰야 하며, 기존 파일을 몰래 재작성하거나 hash를 재사용하지 않는다.
+
+| 사례 | 기대 결과 |
+| --- | --- |
+| 같은 시각의 정상 샘플 1과 미해결 샘플 2 | 인덱스로 구분. 2의 `[t,t]` 진단 때문에 1의 정상 좌표를 거부하지 않음 |
+| 같은 시각에서 segment/part 분리 | 경계 양쪽 정상 정점 보존. 시간값이 같다는 이유로 연결하거나 거부하지 않음 |
+| 복구점 4에 정상 좌표 + V13식 `4...4` 연결 미확인 진단 | 새 part의 좌표와 명시된 원문 sourceReason을 함께 보존. raw nil 2·3의 미해결 coverage·진단은 별도로 유지 |
+| 탐색 실패 진단이 마지막 해결 끝점을 포함 | 좌표와 진단의 공존 허용. 진단 범위를 좌표 없음으로 오해하지 않음 |
+| 희소 정점·생성 정점·nil/반복 sampleIndex | 명시적 coverage로 대응하고 원래 좌표·시간·순서·part 보존 |
+| part 번호가 0 → 1 → 0 순서로 재사용 | 세 구간 보존. 앞뒤 0을 그룹화하거나 연결하지 않음 |
+| coverage 누락·중복·잘못된 정점 범위·범위 밖 진단 | 잘못된 결과 거부. 희소한 정상 경로 허용과 전체 처리 범위 누락 허용을 혼동하지 않음 |
+| raw nil/segment 변경/미해결 coverage를 같은 part로 연결 | 계속 거부하며 발행·최초 선택에도 사용하지 않음 |
+| 초기 nil 하나 또는 여러 개 → 최초 정상 위치, 같은 segment | raw 허용·원본 바이트/hash 보존. 초기 빈 구간은 해결로 바꾸지 않음 |
+| 정상 → nil → 정상, 같은 segment | 중간 복구이므로 계속 거부. 증가한 segment는 허용 |
+
+이 사례들은 손으로 구성한 회귀 입력이며 실제 V13 계산 결과라고 표시하지 않는다. 원본에 없는 자유 문자열을 V13 사유처럼 생성하지 않으며, 일반 V13 어댑터 구현은 후속이다. 아래 실제 실험은 **단절 없는 정상 선택 경로**의 보존을 확인하는 별도 자료이므로 이 경계 사례를 대신 증명하지 않는다.
+
+기존 PoC의 준비 완료 후 캡처 시작·첫 정상 샘플 생성, 원점·시작 방향 필수 조건은 유지한다. 검증기의 초기 nil 허용을 준비 중 샘플 기록 의무나 정렬 실패 raw 허용으로 해석하지 않는다. 아래 이번 실행 결과와 그 뒤의 이전 검증 이력을 구분한다.
+
+### PR #16 리뷰 반영 실행 결과 (2026-10-10)
+
+- `swift test --package-path CQB/Packages/CQBCore`: **134개 통과**(Core 125개 + Fixtures 9개, 기존 빈 example 1개 포함). 인덱스 회귀 16개·초기 준비 회귀 9개를 추가했으며 기존 다중 단절 6개·Float·발행/선택·캐시 회귀도 통과했다.
+- 같은 시간의 해결/미해결 샘플, 복구점의 정상 좌표와 진단 공존, 진단 겹침/원문, 희소·생성 정점, codec→발행→응답 유실 재시도→교관 조회에서 좌표·시간·part·인덱스·바이트 보존을 확인했다.
+- `correctedSample`로 명시한 첫/끝 정점은 같은 시간이어도 다른 원본 인덱스까지 coverage를 확장할 수 없음을 확인했다. generated/unspecified의 nil·반복 sampleIndex는 그대로 허용한다. coverage 누락·중복, Int.min/Int.max 인덱스, 잘못된 참조/표시 시간을 거부한다.
+- 최초 nil 뒤 동일 segment의 첫 정상 위치를 허용하고, 초기 빈 구간은 결과에서 미해결로 유지하며 done으로 숨길 수 없음을 확인했다. 전체 위치 없음은 usable 결과가 아니며 중간 복구의 segment 증가 규칙은 유지한다.
+- MemberApp / InstructorApp: `generic/platform=iOS Simulator`, `CODE_SIGNING_ALLOWED=NO` 빌드 모두 성공. UI·실기기 실행 검증은 아니다.
+- `node scripts/check-minimal-track-fixture.mjs`: 기존 4개 사례·공개 기대값 6개·변형 검사 6개 통과. 정적 샘플 파일을 재작성하지 않았다.
+- 실제 실험을 수정하지 않은 V13으로 **2회 재실행**했다. 원본 1,090샘플의 기존 선택 후보 대응 보정점 최대 차이 **0px**, 선택 경로 **270점**의 codec 좌표·시간·part·sampleIndex·경고 및 새 coverage 보존을 확인했다. 전달 변조 검사 4개(좌표·시간·part·coverage)도 탐지했다.
+- 실제 실험의 전체 공통 validator는 기존과 같이 PNG의 투명 픽셀로 `invalidImage`에서 중단된다. 이 결과를 전체 계약 호환 통과로 표시하지 않는다. firstWalk 실험을 cameraAtStart로 전환하지 않았고 보정 코어·후보 선택·실험 입력도 변경하지 않았다.
+
+검증기는 생산자가 명시한 coverage의 구조·참조·단절을 검사한다. 보정기의 `samplePoints`를 재계산하여 그 주장의 진실성까지 증명하지는 않는다. 실제 어댑터 이관 때에는 전체 `samplePoints`의 가용성과 압축 coverage가 일치하는지 대조해야 한다. 현재 실제 실험 도구는 정상·무단절 한 경로만 지원하며, 일반 어댑터 구현·팀 승인·노션 동기화 완료를 뜻하지 않는다.
+
 ### 실행한 검증 (2026-10-10)
+
+**PR #16 리뷰 반영 이전 검증 이력.** 다음 테스트 수와 실행 결과는 당시 코드의 기록이며, 현재 수정의 재실행 결과를 대신하지 않는다.
 
 - 읽기 전용 샘플 검사: 사례 4개·공개/선택 기대값 6개·변형 검사 6개 통과.
 - 패키지 전체: 의미 있는 테스트 98개와 기존 빈 example 1개 통과(CQBFixturesTests 9개 + CQBCoreTests 90개). 공통 변환 13개, 문서 검증 14개, 단절 회귀 6개, Float 회귀 7개, 동선 repository 13개 포함.
@@ -169,6 +221,8 @@ swift test --package-path CQB/Packages/CQBCore --filter 'TrackDocumentTests|Trac
 - 위 합성 Fixture 검증에는 실제 V13 실행을 포함하지 않는다. 별도로 수행한 실제 자료 재실행은 아래 추가 검증을 참고한다. 실기기·Firebase 서비스·팀 승인 검증은 수행하지 않았으며 가짜 서비스 해제 검사는 장시간 Instruments 측정을 대신하지 않는다.
 
 ### 다중 단절 검사 수정 검증 (2026-10-10)
+
+**시간 기반 검증기 수정 당시의 이력이다.** 아래 보수적 길이 0 판정과 O(B+V) 설명은 당시 구현에 한정한다. PR #16 반영 후에는 원본/정점 인덱스 coverage로 단절을 구분하므로, 정상적으로 분리된 경계 정점이 같은 시각이라는 이유만으로 거부하지 않는다. 단절을 실제로 연결하는 잘못된 경로를 거부한다는 목적은 유지한다.
 
 원인은 검사 위치가 **이전 단절의 복구 시각과 현재 선분 시작 시각이 같을 때** 이전 단절에 머무는 것이었다. 예를 들어 raw 단절이 (1.4, 2.4), (3.4, 4.4)이고 결과 선분이 2.4→4.4이면, 첫 단절은 더 이상 겹치지 않지만 두 번째 단절을 검사하지 않고 통과시켰다.
 
@@ -222,6 +276,8 @@ swift test --package-path CQB/Packages/CQBCore
 ## 추가 검증: 실제 PoC 실험 회귀 (2026-10-10)
 
 위 minimal-v1 합성 테스트와 별도로 실제 실험을 사용했다. **앱 보정기 이관이나 실기기 실행은 아니다.** 외부 floorplanPoC 소스를 수정 없이 임시 CLI에 컴파일해 기존 입력으로 재실행한다. 사용자 원본 파일과 93MiB 규모 Plans.zip은 저장소/앱 리소스에 복사하지 않았다.
+
+이 절의 아래 수치는 기존 실행 이력이다. PR #16의 새 결과 표현을 검증할 때도 외부 V13 소스·실험 입력은 바꾸지 않고 변환/codec만 새 계약에 맞춘다. 정상 실험 전체의 해결 coverage가 추가되더라도 원본 샘플 수와 선택 정점 수를 억지로 일치시키지 않는다. 같은 시각·단절·초기 nil 검증은 위 합성 회귀 테스트의 역할이다.
 
 ### 재실행
 

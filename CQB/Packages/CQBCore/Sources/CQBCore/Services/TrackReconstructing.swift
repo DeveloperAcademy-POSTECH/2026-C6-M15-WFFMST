@@ -4,6 +4,9 @@ import Foundation
 /// this protocol does not authorize an upload or a change to the selected result.
 /// Check raw/map references before work, preserve the raw, and propagate cancellation.
 /// Return a new result ID for recalculation. Validate encoded output before publication.
+/// Derive explicit sampleCoverage from the chosen solver result, preserving its
+/// diagnostics independently. Do not infer coverage/provenance from times or
+/// vertex counts, and do not change coordinates to satisfy transfer validation.
 public protocol TrackReconstructing: Sendable {
     func reconstruct(raw: ValidatedRawTrack, floorPlan: ValidatedFloorPlan,
                      resultID: UUID) async throws -> TrackResultDocument

@@ -88,14 +88,50 @@ public enum TrackResultWarning: String, Codable, Sendable {
     case headingAmbiguous
 }
 
+/// Inclusive, zero-based indices into the exact source raw's samples array.
+public struct TrackSampleRange: Codable, Equatable, Sendable {
+    public var from: Int
+    public var through: Int
+    public init(from: Int, through: Int) { self.from = from; self.through = through }
+}
+
+/// Inclusive indices into this result's vertices, not source sample indices.
+public struct TrackVertexRange: Codable, Equatable, Sendable {
+    public var from: Int
+    public var through: Int
+    public init(from: Int, through: Int) { self.from = from; self.through = through }
+}
+
+/// An ordered partition of the raw samples. A nil vertex range means no
+/// corrected position; a non-nil range identifies the continuous route run
+/// representing those samples. Sparse/generated vertices are not sample counts.
+public struct TrackSampleCoverage: Codable, Equatable, Sendable {
+    public var samples: TrackSampleRange
+    public var vertices: TrackVertexRange?
+    public init(samples: TrackSampleRange, vertices: TrackVertexRange?) {
+        self.samples = samples; self.vertices = vertices
+    }
+}
+
+/// A solver/capture diagnostic, NOT an assertion that every included sample
+/// lacks coordinates. V13 can report a solved endpoint or a resume index here.
+/// Ranges may overlap and retain producer order. Times/bounds are for display;
+/// samples identifies the affected source range even when timestamps coincide.
 public struct TrackUnresolvedInterval: Codable, Equatable, Sendable {
     public var from: Double
     public var to: Double
     public var bounds: TrackIntervalBounds
     public var reason: TrackUnresolvedReason
-    public init(from: Double, to: Double, bounds: TrackIntervalBounds, reason: TrackUnresolvedReason) {
+    public var samples: TrackSampleRange
+    /// Preserve an explicit solver explanation; never invent one from geometry.
+    public var sourceReason: String?
+    public init(from: Double, to: Double, bounds: TrackIntervalBounds, reason: TrackUnresolvedReason,
+                samples: TrackSampleRange, sourceReason: String? = nil) {
         self.from = from; self.to = to; self.bounds = bounds; self.reason = reason
+        self.samples = samples; self.sourceReason = sourceReason
     }
+    /// Display-time containment only. Never use this to identify raw samples or
+    /// reject a solved vertex: different source indices may have the same time.
     public func contains(_ time: Double) -> Bool {
         (time > from || (time == from && bounds.includesStart)) &&
         (time < to || (time == to && bounds.includesEnd))
@@ -132,22 +168,24 @@ public struct TrackResultDocument: Codable, Equatable, Sendable {
     public var algorithm: TrackAlgorithmIdentity
     public var status: TrackResultStatus
     public var vertices: [TrackResultVertex]
+    public var sampleCoverage: [TrackSampleCoverage]
     public var unresolvedIntervals: [TrackUnresolvedInterval]
     public var searchIncomplete: Bool
     public var warnings: [TrackResultWarning]
     public var failureReason: TrackUnresolvedReason?
     public init(identity: TrackIdentity, resultID: UUID, floorPlan: FloorPlanReference, sourceRawSHA256: String,
                 algorithm: TrackAlgorithmIdentity, status: TrackResultStatus, vertices: [TrackResultVertex],
+                sampleCoverage: [TrackSampleCoverage],
                 unresolvedIntervals: [TrackUnresolvedInterval], searchIncomplete: Bool,
                 warnings: [TrackResultWarning], failureReason: TrackUnresolvedReason? = nil) {
         self.identity = identity; self.resultID = resultID; self.floorPlan = floorPlan
         self.sourceRawSHA256 = sourceRawSHA256; self.algorithm = algorithm; self.status = status
-        self.vertices = vertices; self.unresolvedIntervals = unresolvedIntervals
+        self.vertices = vertices; self.sampleCoverage = sampleCoverage; self.unresolvedIntervals = unresolvedIntervals
         self.searchIncomplete = searchIncomplete; self.warnings = warnings; self.failureReason = failureReason
     }
 }
 
 public enum TrackValidationError: Error, Equatable, Sendable {
     case invalidJSON, unsupportedSchema(Int), referenceMismatch, rawHashMismatch
-    case invalidRaw, invalidResult, invalidInterval, invalidStatus, disconnectedPath
+    case invalidRaw, invalidResult, invalidInterval, invalidCoverage, invalidStatus, disconnectedPath
 }

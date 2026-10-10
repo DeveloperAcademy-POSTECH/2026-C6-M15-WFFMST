@@ -18,6 +18,10 @@ import CQBCore
             try require(before.part == after.part && before.sampleIndex == after.sampleIndex && before.time + offset == after.t,
                 "Part/index/time changed during contract round trip")
         }
+        try require(result.sampleCoverage == [.init(
+            samples: .init(from: 0, through: chosen.samplePoints.count - 1),
+            vertices: .init(from: 0, through: chosen.vertices.count - 1))],
+            "Verified complete sample coverage changed during contract round trip")
     }
     static func write(_ value: Any, name: String, output: URL) throws {
         try JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys])
@@ -135,6 +139,8 @@ import CQBCore
             let rawBytes = try TrackDocumentJSON.encode(raw)
             try rawBytes.write(to: output.appendingPathComponent("derived-raw.json"))
             try require(chosen.unresolved.isEmpty && !saved.searchIncomplete &&
+                !record.samples.isEmpty && !chosen.vertices.isEmpty &&
+                chosen.samplePoints.count == record.samples.count && chosen.samplePoints.allSatisfy { $0 != nil } &&
                 record.samples.allSatisfy { $0.relativeMeters != nil } && Set(chosen.vertices.map(\.part)).count == 1,
                 "Harness currently supports this complete, uninterrupted experiment only")
             let timeline = try TrackTimeline.sessionTimeline(from: chosen.vertices.map {
@@ -146,7 +152,11 @@ import CQBCore
                 algorithm: .init(name: saved.algorithm, version: "unspecified-in-export",
                     settingsID: "legacy-experiment-sha256:" + experimentHash), status: .done,
                 vertices: timeline.vertices.map { .init(t: $0.sessionTime, point: $0.point, part: $0.part,
-                    sampleIndex: $0.sampleIndex, provenance: .unspecified) }, unresolvedIntervals: [],
+                    sampleIndex: $0.sampleIndex, provenance: .unspecified) },
+                // Complete samplePoints and a single uninterrupted part were checked above.
+                // This is not a generic V13 coverage inference from sparse vertices or times.
+                sampleCoverage: [.init(samples: .init(from: 0, through: record.samples.count - 1),
+                    vertices: .init(from: 0, through: timeline.vertices.count - 1))], unresolvedIntervals: [],
                 searchIncomplete: saved.searchIncomplete,
                 warnings: saved.initialHeadingSearch?.ambiguous == true ? [.headingAmbiguous] : [])
             let resultBytes = try TrackDocumentJSON.encode(result)
@@ -160,18 +170,20 @@ import CQBCore
                 decoded.warnings.contains(.headingAmbiguous) == (saved.initialHeadingSearch?.ambiguous == true),
                 "Explicit heading ambiguity was lost during contract round trip")
             report["headingWarningPreserved"] = true
+            report["sampleCoveragePreserved"] = true
             report["mappedWarnings"] = decoded.warnings.map(\.rawValue)
             var rejectedMutations = 0
-            for mutation in 0..<3 {
+            for mutation in 0..<4 {
                 var changed = decoded
                 if mutation == 0 {
                     changed.vertices[0].point = .init(x: changed.vertices[0].point.x * scale, y: changed.vertices[0].point.y)
                 } else if mutation == 1 { changed.vertices[0].t += offset }
-                else { changed.vertices[0].part += 1 }
+                else if mutation == 2 { changed.vertices[0].part += 1 }
+                else { changed.sampleCoverage = [] }
                 do { try assertPreserved(chosen, changed, offset: offset) }
                 catch { rejectedMutations += 1 }
             }
-            try require(rejectedMutations == 3, "Regression guard failed to detect scale/time/part mutation")
+            try require(rejectedMutations == 4, "Regression guard failed to detect scale/time/part/coverage mutation")
             report["rejectedTransferMutations"] = rejectedMutations
             report["resultCodecRoundTrip"] = "passed (not full validation)"
             report["transferMaximumDisplacementPixels"] = differences.max()!
@@ -236,7 +248,7 @@ import CQBCore
         // Full-contract rejection is a diagnostic finding, not silently waived.
         // Exit 0 means replay + transfer preserved; inspect contractProbeFailure.
         try require(replayPassed && report["transferTimeAndPartsPreserved"] as? Bool == true &&
-            report["headingWarningPreserved"] as? Bool == true,
+            report["headingWarningPreserved"] as? Bool == true && report["sampleCoveragePreserved"] as? Bool == true,
             "Regression: saved selected result or contract codec transfer changed; inspect report.json")
     }
 }

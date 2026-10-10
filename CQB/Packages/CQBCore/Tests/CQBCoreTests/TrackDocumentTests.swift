@@ -130,7 +130,7 @@ struct TrackDocumentTests {
             try TrackDocumentValidator.result(TrackDocumentJSON.encode(result), raw: raw, floorPlan: map)
         }
         result.unresolvedIntervals = []
-        #expect(throws: TrackValidationError.disconnectedPath) {
+        #expect(throws: TrackValidationError.invalidCoverage) {
             try TrackDocumentValidator.result(TrackDocumentJSON.encode(result), raw: raw, floorPlan: map)
         }
     }
@@ -140,8 +140,10 @@ struct TrackDocumentTests {
         let raw = try TrackDocumentValidator.raw(TrackContractFixture.rawJSON(.normal), floorPlan: map)
         var result = try TrackContractFixture.resultDocument(.normal)
         result.vertices.remove(at: 1)
+        result.sampleCoverage[0].vertices?.through = 1
         _ = try TrackDocumentValidator.result(TrackDocumentJSON.encode(result), raw: raw, floorPlan: map)
         result.vertices.insert(.init(t: 1, point: .init(x: 115, y: 125), part: 0, sampleIndex: nil, provenance: .generated), at: 1)
+        result.sampleCoverage[0].vertices?.through = 2
         _ = try TrackDocumentValidator.result(TrackDocumentJSON.encode(result), raw: raw, floorPlan: map)
         result.vertices[1].provenance = .correctedSample
         #expect(throws: TrackValidationError.invalidResult) {
@@ -172,15 +174,16 @@ struct TrackDocumentTests {
         }
     }
 
-    @Test func missingCoverageAndOverlappingIntervalsAreRejected() throws {
+    @Test func missingCoverageAndMismatchedDiagnosticTimesAreRejected() throws {
         let map = try contractTrackMap()
         let raw = try TrackDocumentValidator.raw(TrackContractFixture.rawJSON(.searchLimit), floorPlan: map)
         var result = try TrackContractFixture.resultDocument(.searchLimit)
-        result.unresolvedIntervals[0].to = 2.4
-        #expect(throws: TrackValidationError.invalidStatus) {
+        result.sampleCoverage.removeLast()
+        #expect(throws: TrackValidationError.invalidCoverage) {
             try TrackDocumentValidator.result(TrackDocumentJSON.encode(result), raw: raw, floorPlan: map)
         }
-        result.unresolvedIntervals.append(result.unresolvedIntervals[0])
+        result = try TrackContractFixture.resultDocument(.searchLimit)
+        result.unresolvedIntervals[0].to = 2.4
         #expect(throws: TrackValidationError.invalidInterval) {
             try TrackDocumentValidator.result(TrackDocumentJSON.encode(result), raw: raw, floorPlan: map)
         }
@@ -195,11 +198,14 @@ struct TrackDocumentTests {
         #expect(checked.document.failureReason == nil && checked.document.vertices.isEmpty)
     }
 
-    @Test func disconnectedPartsNeedAnExplicitTimeGap() throws {
+    @Test func disconnectedPartsNeedAnExplicitIndexDiagnostic() throws {
         let map = try contractTrackMap()
         let raw = try TrackDocumentValidator.raw(TrackContractFixture.rawJSON(.normal), floorPlan: map)
         var result = try TrackContractFixture.resultDocument(.normal)
         result.vertices[2].part = 1
+        result.sampleCoverage = [
+            .init(samples: .init(from: 0, through: 1), vertices: .init(from: 0, through: 1)),
+            .init(samples: .init(from: 2, through: 2), vertices: .init(from: 2, through: 2))]
         #expect(throws: TrackValidationError.invalidInterval) {
             try TrackDocumentValidator.result(TrackDocumentJSON.encode(result), raw: raw, floorPlan: map)
         }

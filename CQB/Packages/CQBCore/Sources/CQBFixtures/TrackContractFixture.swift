@@ -34,11 +34,47 @@ public enum TrackContractFixture {
             vertices: expected.vertices.map {
                 TrackResultVertex(t: $0.t, point: ImagePoint(x: $0.x, y: $0.y), part: $0.part,
                     sampleIndex: $0.sampleIndex, provenance: $0.provenance)
-            }, unresolvedIntervals: expected.unresolvedIntervals, searchIncomplete: example == .searchLimit,
+            }, sampleCoverage: coverage(for: example),
+            unresolvedIntervals: try expected.unresolvedIntervals.map { interval in
+                guard let samples = diagnosticRange(for: example) else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                return TrackUnresolvedInterval(from: interval.from, to: interval.to,
+                    bounds: interval.bounds, reason: interval.reason, samples: samples)
+            }, searchIncomplete: example == .searchLimit,
             warnings: expected.warnings, failureReason: expected.failureReason)
     }
 
     public static func resultJSON(_ example: Case) throws -> Data { try TrackDocumentJSON.encode(resultDocument(example)) }
+
+    // These are explicit, hand-authored expectations for the unchanged review samples,
+    // not an inference from timestamps or sparse vertices and not a production V13 adapter.
+    // Diagnostic ranges include their known boundary samples; that does not make the
+    // boundary coordinates missing. Coverage alone says which raw indices have a route.
+    private static func coverage(for example: Case) -> [TrackSampleCoverage] {
+        switch example {
+        case .normal:
+            return [.init(samples: .init(from: 0, through: 2), vertices: .init(from: 0, through: 2))]
+        case .trackingGap:
+            return [.init(samples: .init(from: 0, through: 1), vertices: .init(from: 0, through: 1)),
+                .init(samples: .init(from: 2, through: 3), vertices: nil),
+                .init(samples: .init(from: 4, through: 5), vertices: .init(from: 2, through: 3))]
+        case .searchLimit:
+            return [.init(samples: .init(from: 0, through: 1), vertices: .init(from: 0, through: 1)),
+                .init(samples: .init(from: 2, through: 3), vertices: nil)]
+        case .insufficientMovement:
+            return [.init(samples: .init(from: 0, through: 1), vertices: nil)]
+        }
+    }
+
+    private static func diagnosticRange(for example: Case) -> TrackSampleRange? {
+        switch example {
+        case .normal: return nil
+        case .trackingGap: return .init(from: 1, through: 4)
+        case .searchLimit: return .init(from: 1, through: 3)
+        case .insufficientMovement: return .init(from: 0, through: 1)
+        }
+    }
 
     private struct RawExample: Decodable {
         let sessionID: UUID; let memberID: UUID; let recordingID: UUID
@@ -46,13 +82,19 @@ public enum TrackContractFixture {
         let startPose: TrackStartPose; let samples: [TrackRawSample]
     }
     private struct Expectations: Decodable {
+        // The original fixture has its own review format, not the current wire schema.
+        // Keep decoding it separately so contract changes do not rewrite fixture bytes/hashes.
+        struct DisplayInterval: Decodable {
+            let from: Double; let to: Double; let bounds: TrackIntervalBounds
+            let reason: TrackUnresolvedReason
+        }
         struct Vertex: Decodable {
             let t: Double; let x: Double; let y: Double; let part: Int
             let sampleIndex: Int?; let provenance: TrackPointProvenance
         }
         struct Item: Decodable {
             let id: String; let resultID: UUID; let status: TrackResultStatus
-            let vertices: [Vertex]; let unresolvedIntervals: [TrackUnresolvedInterval]
+            let vertices: [Vertex]; let unresolvedIntervals: [DisplayInterval]
             let warnings: [TrackResultWarning]; let failureReason: TrackUnresolvedReason?
         }
         let cases: [Item]

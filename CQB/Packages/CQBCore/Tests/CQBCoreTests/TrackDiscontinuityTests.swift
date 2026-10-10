@@ -6,7 +6,7 @@ import CQBFixtures
 /// Hand-authored times/parts: no expected gaps are computed by the validator.
 struct TrackDiscontinuityTests {
     private func example(segments: [Int], times: [Double]? = nil, missing: Set<Int> = [],
-                         vertices: [Int], parts: [Int], gaps: [(Double, Double)]) throws
+                         vertices: [Int], parts: [Int], gaps: [(Int, Int)]) throws
         -> (map: ValidatedFloorPlan, raw: ValidatedRawTrack, result: TrackResultDocument) {
         precondition(vertices.count == parts.count)
         let map = try contractTrackMap()
@@ -29,7 +29,28 @@ struct TrackDiscontinuityTests {
                   sampleIndex: index, provenance: .correctedSample)
         }
         result.unresolvedIntervals = gaps.map {
-            .init(from: $0.0 + 0.4, to: $0.1 + 0.4, bounds: .open, reason: .trackingLost)
+            .init(from: source.samples[$0.0].time + 0.4, to: source.samples[$0.1].time + 0.4,
+                bounds: .open, reason: .trackingLost, samples: .init(from: $0.0, through: $0.1))
+        }
+        // Describe the route CLAIMED by the test input, even when it illegally
+        // crosses raw breaks. Do not derive expected coverage from the validator.
+        result.sampleCoverage = []
+        var nextSample = 0, firstVertex = 0
+        while firstVertex < vertices.count {
+            var lastVertex = firstVertex
+            while lastVertex + 1 < vertices.count && parts[lastVertex + 1] == parts[firstVertex] {
+                lastVertex += 1
+            }
+            if nextSample < vertices[firstVertex] {
+                result.sampleCoverage.append(.init(samples: .init(from: nextSample, through: vertices[firstVertex] - 1), vertices: nil))
+            }
+            result.sampleCoverage.append(.init(samples: .init(from: vertices[firstVertex], through: vertices[lastVertex]),
+                vertices: .init(from: firstVertex, through: lastVertex)))
+            nextSample = vertices[lastVertex] + 1
+            firstVertex = lastVertex + 1
+        }
+        if nextSample < segments.count {
+            result.sampleCoverage.append(.init(samples: .init(from: nextSample, through: segments.count - 1), vertices: nil))
         }
         result.warnings = [.trackingLost]
         return (map, raw, result)
@@ -76,9 +97,8 @@ struct TrackDiscontinuityTests {
     }
 
     @Test func zeroDurationBreakAfterPositiveGapIsStillRejected() throws {
-        // Advancing with an unconditional `end <= previousTime` would wrongly
-        // discard the second gap at 2.4. Preserve the existing conservative rule
-        // for equal timestamps: do not join across that break, even at its edge.
+        // The second break has zero duration but distinct source indices.
+        // Reject its crossing by raw segment/coverage, not a time-only heuristic.
         let c = try example(segments: [1, 1, 2, 3, 3], times: [0, 1, 2, 2, 3],
             vertices: [0, 1, 2, 4], parts: [0, 0, 1, 1], gaps: [(1, 2)])
         #expect(throws: TrackValidationError.disconnectedPath) {

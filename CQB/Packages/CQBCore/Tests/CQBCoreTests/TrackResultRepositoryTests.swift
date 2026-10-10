@@ -109,7 +109,9 @@ struct TrackResultRepositoryTests {
         _ = try await c.member.publishUsable(c.request())
         var failed = c.result
         failed.resultID = UUID(); failed.status = .failed; failed.vertices = []
-        failed.unresolvedIntervals = [.init(from: 0.4, to: 2.4, bounds: .closed, reason: .unknown)]
+        failed.sampleCoverage = [.init(samples: .init(from: 0, through: 2), vertices: nil)]
+        failed.unresolvedIntervals = [.init(from: 0.4, to: 2.4, bounds: .closed, reason: .unknown,
+            samples: .init(from: 0, through: 2))]
         await #expect(throws: TrackRepositoryError.notUsable) { try await c.member.publishUsable(c.request(failed)) }
         let request = try c.request()
         let task = Task {
