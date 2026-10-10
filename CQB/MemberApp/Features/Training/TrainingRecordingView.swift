@@ -9,6 +9,8 @@ struct TrainingRecordingView: View {
     var onStart: (() -> Void)? = nil
     var onReset: (() -> Void)? = nil
     var showsMockControls = true
+    var cameraService = CameraPreviewService()
+    var onStopRecording: () async -> Void = {}
     @State private var isCameraReady = false
 
     private var isWaiting: Bool { phase == .waiting }
@@ -16,13 +18,21 @@ struct TrainingRecordingView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                CameraPreviewView { isCameraReady = $0 }
+                CameraPreviewView(
+                    service: cameraService,
+                    isRecording: phase == .recording,
+                    onStopRecording: onStopRecording,
+                    onAvailabilityChange: { isCameraReady = $0 }
+                )
                     .ignoresSafeArea()
 
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(alignment: .top) {
                         if isWaiting {
                             Text("준비 완료")
+                                .font(DSTypography.h2)
+                        } else if phase == .saving {
+                            Text("영상 저장 중")
                                 .font(DSTypography.h2)
                         } else {
                             recordingStatus
@@ -34,7 +44,7 @@ struct TrainingRecordingView: View {
                         }
                     }
                     Spacer()
-                    Text(isWaiting ? "카메라 미리보기" : "Body cam")
+                    Text(isWaiting ? "카메라 미리보기" : (phase == .saving ? "녹화 파일을 저장하고 있습니다" : "Body cam"))
                         .font(DSTypography.caption)
                 }
                 .padding(24)
@@ -74,6 +84,7 @@ struct TrainingRecordingView: View {
                                     .padding(.vertical, 8)
                                     .background(DSColor.area1.opacity(0.94), in: RoundedRectangle(cornerRadius: 4))
                             }
+                            .disabled(isWaiting && !isCameraReady)
                         }
                     }
                     .padding(24)
@@ -86,10 +97,10 @@ struct TrainingRecordingView: View {
 
     private var recordingStatus: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text("영상 및 동선 수집 중")
+            Text("영상 녹화 중")
                 .font(DSTypography.h3)
                 .frame(minHeight: 24)
-            Text("네트워크가 끊겨도 기기에 계속 저장")
+            Text("영상은 이 iPhone에 저장됩니다.")
                 .font(DSTypography.bodySmall)
                 .foregroundStyle(DSColor.darkGreen)
                 .frame(minHeight: 21)

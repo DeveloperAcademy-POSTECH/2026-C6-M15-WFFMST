@@ -2,20 +2,29 @@ import CoreGraphics
 import Foundation
 import Observation
 
-/// 서비스 연동 전 화면 흐름을 검증하는 로컬 목업 Store.
+/// MemberApp의 화면 흐름과 로컬 녹화 상태를 소유한다.
 @MainActor
 @Observable
 final class MemberStore {
+    @ObservationIgnored let cameraService: CameraPreviewService
+    @ObservationIgnored private let recordingFileStore = LocalRecordingFileStore()
+
     private(set) var phase: MemberPhase = .join
     private(set) var pin = ""
     private(set) var memberName = ""
     private(set) var startPoint: CGPoint?
     private(set) var directionPoint: CGPoint?
     private(set) var recordingStartedAt: Date?
+    private(set) var savedRecordingURL: URL?
+    private(set) var recordingError: String?
     private(set) var uploadProgress = 0.0
     private(set) var isUploadComplete = false
 
     @ObservationIgnored private var isSimulatingUpload = false
+
+    init(cameraService: CameraPreviewService = CameraPreviewService()) {
+        self.cameraService = cameraService
+    }
 
     var isReady: Bool { startPoint != nil && directionPoint != nil }
 
@@ -45,16 +54,41 @@ final class MemberStore {
         phase = .setup
     }
 
-    // TODO: 교관 시작 신호 수신 후 실제 기록 시작 성공 시 호출한다.
-    func startRecording() {
+    /// 로컬 목업 제어에서 호출한다. 실제 서버 신호 연결은 후속 작업이다.
+    func startRecording() async {
         guard phase == .waiting, isReady else { return }
-        recordingStartedAt = Date()
-        phase = .recording
+        recordingError = nil
+
+        do {
+            let url = try recordingFileStore.makeRecordingURL()
+            try await cameraService.startRecording(to: url)
+            savedRecordingURL = url
+            recordingStartedAt = Date()
+            phase = .recording
+        } catch {
+            recordingError = error.localizedDescription
+        }
     }
 
-    // TODO: 녹화 종료 및 로컬 파일 저장 성공 후 업로드를 시작한다.
-    func startUploading() {
+    /// 로컬 녹화를 종료하고 파일 기록이 완료된 뒤 저장 완료 화면으로 이동한다.
+    func finishRecording() async {
         guard phase == .recording else { return }
+        phase = .saving
+        recordingError = nil
+
+        do {
+            savedRecordingURL = try await cameraService.stopRecording()
+            phase = .saved
+        } catch {
+            recordingError = error.localizedDescription
+            recordingStartedAt = nil
+            phase = .waiting
+        }
+    }
+
+    /// 로컬 파일 저장 완료 후 업로드 흐름으로 전환한다.
+    func startUploading() {
+        guard phase == .saved else { return }
         uploadProgress = 0
         isUploadComplete = false
         phase = .uploading
@@ -97,8 +131,12 @@ final class MemberStore {
         isUploadComplete = true
     }
 
+    func clearRecordingError() {
+        recordingError = nil
+    }
+
     func returnToJoin() {
-        guard phase == .uploading, isUploadComplete else { return }
+        guard phase == .saved || (phase == .uploading && isUploadComplete) else { return }
         pin = ""
         memberName = ""
         startPoint = nil

@@ -3,5 +3,7 @@ enum MemberPhase {
     case setup
     case waiting
     case recording
+    case saving
+    case saved
     case uploading
 }
