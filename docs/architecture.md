@@ -37,6 +37,7 @@ CQB/
 └─ Packages/CQBCore/Sources/
    ├─ CQBCore/
    │  ├─ Models/
+   │  ├─ Repositories/            # 앱이 부르는 저장·불러오기 프로토콜
    │  └─ Services/
    ├─ CQBFirebase/
    ├─ CQBFixtures/
@@ -86,7 +87,7 @@ CQB/
 ### CQBCore
 
 - SwiftUI와 Firebase에 의존하지 않는 공통 모델을 둔다.
-- 앱과 데이터 구현 사이의 Repository 및 Service 프로토콜을 둔다.
+- 앱과 데이터 구현 사이의 Repository 프로토콜은 `Repositories/`, Service 프로토콜은 `Services/`에 둔다.
 - 여러 앱에서 공유하는 순수한 검증과 계산 로직을 둔다.
 
 ### CQBFirebase
