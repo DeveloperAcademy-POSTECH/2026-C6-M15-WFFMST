@@ -60,6 +60,7 @@ public enum TrackDocumentValidator {
             throw TrackValidationError.invalidRaw
         }
         var previous: TrackRawSample?
+        var hasObservedValidPosition = false
         for sample in raw.samples {
             try Task.checkCancellation()
             guard sample.time.isFinite, sample.time >= 0, sample.arTimestamp.isFinite, sample.arTimestamp >= 0,
@@ -72,7 +73,10 @@ public enum TrackDocumentValidator {
                 guard sample.time >= p.time, sample.arTimestamp >= p.arTimestamp, sample.segment >= p.segment else {
                     throw TrackValidationError.invalidRaw
                 }
-                if p.relativeMeters == nil, sample.relativeMeters != nil, sample.segment <= p.segment {
+                // Initial acquisition is not recovery from a previously tracked
+                // route. Preserve a leading unknown prefix without renumbering it.
+                if hasObservedValidPosition, p.relativeMeters == nil,
+                   sample.relativeMeters != nil, sample.segment <= p.segment {
                     throw TrackValidationError.invalidRaw
                 }
             }
@@ -82,6 +86,7 @@ public enum TrackDocumentValidator {
                       matchesRelativeMeters(point.y, position: sample.arPosition[2], origin: raw.originMeters.z) else {
                     throw TrackValidationError.invalidRaw
                 }
+                hasObservedValidPosition = true
             }
             previous = sample
         }
