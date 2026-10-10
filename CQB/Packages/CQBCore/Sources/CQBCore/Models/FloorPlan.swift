@@ -46,12 +46,6 @@ public struct FloorPlanReference: Codable, Hashable, Sendable {
         self.floorPlanID = floorPlanID
         self.navigationSHA256 = navigationSHA256
     }
-
-    public func encode(to encoder: any Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(floorPlanID.uuidString.lowercased(), forKey: .floorPlanID)
-        try container.encode(navigationSHA256, forKey: .navigationSHA256)
-    }
 }
 
 public struct NavigationGridDescriptor: Codable, Hashable, Sendable {
@@ -126,22 +120,6 @@ public struct FloorPlanManifest: Codable, Equatable, Sendable {
         self.extractionAlgorithmVersion = extractionAlgorithmVersion
         self.rasterizationVersion = rasterizationVersion
         self.manuallyReviewed = manuallyReviewed
-    }
-
-    public func encode(to encoder: any Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(schemaVersion, forKey: .schemaVersion)
-        try container.encode(floorPlanID.uuidString.lowercased(), forKey: .floorPlanID)
-        try container.encode(coordinateSystem, forKey: .coordinateSystem)
-        try container.encode(imageWidth, forKey: .imageWidth)
-        try container.encode(imageHeight, forKey: .imageHeight)
-        try container.encode(imageSHA256, forKey: .imageSHA256)
-        try container.encode(scale, forKey: .scale)
-        try container.encode(indoorOutline, forKey: .indoorOutline)
-        try container.encode(navigationGrid, forKey: .navigationGrid)
-        try container.encode(extractionAlgorithmVersion, forKey: .extractionAlgorithmVersion)
-        try container.encode(rasterizationVersion, forKey: .rasterizationVersion)
-        try container.encode(manuallyReviewed, forKey: .manuallyReviewed)
     }
 }
 

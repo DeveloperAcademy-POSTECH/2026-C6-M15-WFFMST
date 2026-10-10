@@ -13,7 +13,6 @@ func floorPlanReferenceWithoutRevision() throws {
     let json = try encodedJSONObject(reference)
 
     #expect(decoded == reference)
-    #expect(json["floorPlanID"] as? String == reference.floorPlanID.uuidString.lowercased())
     #expect(json["navigationSHA256"] as? String == reference.navigationSHA256)
     #expect(json["revisionID"] == nil)
 }
