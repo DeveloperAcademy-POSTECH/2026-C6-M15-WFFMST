@@ -13,13 +13,13 @@
 - **구현됨:** 소스·테스트 링크로 구현 범위를 확인한다. 도면 모델·검증·가짜 서비스, 동선 좌표/시간 변환·저장 모델/검증·결과 발행/선택/조회 가짜 서비스가 해당한다. 동선은 아래 **1.5의 schema 1 검토용 구현안**이 코드 기준이며, **구현 완료는 팀 합의 완료와 별개**다.
 - **팀 승인 및 변경 기록:** 팀원 3명 승인과 노션 변경 기록은 미완료다. 완료 여부는 별도로 확인하고 기록한다.
 - **후속 범위:** 실제 Firebase·앱 전체 연결·편집 작업본 영속 저장 등은 선언만으로 구현됐다고 판단하지 않는다.
-- **#20 후속 도메인:** 세션·대원·기록·영상과 보정 요약의 값 모델·관계 Fixture 구현안을 1.2~1.4에 반영한다. 세부 표현은 팀 승인 전이며 Repository·Storage 구현은 Firebase 담당자 영역이다. [이관 대응표와 검증 기록](core-domain-models.md)을 함께 읽는다.
+- **#20 후속 도메인:** 세션·대원·기록·영상과 보정 요약의 값 모델·관계 Fixture 구현안을 1.2~1.4에 반영한다. MVP AARSettings도 이번 이슈의 구현 대상이며 1.6에 필드·검증 기준을 정리했다. AARSettings의 공통 모델·Fixture·테스트는 아직 미구현이다. 세부 표현은 팀 승인 전이며 Repository·Storage 구현은 Firebase 담당자 영역이다. [이관 내역과 구현·검증 기록](issue-20-domain-implementation.md)을 함께 읽는다.
 
 기준 자료: 첨부된 「데이터 계약 v2 (도메인 · 저장 · 모듈) (확정X)」, [공통 아키텍처](architecture.md), [교관 앱 흐름](../CQB/InstructorApp/docs/flows.md).
 
 기존 스펙: [스펙 문서 최종](https://app.notion.com/p/3f201ce28fac8025b24dc24997ec62fc?pvs=21), [v1 초안](https://app.notion.com/p/3f101ce28fac802288bfc06e3a8c5390?pvs=21). 링크는 출처이며 이번 수정에서 외부 문서의 최신 상태를 재검증한 것은 아니다.
 
-선행 작업: [#14 — 도면·동선 공통 계약 확정 및 Fixture 검증](https://github.com/DeveloperAcademy-POSTECH/2026-C6-M15-WFFMST/issues/14), PR #16의 `c46f709`. 현재 후속 작업: [#20 — 세션·대원·기록 공통 도메인 모델 추가](https://github.com/DeveloperAcademy-POSTECH/2026-C6-M15-WFFMST/issues/20), `schema/20-core-domain-models`. 선행 PR 머지 전 분기한 의존 브랜치이며 승인이나 merge 완료를 의미하지 않는다.
+선행 작업: [#14 — 도면·동선 공통 계약 확정 및 Fixture 검증](https://github.com/DeveloperAcademy-POSTECH/2026-C6-M15-WFFMST/issues/14), PR #16의 `c46f709`. 현재 후속 작업: [#20 — 세션·대원·기록·AAR 공통 도메인 모델 추가](https://github.com/DeveloperAcademy-POSTECH/2026-C6-M15-WFFMST/issues/20), `schema/20-core-domain-models`. 선행 PR 머지 전 분기한 의존 브랜치이며 승인이나 merge 완료를 의미하지 않는다.
 
 이 문서는 아이폰(A), AAR(B), 교관 준비·서버(C)가 공유하는 **도면·세션·대원·기록·동선·AAR**의 약속이다. 이번 구현이 도면부터 진행됐다는 이유로 문서 전체를 도면 전용 계약으로 축소하지 않는다.
 
@@ -33,6 +33,13 @@
 
 1부의 Swift 예시는 별도 표시가 없으면 설계안이다. 구현된 도면 타입은 소스 링크를 기준으로 읽는다. 과거 전체 초안은 [이력 문서](archive/shared-data-contract-draft-2026-10-09.md)에 보존하며, 충돌하는 세션 종속 도면 경로·준비 중 도면 교체·firstWalk 선택·아이패드 보정 실행 규칙은 현재 기준으로 사용하지 않는다.
 
+### 계약 문서와 작업 기록의 유지 원칙
+
+- **계약 규칙의 정본은 이 문서다.** 필드 의미·식별자·좌표·시간·상태·검증 조건·담당 경계는 해당 절에서 관리한다. 정본이라는 사실이 팀 승인 완료를 뜻하지는 않으며 각 절의 상태 표시를 함께 읽는다.
+- [#20 구현·검증 기록](issue-20-domain-implementation.md)은 이관 내역·코드 위치·진행 상태·테스트 실행 결과를 보관한다. 계약 규칙이나 경계값 표를 복사해 별도 기준으로 관리하지 않고 이 문서의 해당 절을 참조한다.
+- 규칙을 변경할 때는 이 문서를 갱신하고 관련 코드·Fixture·테스트를 대조한다. 작업 기록에는 적용 여부·실행 증거·남은 작업을 갱신한다. 승인과 변경 기록은 아래 [변경 규칙](#변경-규칙)을 따른다.
+- archive와 날짜가 붙은 과거 실행·변경 기록은 당시 증거다. 현재 계약이나 최신 검증 결과를 대신하지 않는다.
+
 ### 처음 읽는 팀원을 위한 안내
 
 아래의 **현재 코드 기준(팀 승인 전)**을 먼저 읽고, 담당 영역의 제안·기존 초안을 검토한다. ‘기존 초안’·‘과거 API’라고 표시한 코드 블록을 현재 구현 타입이나 파일 형식으로 그대로 사용하지 않는다. 구현 여부와 팀 승인 여부는 별개다.
@@ -41,6 +48,7 @@
 | --- | --- |
 | 제품 정책·이번 이슈의 포함/제외 범위 | [제품 정책과 현재 작업 범위](#제품-정책과-현재-작업-범위) |
 | 도면 모델·참조·revision | [1.1 도면](#11-도면) |
+| MVP AAR 설정의 필드·선택 규칙·구현 경계 | [1.6 AAR 설정](#16-aar-설정) |
 | 원본 동선·결과의 현재 필드와 서비스 | [동선 schema 1 검토용 구현안](#동선-schema-1-검토용-구현안), [계산·발행·선택·조회 API](#계산발행선택조회-api-검토용-구현안) |
 | 파일 형식·좌표·축척·장애물 의미 | [3.1 파일 형식](#31-파일-형식), [3.4 축척과 장애물 판정](#34-축척과-장애물-판정) |
 | 도면 검증·등록·조회·오류 처리 | [3.8 검증과 저장·조회 서비스](#38-검증과-저장조회-서비스) |
@@ -69,8 +77,9 @@
 - 별도 회원가입·로그인 UI 없이 Firebase 익명 인증을 사용한다. 등록한 익명 UID가 도면을 소유하고 재사용한다. 대원은 참가한 세션에 연결된 도면만 읽는다.
 - 대원의 시작 방향 기준은 **촬영 시작 카메라 방향**이다. 첫 직진 방향으로 대체하지 않는다.
 - 아이폰은 AR 이동의 도면 좌표 변환·보정을 수행한다. 아이패드는 같은 도면 위에 결과를 표시하며 축척을 다시 적용하지 않는다.
+- 수동 재생 시간 조정은 MVP에서 제외하기로 팀 합의가 전달됐다. AAR 설정 전체를 제외하는 것은 아니며, 최소 모델의 범위는 1.6을 따른다.
 
-도면 재사용·당시 버전 유지·훈련 중 변경 금지는 팀 합의로 전달받은 정책이고, 나머지는 추가 대화에서 수락한 기준이다. 기술 계약 전체에 대한 팀 승인 여부와 구분한다.
+도면 재사용·당시 버전 유지·훈련 중 변경 금지·수동 재생 시간 조정의 MVP 제외는 팀 합의로 전달받은 정책이고, 나머지는 추가 대화에서 수락한 기준이다. 기술 계약 전체에 대한 팀 승인 여부와 구분한다.
 
 #### 선행 #14의 초점과 후속 #20
 
@@ -80,13 +89,13 @@
 
 실제 앱 화면·Store 전체 연결, Firebase 저장·인증·보안 규칙 구현, 실제 두 기기 통신, 보정 알고리즘 이관, 상세/수정/삭제, 작업본 영속 저장과 디자인 시스템 적용은 현재 이슈의 제외 범위다. 앱 연동은 후속 이슈에서 진행하거나 먼저 이슈 범위를 명시적으로 조정한다.
 
-#20은 기존 도면·동선 타입을 재사용해 세션·대원·기록·영상 값 모델과 최소 관계 Fixture를 추가한다. Repository·Storage는 Firebase 담당자의 구현 범위이며, 상태 전이·준비 판정·실제 녹화·시계 동기화·앱 View/Store 연결은 포함하지 않는다. AAR 수동 시간 조정은 보류한다. 구현 착수는 팀 계약 승인 완료와 별개다.
+#20은 기존 도면·동선 타입을 재사용해 세션·대원·기록·영상·MVP AAR 설정의 값 모델과 최소 관계 Fixture를 추가한다. Repository·Storage는 Firebase 담당자의 구현 범위이며, 상태 전이·준비 판정·실제 녹화·시계 동기화·앱 View/Store 연결은 포함하지 않는다. AAR 수동 시간 조정은 MVP에서 제외하며, AAR 설정의 서버 영속 저장·기기 간 동기화·실제 재생 실행도 이번 이슈에 포함하지 않는다. 구현 착수는 팀 계약 승인 완료와 별개다.
 
 ## 1부. 도메인 모델
 
 Firebase의 Timestamp·DocumentReference·UIKit 이미지를 공통 모델에 넣지 않는다.
 
-관계는 **소유자의 도면 라이브러리 → 확정 revision**, **세션 → 고정 도면 참조 + 대원**, **대원 기록 → 원본 동선·영상·보정 결과**, **AAR → 그 결과와 재생 설정**이다. 도면의 생명주기는 세션보다 먼저 시작하며 여러 세션에서 재사용한다.
+관계는 **소유자의 도면 라이브러리 → 확정 revision**, **세션 → 고정 도면 참조 + 대원**, **대원 기록 → 원본 동선·영상·보정 결과**, **AARSettings → 대상 세션 + 표시할 대원 + 표시 모드**다. AAR은 선택된 대원의 기록·결과를 소비하되, 보정 결과 선택의 정본은 Recording에 둔다. 도면의 생명주기는 세션보다 먼저 시작하며 여러 세션에서 재사용한다.
 
 기존 MVP 초안에는 별도 Team 모델이 없다. PIN으로 참가한 대원 집합과 한 번의 팀 배정으로 다룬다(P-6). 앱의 팀 표시 데이터와 별개이며 공통 Team 모델을 이번 수정에서 신설하지 않는다.
 
@@ -166,6 +175,8 @@ Session은 불변 값 snapshot이다. 같은 상태에서 어떤 명령이 허�
 
 Member UUID의 발급·재참가 재사용·인증 UID 대응은 Firebase/아이폰 담당자의 연결 확인 사항이다. 기존 마커 번호의 표시 규칙은 displayName 기반 계산안으로 유지하되 공통 모델에 UI 번호를 추가하지 않는다. AR 원점 복구·4×4 transform 보존은 후속이다.
 
+Member가 sessionID를 가진다는 사실만으로 참가 권한이 증명되지는 않는다. 실제 접근 검증은 2.5의 서비스·인증 경계에서 수행한다.
+
 ### 1.4 기록
 
 **상태: #20 값 모델·보정 요약 구현안 추가 · 팀 승인 전.** [Recording.swift](../CQB/Packages/CQBCore/Sources/CQBCore/Models/Recording.swift), [Video.swift](../CQB/Packages/CQBCore/Sources/CQBCore/Models/Video.swift), [TrackResultSummary.swift](../CQB/Packages/CQBCore/Sources/CQBCore/Models/TrackResultSummary.swift)를 기준으로 한다.
@@ -184,6 +195,8 @@ Member UUID의 발급·재참가 재사용·인증 UID 대응은 Firebase/아이
 
 기존 `Recording.id == memberID`를 적용하지 않는다. 같은 대원의 서로 다른 기록을 구분하는 모델이며, 실제 MVP 재촬영·복수 기록 AAR 통합 기능을 구현했다는 뜻은 아니다. 2부의 memberID 중심 과거 저장 경로는 운영 연결 전 Firebase 담당자가 이 격리 단위에 맞춰 갱신해야 한다.
 
+`RecordingState.done`은 보정 성공·선택 완료·AAR 진입 가능과 동의어가 아니다. 전송 실패·재시도와 done 판정 실행은 후속이며 값 모델이 자동 처리하지 않는다.
+
 #### 계산 시도와 선택 결과
 
 `ReconstructionAttemptState`는 pending/running/completed/failed/cancelled다. completed는 결과 문서가 만들어졌다는 뜻이며 해당 `TrackResultStatus`가 failed일 수도 있다. 작업 failed는 문서를 만들지 못한 실행 오류, cancelled는 취소다. completed만 결과 요약을 가지며 요약의 resultID는 시도의 예약 ID와 같아야 한다. 이는 상태 표현이며 작업 실행·전이 코드는 아니다.
@@ -200,9 +213,11 @@ VideoChunk는 TrackIdentity·0-based index·startSeconds·durationSeconds·uploa
 
 #### #20 공통 구현 경계
 
-모델은 불변 값 타입이며 공개 생성자·Codable·Equatable·Sendable을 제공한다. 생성/디코딩이 검증을 대신하지 않는다. [TrainingDomainValidator](../CQB/Packages/CQBCore/Sources/CQBCore/Services/TrainingDomainValidator.swift)는 최소 수치·참조·ID·요약/시도 정합성을 검사하고, 준비 판정·상태 전이·네트워크·권한 검증은 하지 않는다. 새 enum의 미지원 값은 디코딩 오류이며 자동 unknown/success 변환을 하지 않는다.
+모델은 불변 값 타입이며 공개 생성자·Codable·Equatable·Sendable을 제공한다. 생성/디코딩이 검증을 대신하지 않는다. [TrainingDomainValidator](../CQB/Packages/CQBCore/Sources/CQBCore/Services/TrainingDomainValidator.swift)는 최소 수치·참조·ID·요약/시도 정합성을 검사하고, 준비 판정·상태 전이·네트워크·권한 검증은 하지 않는다. 상세 원본·결과 파일의 검증은 기존 TrackDocumentValidator에서 수행하며 최소 도메인 검증으로 대체하지 않는다. 새 enum의 미지원 값은 디코딩 오류이며 자동 unknown/success 변환을 하지 않는다.
 
-새 모델의 Codable 표현은 Firestore DTO나 운영 파일 schema가 아니다. #14 도면/동선 schema 1·바이트·프로토콜은 변경하지 않는다. 상세 이관 대응표·담당자 확인·검증 기록은 [#20 구현안](core-domain-models.md)을 참고한다.
+서버 시각을 기다리는 임시 UI 객체에 임의의 `Date()`를 채워 저장소가 확정한 공통 snapshot처럼 만들지 않는다. 각 필드의 저장소 시각·기기 시각·미확보 표현은 1.2~1.4를 따르며, 대기 상태 자체는 Repository/앱에서 관리한다.
+
+새 모델의 Codable 표현은 Firestore DTO나 운영 파일 schema가 아니다. #14 도면/동선 schema 1·바이트·프로토콜은 변경하지 않는다. 구현 위치와 이관·검증 증거는 [#20 구현·검증 기록](issue-20-domain-implementation.md)을 참고하되 계약 해석 기준은 이 문서의 1.2~1.4다.
 
 ### 1.5 동선
 
@@ -437,20 +452,62 @@ public struct Reconstruction: Codable, Identifiable {
 
 ### 1.6 AAR 설정
 
-**상태: #20 구현 제외·AAR 담당자 검토 필요.** 수동 시간 미세조정의 포함 여부가 확정되지 않아 아래 기존 초안은 보류한다. 모델·새 schema·수동 시간 계산을 이번 구현에 추가하지 않는다.
+**상태: #20 구현안 정리 · 공통 모델·Fixture·테스트 미구현 · 팀 승인 전** (2026-10-10). 수동 시간 조정의 MVP 제외 합의와 AAR 설정 모델의 구현 여부를 구분한다. 아래는 기존 교관 앱의 선택 유지·영상 인원 제한을 공통 값 모델로 표현하기 위한 구현 기준이며, 팀원 3명 승인·노션 기록을 대신하지 않는다.
 
-**추가: 기존 Firestore 경로와 시간 변환 설명에 사용됐지만 빠져 있던 모델이다.**
+#### 목적과 필드
 
-```swift
-public struct AARSettings: Codable {
-    public var schemaVersion: Int
+AARSettings는 **어느 세션에서 누구를 어떤 모드로 표시할지** 나타낸다. 현재 소비자는 교관 앱의 AAR이며, 공통 모델 정의가 대원 앱의 설정 사용·서버 저장·기기 간 동기화를 의무화하지는 않는다.
 
-    /// 대원별 수동 재생 시간 조정값(초)
-    public var memberOffsets: [UUID: TimeInterval]
+| 필드 | 타입 | 필수 여부·의미 |
+| --- | --- | --- |
+| `sessionID` | `UUID` | 필수. 설정이 속한 `Session.id` |
+| `selectedMemberIDs` | `Set<UUID>` | 필수. 표시할 세션 참가자의 `Member.id` 집합. 인증 UID·recordingID가 아님. 빈 집합 허용 |
+| `displayMode` | `AARDisplayMode` | 필수. `movement`(동선) 또는 `video`(영상). 미지원 값은 디코딩 오류 |
 
-    public var updatedAt: Date
-}
-```
+구현 시 public 생성자와 `Codable`·`Equatable`·`Sendable`을 제공하는 값 타입으로 구성하고 세 필드를 명시적으로 받는다. 임의 UUID나 미로딩 상태를 숨기는 기본값을 생성하지 않는다. Set은 선택 여부만 표현하며 표시 순서를 보장하지 않는다. 화면 순서는 앱의 대원 목록을 기준으로 정하고, Codable 왕복은 집합의 의미를 비교하며 JSON 배열 순서에 의존하지 않는다. Codable 채택만으로 새 운영 파일 schema를 확정하지 않는다.
+
+#### 초기 구성과 선택 규칙
+
+- **초기 구성:** 앱이 세션과 참가자 목록을 확보한 뒤 AAR에 처음 진입할 때 `movement`와 실제 훈련 참가 대원 전체로 구성한다. 제외 대원은 포함하지 않는다. 이는 앱의 초기화 정책이며 Core 생성자가 대원 목록을 추측하지 않는다.
+- **같은 선택 유지:** 동선·영상이 하나의 `selectedMemberIDs`를 사용한다. 정상적인 모드 전환이나 설정창 열기·닫기만으로 선택을 초기화하지 않는다.
+- **선택 없음:** 두 모드 모두 빈 집합을 허용한다. '사용자가 아무도 선택하지 않음'과 '설정·참가자 목록을 아직 읽지 못함'은 다르며, 후자는 앱의 로딩 상태로 관리한다.
+- **영상 인원 제한:** 영상은 최대 4명, 동선에는 AAR 전용 4명 제한을 두지 않는다. 최대 인원은 공통 검증 규칙이지 설정마다 바꾸는 저장 필드가 아니다.
+- **제한을 넘는 요청:** 동선에서 5명 이상 선택한 채 영상으로 전환하거나, 영상에서 다섯 번째 대원을 추가하려 하면 앱 Store가 요청을 거부하고 기존 모드·선택을 유지한다. 자동으로 대원을 제외하지 않으며 안내 표시는 앱이 담당한다.
+- **설정 수명:** 다른 세션에서는 새 설정을 구성한다. 같은 AAR 흐름 안의 선택 유지만 정의하며, 앱 재실행·종료한 AAR 재진입 시 복원이나 여러 기기 사이의 동기화는 보장하지 않는다.
+
+예: 동선에서 6명 선택 → 영상 전환 요청은 거부되고 동선·6명 유지 → 사용자가 4명으로 줄임 → 영상 전환 허용·4명 유지 → 동선으로 돌아와도 4명 유지.
+
+#### 최소 정합성 검증과 로딩 경계
+
+- 설정의 `sessionID`는 검증 문맥의 `Session.id`와 같아야 한다.
+- 선택한 모든 ID는 같은 세션의 `Member.id`여야 하며 `Session.excludedMemberIDs`와 겹치지 않아야 한다. 이를 확인할 수 있는 완전한 참가자 목록을 입력으로 검증한다. 일부만 로딩한 목록에서 찾지 못했다는 이유로 잘못된 대원으로 판정하지 않는다.
+- `video`의 선택 수는 4명 이하여야 한다. 빈 집합과 `movement`의 5명 이상 선택은 위 관계 조건을 만족하면 유효하다.
+- 영상·보정 결과가 아직 없거나 로딩/실패 중이라는 이유로 선택을 자동 해제하지 않는다. **표시 의도와 자료 이용 가능 여부는 별개**다. 앱이 대원별 로딩·없음·실패 표시를 관리한다.
+- 이 검증은 값의 정합성 검사다. 참가 권한·AAR 진입 조건·Session 상태 전이·어느 기록을 재생할지 결정하는 정책을 대신하지 않는다. `Session.status == ended`를 AARSettings 자체의 필수 조건으로 추가하지 않는다.
+
+#### 책임과 기존 앱 연결
+
+| 영역 | #20의 역할·경계 |
+| --- | --- |
+| `CQBCore/Models` | AARSettings·AARDisplayMode 값 표현 추가 예정 |
+| `CQBCore/Services` | 기존 도메인 검증 경계에서 위 순수 정합성 검사 추가 예정. 상태 변경·UI 안내는 하지 않음 |
+| `CQBFixtures`·패키지 테스트 | 기존 Session·Member 관계에 AAR 설정과 정상/경계 기대값 연결 예정 |
+| 앱 Store·View | Store가 초기화·선택·전환 요청과 거부 시 기존 상태 유지를 담당하고, View가 이벤트 전달·안내·로딩을 표시. 공통 모델 연결은 후속 |
+
+현재 앱의 `InstructorStore.aarMode`와 `selectedParticipantIDs`는 위 `displayMode`·`selectedMemberIDs`에 대응할 앱 내부 상태다. 기존 `AARMode`·Mock의 String ID를 이번 문서 작업에서 교체하거나 UUID로 임의 변환하지 않는다. 실제 연결 시에는 공통 Session·Member 식별자를 사용한다. 상호작용 구현은 [교관 앱 흐름](../CQB/InstructorApp/docs/flows.md#aar)을 참고한다.
+
+`AARSettings → Session / 선택된 Member`와 `Recording → selectedResult`는 서로 다른 참조다. `selectedResultID`, 도면 참조·대원 이름·영상 메타데이터를 AARSettings에 복제하지 않는다. 복수 기록 선택·통합 재생 정책도 이 모델로 새로 확정하지 않는다.
+
+#### 포함하지 않는 값과 검증 계획
+
+- `memberOffsets`·`manualOffset` 및 수동 시간 조정용 저장 필드: MVP 제외. 기록 초→세션 초의 기존 offset 변환은 유지한다(3.3).
+- `schemaVersion`·`updatedAt`·서버 경로: 기존 초안에서 기계적으로 복제하지 않는다. AAR 설정의 영속 저장·동기화는 #20 제외다.
+- 팝오버·포커스·레이아웃·로딩·안내 문구·재생 위치·재생 중 여부·플레이어 객체: 앱 UI/실행 상태이며 공통 값 모델에 넣지 않는다. `isBodycamEnabled`도 표시 모드와 중복 저장하지 않는다.
+- 별도 Team 모델/ID: MVP의 팀 표시를 이유로 추가하지 않는다.
+
+구현 후에는 공개 생성자·필수 필드·Codable 집합 왕복·미지원 모드 거부, 정상 관계, 빈 선택, 영상 4명/5명, 동선 5명 이상, 다른 세션/제외/목록에 없는 대원 참조를 검사한다. 같은 선택을 가진 두 모드와 자료 미확보 대원 선택을 표현할 수 있는지도 검증한다. 값 검증 테스트로 실제 UI 전환·거부 후 화면 상태 유지·영상 재생까지 실행했다고 주장하지 않는다. 구체적 남은 작업은 [#20 AAR 구현·검증 계획](issue-20-domain-implementation.md#aar-설정-구현검증-계획)을 따른다.
+
+수동 시간 dictionary 중심의 과거 AARSettings 예시는 [이력 문서](archive/shared-data-contract-draft-2026-10-09.md)에 보존하며 현재 모델 기준으로 사용하지 않는다.
 
 
 ### 1.7 데이터 흐름과 담당 경계
@@ -466,6 +523,7 @@ public struct AARSettings: Codable {
 | 세션 생성 | 세션 서비스 | sessionID와 고정 FloorPlanReference | 이후 동일 참조로 조회 |
 | 세션 도면 조회 | 대원 앱 → Repository | 같은 revision의 검증된 도면 | 표시·시작점/방향 설정·보정 입력 구성 |
 | 보정 결과 소비 | 아이폰 → 결과 저장 서비스 → AAR | 지도 참조를 가진 도면 px 좌표 결과 | 교관은 화면 표시 변환만 적용 |
+| AAR 표시 대상·모드 구성 | 교관 앱 Store | 세션·대원 참조를 가진 AARSettings(1.6, 공통 모델 미구현) | 선택한 대원의 자료를 표시. 기록의 보정 결과 선택을 중복 저장하지 않음 |
 
 등록은 세션을 만들지 않는다. 세션 생성 시 도면 전체를 복제하지 않고 확정 revision을 참조한다. 서버 없이 검증할 때도 같은 서비스 경계를 유지한다.
 
@@ -475,7 +533,7 @@ public struct AARSettings: Codable {
 | --- | --- | --- |
 | 교관 앱 | 정규화 이미지·최종 격자·외곽·축척, 도면 등록/조회 입력 | 이 자료로 대원이 표시·시작점 설정·보정 입력을 구성할 수 있는가 |
 | 아이폰 | AR 기록·추적 복구·원점 관리·보정 입출력과 계산 | 도면 규칙과 맞는가, AAR에서 해석 가능한가 |
-| AAR | 결과 조회·좌표/시간 표시·단절 구간 표현 | 아이폰의 결과 좌표·시간·품질 의미와 같은가 |
+| AAR | 표시 대상·모드 구성(1.6), 결과 조회·좌표/시간 표시·단절 구간 표현 | 아이폰의 결과 좌표·시간·품질 의미와 같은가, 선택 의도와 자료 로딩을 구분하는가 |
 | 서버 | 인증 문맥·소유·접근·공개 상태·저장/재시도 | 공통 서비스의 성공/실패 규칙을 만족하는가 |
 | 공통 계약 검토 | 모델·단위·참조·오류·Fixture 해석 | 팀원 3명 승인 및 변경 기록 |
 
@@ -497,7 +555,7 @@ public struct AARSettings: Codable {
 
 ### 2.1 변환 규칙
 
-- Date ↔ Firestore Timestamp, UUID ↔ String, AAR의 UUID 키 dictionary ↔ String 키 Map 변환은 Firebase 어댑터에서 처리한다.
+- Date ↔ Firestore Timestamp, UUID ↔ String 변환은 Firebase 어댑터에서 처리한다. 과거 AAR 시간 조정 dictionary의 변환 규칙은 MVP에 적용하지 않으며, 1.6의 값 모델 정의만으로 AAR 저장 DTO를 추가하지 않는다.
 - 기존 서버 시각 대상안은 createdAt·startedAt·endedAt·joinedAt·updatedAt·uploadedAt·finishedAt이다. 해당 서버 이벤트에 serverTimestamp를 쓰는 것과, 파일 안에서 이미 계산한 기기 시각을 덮어쓰는 것은 다르다.
 - 도면 manifest에는 날짜·소유 UID·저장 경로가 없다. 해시를 확정한 JSON에 업로드 시각을 삽입하거나 재인코딩하지 않는다.
 - 저장 전용 instructorUid(세션)·uid(대원)와 도면 ownerUID의 실제 DTO 필드명은 서버 담당자가 통일한다. 문자열 UID를 모델 입력으로 받았다는 사실만으로 인증됐다고 판단하지 않는다.
@@ -520,7 +578,7 @@ public struct AARSettings: Codable {
 | 기록 | `sessions/{sessionId}/recordings/{memberId}` | 기존 1대원/1기록 가정의 초안; 재촬영 지원 전 재검토 |
 | 영상 조각 | `sessions/{sessionId}/recordings/{memberId}/chunks/{index}` | 기존 초안, 0000부터 4자리 |
 | 보정 결과 | `sessions/{sessionId}/recordings/{memberId}/reconstructions/{resultId}` | 기존 초안, 결과 요약·파일 참조 |
-| AAR 설정 | `sessions/{sessionId}/aar/settings` | 기존 초안 |
+| AAR 설정 | `sessions/{sessionId}/aar/settings` | 과거 초안·현재 저장 계약으로 미채택. #20은 1.6의 값 모델만 다루며 영속 저장·동기화 제외 |
 
 도면 루트를 UID 아래에 둘지 위처럼 ownerUID 필드로 관리할지는 실제 보안 규칙·조회 방식과 함께 최종 확정한다. 두 가지 경로를 동시에 사용하는 계약이 아니다. 공통 서비스에는 물리 경로를 노출하지 않아 이 결정이 앱 화면/파일 schema를 바꾸지 않게 한다.
 
@@ -580,7 +638,7 @@ sessions/{sessionId}/members/{memberId}/video/chunk_0000.mp4
 - raw_partial.json은 훈련 중 1분 주기, raw.json은 종료 후 발행하는 기존 안이다(R-6, R-8). 업로드 주기는 검토 대상이다. 원본 서버 확인 후 결과 공개 정책은 3.6에서 사용자 채택되었으며 팀 승인·실제 업로드 구현과 구분한다.
 - 기록·보정 결과는 사용한 도면 참조를 보존하고 다른 revision으로 대체하지 않는다.
 - 재보정은 새 result ID로 만들고 selectedReconstructionID로 선택하는 기존 안이다.
-- AAR 전환은 제외되지 않은 대원의 Recording.state가 모두 done일 때라는 기존 안이다. done = rawUploaded + 모든 영상 업로드 완료 + 보정 상태가 pending 아님으로 정의했으나, 업로드 실패/미응답 처리와 함께 검토해야 한다(A-1).
+- 과거 초안은 제외되지 않은 대원의 기록이 모두 done이면 AAR로 전환하고, done에 원본·영상 업로드 및 보정 진행 여부를 함께 묶었다(A-1). 이는 현재 코드 기준이 아니다. 1.4의 `RecordingState.done`은 자료 전송 완료 snapshot이며 보정 성공·AAR 진입 가능과 동의어가 아니다. 실제 진입·업로드 실패/미응답 정책은 후속이며, 1.6의 AARSettings 검증으로 진입을 결정하지 않는다.
 
 ### 2.5 보안 규칙 요약 (S-5)
 
@@ -696,7 +754,7 @@ manifest에는 날짜 필드가 없다. raw/결과의 날짜·enum 등 세부 �
 
 ### 3.3 시간 변환 (A 보정, B 재생이 같이 씀)
 
-**상태: 알려진 offset을 한 번 더하는 TrackTimeline은 구현됨. 아래 SessionClock·서버 시계 차이 측정·수동 재생 보정은 기존 설계안이며 미구현.** 현재 schema 1은 유한·비음수 offset을 입력으로 받으며 이를 구하는 시계 동기화 방식은 이번 이슈에서 구현하지 않는다.
+**상태: 알려진 offset을 한 번 더하는 TrackTimeline은 구현됨. 아래 SessionClock·서버 시계 차이 측정은 후속 설계안이며 미구현. 수동 재생 시간 조정은 MVP 제외다.** 현재 schema 1은 유한·비음수 offset을 입력으로 받으며 이를 구하는 시계 동기화 방식은 이번 이슈에서 구현하지 않는다. 아래 API 예시는 수동 조정 없는 연결 설명이며 현재 구현된 API로 사용하지 않는다.
 
 ```swift
 public enum SessionClock {
@@ -708,19 +766,19 @@ public enum SessionClock {
 
     public static func sessionTime(
         recordingTime: TimeInterval,
-        recordingStartOffset: TimeInterval,
-        manualOffset: TimeInterval = 0
+        recordingStartOffset: TimeInterval
     ) -> TimeInterval
 }
 ```
 
 ```
 recordingStartOffset = recordingStartedDeviceAt + clockOffsetToServer − sessionStartedAt
-sessionTime          = recordingStartOffset + recordingTime + manualOffset
+sessionTime          = recordingStartOffset + recordingTime
 ```
 
 - **현재 구현:** 보정 후 기록 기준 초를 `TrackTimeline.sessionTimeline`으로 한 번 변환하고 `TrackResultVertex.t`에 저장한다. AAR은 이미 세션 기준인 t에 recordingStartOffset을 다시 더하지 않는다.
-- **후속 설계안:** AAR 수동 재생 보정을 채택하면 화면 재생에서만 manualOffset을 더하고 저장 결과는 변경하지 않는다. 영상 조각과의 시계 정렬도 별도 연결 작업이다.
+- **MVP 제외:** `manualOffset`·`memberOffsets`를 계산이나 저장에 추가하지 않는다. 수동 조정 제외가 기록 시작 offset을 없앤다는 뜻은 아니다. 예를 들어 기록 시작 offset이 3초이고 기록 내 t가 5초이면 결과 t는 세션 기준 8초이며, AAR이 다시 3초를 더하지 않는다.
+- **후속 연결:** 영상 조각은 기록 기준 초이므로 세션 타임라인과 맞추는 연결이 필요하다. 시계 차이 측정·영상 재생 연결은 이번 값 모델 작업에서 구현하지 않는다. 과거 수동 조정 포함 예시는 이력 문서에만 보존한다.
 
 ### 3.4 축척과 장애물 판정
 
@@ -991,7 +1049,7 @@ V13은 결과가 있으면 `selectMatchCandidate(0)`을 호출하며 미해결 �
 | 계산 정보 | 알고리즘 버전·설정 식별 정보·탐색 제한·경고 | 결과 생성 조건 식별 |
 
 - AAR은 같은 결과의 배열에서 **연속한 동일 part**끼리만 점을 연결한다. part 번호별로 떨어진 구간을 모아 연결하지 않으며, 좌표가 없는 구간에 `(0, 0)`을 만들지 않는다. 축척을 다시 곱하거나 보정을 재실행하지 않는다.
-- V13의 기록 시작 기준 시간을 아이폰 결과 발행 단계에서 세션 기준으로 한 번 변환하는 것을 제안한다. AAR 수동 시간 조정이 채택되더라도 원본 결과 시간과 구분한다.
+- V13의 기록 시작 기준 시간은 아이폰 결과 발행 경계에서 세션 기준으로 한 번 변환한다. 공통 변환 함수는 구현됐고 실제 V13 어댑터 연결은 후속이다. AAR은 결과 시간을 다시 변환하지 않으며 수동 시간 조정은 MVP에 넣지 않는다(3.3).
 - 예: 기록이 세션 시작 0.4초 후 시작했다면 V13의 기록 2.0초는 발행 결과에서 세션 2.4초다. 시계 차이/offset을 구하는 방식은 3.3과 함께 검토한다.
 - 품질은 실제 위치 정확도나 확률로 표현하지 않는다. 필요하다면 보정된 샘플 위치와 보간/연결을 위해 생성한 위치의 출처를 구분하되, V13에서 근거 있게 추출 가능한지 먼저 확인한다.
 - 내부 후보 전체·점수·디버깅 자료는 아이폰 진단 자료로 유지할 수 있다. MVP AAR 전달 파일의 필수 항목으로 만들지 않는다.
@@ -1338,7 +1396,7 @@ try map.validateStart(at: ImagePoint(x: 100, y: 120))
 ## 스펙과 맞춰 볼 점
 
 - 기존 초안은 훈련 최대 30분을 기준으로 삼았다(원본 약 18,000 샘플·영상 약 180개). 이는 첨부 문서의 기준을 보존한 것이며 이번에 런타임 한도를 검증한 것은 아니다.
-- 수동 AAR 시간 미세조정 포함 여부와 영상 소리/마이크 권한은 기존 확인 항목으로 유지한다.
+- 수동 AAR 시간 미세조정은 MVP 제외로 정리했다(1.6, 3.3). 영상 소리/마이크 권한은 기존 확인 항목으로 유지한다.
 - 기존 SessionStatus에는 별도 “복기 완료”가 없다. UI 종료와 서버 상태 enum 추가는 별도다.
 - 촬영 시작 카메라 방향·세션 생성 시 도면 고정은 현재 기준으로 반영했다. firstWalk이나 running 시점 잠금으로 되돌리지 않는다.
 - 가구 자동 분류와 물리 공간 전체의 장애물 보장은 제공하지 않는다. 최종 격자는 사용자 검수 결과다.
@@ -1357,14 +1415,9 @@ try map.validateStart(at: ImagePoint(x: 100, y: 120))
 
 ### 후속 #20 모델·관계 검증 (2026-10-10)
 
-세션·대원·촬영 전 설정·준비 보고·기록·영상·보정 요약 값 모델, 최소 구조 검증, 관계 Fixture를 추가했다. 공통 의미는 1.2~1.4, 초안 필드의 이관 대응과 제한은 [#20 구현안](core-domain-models.md)을 따른다. AARSettings는 보류했으며 Repository·Storage·앱 상태 머신은 구현하지 않았다.
+계약 기준은 1.2~1.4와 1.6이다. 세션·대원·기록·영상·보정 요약 및 최소 검증·관계 Fixture는 구현했고, AARSettings는 문서 기준 정리까지 진행했다. 팀 승인 전 상태이며 문서 정리만으로 #20을 Close하지 않는다.
 
-- 패키지 **169개 테스트**(Core 160개 + Fixtures 9개, 기존 빈 example 1개 포함) 통과. #20의 모델/검증/관계 테스트 35개를 추가했다.
-- MemberApp·InstructorApp generic iOS Simulator 빌드 통과. UI 주입·실기기·서버 연결 검증은 아니다.
-- 같은 대원의 다른 기록, 기록별 영상 조각 0, 보정 결과 없음, 최신 실패/취소와 기존 선택 유지, 같은 시각 및 복구점 진단의 partial 의미를 관계 Fixture로 확인했다.
-- 독립 리뷰의 요약 알고리즘 식별자 공백 검사와 업로드 개수 문서 표현을 수정했다. 공백 회귀 테스트는 수정 전 3개 assertion 실패, 수정 후 통과했다.
-- 기존 #14 공통 타입·프로토콜·리소스·파일 schema·V13 코어는 변경하지 않았다. 아래 #14 검증 수치는 선행 이력이며 #20 결과와 구분한다.
-- 양쪽 앱/Firebase 담당자의 모델 사용 확인·다른 작업과의 중복 확인·팀원 3명 승인·노션 기록은 남아 있다. 구현/검증 완료만으로 #20을 Close하지 않는다.
+현재 구현 위치·테스트별 결과·빌드 이력·미검증 범위는 [#20 구현·검증 기록](issue-20-domain-implementation.md)에 모은다. [기존 실행 기록](issue-20-domain-implementation.md#기존-도메인의-실행-기록-2026-10-10)과 [AARSettings의 남은 작업](issue-20-domain-implementation.md#aar-설정-구현검증-계획)을 구분하며, 아직 AARSettings 테스트가 통과한 것은 아니다. 아래 #14 검증 수치는 선행 이력이다.
 
 ### 문서와 실제 구현의 구분
 
@@ -1447,4 +1500,6 @@ PR #16 리뷰 반영 후 패키지 **134개 테스트**(Core 125개 + Fixtures 9
 - 2026-10-10: Fixture 목록 조회의 페이지별 잔여 배열 누적을 snapshot 한 벌과 위치 cursor로 수정했다. 동일 cursor 재시도는 캐시를 추가하지 않으며, 새 조회 snapshot은 backend 전체에서 최대 16개 FIFO로 보관한다. 퇴출 시 invalidCursor로 처음부터 재조회한다. 재현 테스트 9개 중 수정 전 4개가 실패했고 수정 후 모두 통과했으며, 전역 UID 상한 검사를 추가해 관련 10개·전체 109개 테스트 및 양쪽 앱 빌드를 확인했다. Core 프로토콜·파일/schema·V13·등록 자료 보존은 변경하지 않았다. 이 캐시 상한은 Fixture 전용이며 운영 서버 정책·팀 승인을 확정한 것이 아니다.
 - 2026-10-10: 팀 공유 전 문서 검토를 반영해 현재 코드 기준의 읽기 안내, raw/provenance 필수 필드, 연속 part 연결, invalidCursor 재조회, 방향 미확보 원본의 로컬 보존 경계를 명확히 했다. raw 확인 선행 검증의 구현 상태를 바로잡고 Local* 내보내기·6명/영상 AAR Fixture를 후속 범위로 구분했다. 문서 설명만 수정했으며 정책·공통 코드·파일/schema·Fixture 바이트·팀 승인 상태는 변경하지 않았다.
 - 2026-10-10: PR #16의 동일 시간 샘플·초기 위치 확보 리뷰를 반영했다. 승인 전 동선 schema 1 결과에 필수 sampleCoverage와 진단 samples, 선택적 sourceReason을 추가하고 좌표 처리 범위와 연결 미확인 진단을 분리했다. 진단 겹침·정상 좌표와의 공존을 허용하되 raw nil/segment/좌표 미해결을 건너는 연결은 거부한다. 초기 nil 뒤 최초 정상 위치는 같은 segment를 허용하고 중간 복구의 증가 검사는 유지한다. V13 코어·원본 순서/시간/좌표·정적 합성 샘플은 바꾸지 않으며 실제 어댑터·팀 승인·노션 동기화는 미완료다. 이전 결과 JSON과 호환되는 추가가 아니므로 양쪽 소비자는 동일 계약 리비전으로 맞춘다. 검증 기준과 재실행 범위는 [리뷰 반영 검증 안내](minimal-track-fixture.md#pr-16-리뷰-반영-검증-기준)를 따른다.
-- 2026-10-10: #20의 세션·대원·촬영 전 설정·기록·영상·보정 요약 값 모델과 최소 검증·관계 Fixture를 추가했다. 기존 도면/동선 타입을 재사용하고 촬영 전/확정 입력, recordingID/memberID, 최근 계산 시도/선택 결과를 구분했다. 35개 새 테스트 포함 전체 169개와 양쪽 앱 시뮬레이터 빌드를 확인했다. 독립 리뷰 보완을 반영했으며 Repository·Storage·상태 전이·앱 연결·AAR 수동 보정·팀 승인·노션 기록은 완료하지 않았다. 이관 대응표와 제한은 [#20 구현안](core-domain-models.md)을 따른다.
+- 2026-10-10: #20의 세션·대원·촬영 전 설정·기록·영상·보정 요약 값 모델과 최소 검증·관계 Fixture를 추가했다. 기존 도면/동선 타입을 재사용하고 촬영 전/확정 입력, recordingID/memberID, 최근 계산 시도/선택 결과를 구분했다. 35개 새 테스트 포함 전체 169개와 양쪽 앱 시뮬레이터 빌드를 확인했다. 독립 리뷰 보완을 반영했으며 Repository·Storage·상태 전이·앱 연결·AAR 수동 보정·팀 승인·노션 기록은 완료하지 않았다. 이관·검증 내역은 [#20 구현·검증 기록](issue-20-domain-implementation.md)을 참고한다.
+- 2026-10-10: #20 범위 보완에 맞춰 MVP AARSettings의 세션·선택 대원·표시 모드, 초기 구성·선택 유지·영상 4명 제한·최소 관계 검증과 앱 책임을 1.6에 정리했다. 수동 재생 시간 조정은 MVP 제외로 갱신하고 과거 dictionary·저장 경로·시간 공식과 구분했다. 문서만 수정했으며 AARSettings 공통 모델·Fixture·테스트는 아직 미구현이다. 기존 169개 테스트 기록은 AARSettings 검증을 포함하지 않으며 팀 승인·노션 기록을 완료 처리하지 않았다.
+- 2026-10-10: 계약 규칙을 이 문서에 모으고 #20 작업 기록의 필드·상태·검증 규칙 중복을 해당 절 참조로 교체했다. 작업 기록에만 있던 임시 Date() 사용 주의사항은 1.4로 옮겼고, 작업 기록에는 구현 위치·실행 결과·남은 작업을 남겼다. 코드·정책·승인 상태는 변경하지 않았다.
