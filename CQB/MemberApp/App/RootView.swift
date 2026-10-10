@@ -3,8 +3,9 @@ import CQBDesignSystem
 
 struct RootView: View {
     @Environment(MemberStore.self) private var store
-    // 목업 도면. 실제 연동 시 세션에서 내려받은 도면을 전달한다.
-    private let floorPlan = UIImage(named: "TrainingFloorPlan")
+    private var floorPlan: UIImage? {
+        store.trainingMap.flatMap { UIImage(contentsOfFile: $0.imageURL.path) }
+    }
 
     var body: some View {
         Group {
@@ -25,7 +26,7 @@ struct RootView: View {
                 } else {
                     ContentUnavailableView("도면을 불러올 수 없습니다", systemImage: "map")
                 }
-            case .waiting, .recording, .saving:
+            case .waiting, .recording, .saving, .correcting:
                 TrainingRecordingView(
                     phase: store.phase,
                     startedAt: store.recordingStartedAt,
@@ -36,7 +37,11 @@ struct RootView: View {
                     onStopRecording: { await store.finishRecording() }
                 )
             case .saved:
-                RecordingSaveTestView(recordingURL: store.savedRecordingURL) {
+                RecordingSaveTestView(recordingURL: store.savedRecordingURL,
+                    raw: store.rawTrack, correction: store.correction, mapImage: floorPlan,
+                    files: store.recordingFiles, filesSaved: store.filesSaved,
+                    onHome: { store.returnToJoin() },
+                    onRetry: { Task { await store.retrySaving() } }) {
                     store.startUploading()
                 }
             case .uploading:
@@ -49,7 +54,7 @@ struct RootView: View {
             }
         }
         .alert(
-            "녹화 오류",
+            "기록 안내",
             isPresented: Binding(
                 get: { store.recordingError != nil },
                 set: { if !$0 { store.clearRecordingError() } }

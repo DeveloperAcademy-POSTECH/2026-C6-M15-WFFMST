@@ -93,7 +93,7 @@ struct StartPositionSetupView: View {
             .accessibilityLabel("출발 위치와 방향을 선택하는 훈련 도면")
             .accessibilityHint("출발 위치, 방향 순서로 터치합니다. 두 점 선택 후 다시 터치하면 재설정합니다.")
         }
-        .aspectRatio(330.0 / 400.0, contentMode: .fit)
+        .aspectRatio(floorPlan.size.width / floorPlan.size.height, contentMode: .fit)
         .padding(12)
         .background(DSColor.area1)
         .clipShape(RoundedRectangle(cornerRadius: 4))
