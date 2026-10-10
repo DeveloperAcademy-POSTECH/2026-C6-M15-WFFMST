@@ -6,7 +6,14 @@ import CQBCore
 public enum TrainingDomainFixture {
     public struct Snapshot: Codable, Equatable, Sendable {
         public let session: Session
+        /// The original member whose three recordings exercise result selection.
+        /// The same value is included in members for existing fixture consumers.
         public let member: Member
+        /// Complete synthetic roster: six participants and one excluded member.
+        /// Only member has recording payloads; missing media does not erase intent.
+        public let members: [Member]
+        /// One valid initial value, not an AAR entry or transition implementation.
+        public let aarSettings: AARSettings
         public let deviceStatus: DeviceStatus
         public let recordings: [Recording]
         public let chunks: [VideoChunk]
@@ -22,13 +29,23 @@ public enum TrainingDomainFixture {
         let base = Date(timeIntervalSince1970: 1_700_000_000)
         let session = Session(id: source.identity.sessionID, pin: "012345", name: "도메인 연결 Fixture",
             status: .running, createdAt: base.addingTimeInterval(-60), startedAt: base,
-            excludedMemberIDs: [], floorPlan: floorPlan.reference)
+            excludedMemberIDs: [id(106)], floorPlan: floorPlan.reference)
         let member = Member(id: source.identity.memberID, sessionID: session.id,
             name: "Fixture 대원", displayName: "Fixture 대원", joinedAt: base.addingTimeInterval(-30),
             clockOffsetToServer: 0,
             startConfiguration: .init(floorPlan: floorPlan.reference,
                 positionNormalized: source.startPose.positionNormalized,
                 directionPointNormalized: source.startPose.directionPointNormalized))
+        // These participants deliberately have no recording/video/result payload.
+        // The last member is excluded; this does not simulate readiness decisions.
+        let members = [member] + (101...106).map { suffix in
+            Member(id: id(suffix), sessionID: session.id,
+                name: "Fixture 대원 \(suffix - 99)", displayName: "Fixture 대원 \(suffix - 99)",
+                joinedAt: base.addingTimeInterval(-30))
+        }
+        let aarSettings = AARSettings(sessionID: session.id,
+            selectedMemberIDs: Set(members.map(\.id)).subtracting(session.excludedMemberIDs),
+            displayMode: .movement)
         let deviceStatus = DeviceStatus(sessionID: session.id, memberID: member.id,
             startPointSet: true, trackingReady: true, recording: true, updatedAt: base.addingTimeInterval(10))
         let video = VideoInfo(codec: "h264", width: 1920, height: 1080, fps: 30,
@@ -59,13 +76,17 @@ public enum TrainingDomainFixture {
             floorPlan: floorPlan.reference, signalReceivedDeviceAt: base,
             recordingStartedDeviceAt: base.addingTimeInterval(10), rawUploaded: false, state: .recording))
         try TrainingDomainValidator.validate(session)
-        try TrainingDomainValidator.validate(member, in: session, floorPlan: floorPlan)
+        for participant in members {
+            try TrainingDomainValidator.validate(participant, in: session, floorPlan: floorPlan)
+        }
+        try TrainingDomainValidator.validate(aarSettings, in: session, members: members)
         try TrainingDomainValidator.validate(deviceStatus, for: member)
         for recording in recordings {
             try TrainingDomainValidator.validate(recording, for: member, in: session)
             try TrainingDomainValidator.validate(chunks.filter { $0.identity == recording.identity }, for: recording)
         }
-        return Snapshot(session: session, member: member, deviceStatus: deviceStatus, recordings: recordings,
+        return Snapshot(session: session, member: member, members: members, aarSettings: aarSettings,
+            deviceStatus: deviceStatus, recordings: recordings,
             chunks: chunks, rawDocuments: tracks.map { $0.raw.document },
             resultDocuments: tracks.map { $0.result.document })
     }

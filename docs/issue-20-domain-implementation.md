@@ -2,7 +2,7 @@
 
 ## 상태와 범위
 
-**공통 값 모델·최소 검증·단위 테스트 구현 / AAR 관계 Fixture 연결 미완료 / 팀 승인 전** (2026-10-10). [#20](https://github.com/DeveloperAcademy-POSTECH/2026-C6-M15-WFFMST/issues/20)의 작업 기록이다. 선행 PR #16의 `c46f709`를 기준으로 작업했으며, 팀원 3명 승인·노션 기록은 미완료다.
+**공통 값 모델·최소 검증·AAR 관계 Fixture·자동 테스트·양쪽 앱 빌드 완료 / 팀 승인 전** (2026-10-10). [#20](https://github.com/DeveloperAcademy-POSTECH/2026-C6-M15-WFFMST/issues/20)의 작업 기록이다. 선행 PR #16의 `c46f709`를 기준으로 작업했으며, 팀원 3명 승인·노션 기록은 미완료다.
 
 **계약 규칙은 [공통 데이터 계약](shared-data-contract.md) 한 곳에서 관리한다.** 이 문서는 이관 내역·구현 위치·진행 상태·검증 증거만 기록하며 필드 의미·검증 조건·제품 정책을 별도로 정의하지 않는다. 계약 변경 시 기준 문서를 먼저 갱신하고, 이 문서에는 관련 절 링크와 작업 결과를 남긴다.
 
@@ -23,11 +23,11 @@
 | ReconstructionStatus·ReconstructionSummary | ReconstructionAttempt와 [TrackResultSummary](../CQB/Packages/CQBCore/Sources/CQBCore/Models/TrackResultSummary.swift)로 분리·기존 동선 타입 재사용 | [계산 시도와 선택 결과](shared-data-contract.md#계산-시도와-선택-결과) |
 | VideoInfo·VideoChunk | 필드 조정 후 [Video.swift](../CQB/Packages/CQBCore/Sources/CQBCore/Models/Video.swift)에 구현 | [영상 메타데이터](shared-data-contract.md#영상-메타데이터) |
 | 최소 도메인 검증 | [TrainingDomainValidator](../CQB/Packages/CQBCore/Sources/CQBCore/Services/TrainingDomainValidator.swift) 추가 | [#20 공통 구현 경계](shared-data-contract.md#20-공통-구현-경계) |
-| AARSettings | [AARSettings.swift](../CQB/Packages/CQBCore/Sources/CQBCore/Models/AARSettings.swift)의 모델·enum과 기존 검증기 overload·단위 테스트 추가. 관계 Fixture는 미연결 | [1.6 AAR 설정](shared-data-contract.md#16-aar-설정) |
+| AARSettings | [AARSettings.swift](../CQB/Packages/CQBCore/Sources/CQBCore/Models/AARSettings.swift)의 모델·enum과 기존 검증기 overload·단위 테스트 추가. 기존 TrainingDomainFixture에 연결 | [1.6 AAR 설정](shared-data-contract.md#16-aar-설정) |
 
 ## 기존 도메인의 검증 결과
 
-아래 완료 항목은 AARSettings 추가 전 세션·대원·기록·영상·보정 요약에 대한 기록이다. AARSettings 단위 테스트의 실행은 다음 절에서 별도로 기록한다.
+아래 완료 항목은 AARSettings 추가 전 세션·대원·기록·영상·보정 요약에 대한 기록이다. AARSettings 단위·관계 테스트의 실행은 다음 절에서 별도로 기록한다.
 
 - [x] 외부 모듈에서 public 생성자 사용, Codable 왕복·필수/선택 필드·미지원 enum 검사
 - [x] Session → Member → Recording → VideoChunk → 선택된 결과 관계 Fixture
@@ -46,15 +46,38 @@
 - [x] 필드·식별자·초기 구성·선택 규칙·책임과 제외 범위를 공통 계약에 정리
 - [x] [목적과 필드](shared-data-contract.md#목적과-필드)에 맞춰 CQBCore 값 타입과 codec 테스트 추가
 - [x] [최소 정합성 검증과 로딩 경계](shared-data-contract.md#최소-정합성-검증과-로딩-경계)의 조건별 정상·오류 테스트와 검증 구현 추가
-- [ ] [초기 구성과 선택 규칙](shared-data-contract.md#초기-구성과-선택-규칙)을 표현하는 관계 Fixture·경계 사례 추가
-- [ ] [책임과 기존 앱 연결](shared-data-contract.md#책임과-기존-앱-연결)에 맞춰 기존 도메인과의 연결을 확인
+- [x] [초기 구성과 선택 규칙](shared-data-contract.md#초기-구성과-선택-규칙)을 표현하는 관계 Fixture·경계 사례 추가
+- [x] [책임과 기존 앱 연결](shared-data-contract.md#책임과-기존-앱-연결)에 맞춰 기존 도메인과의 연결을 확인(값 관계 검증이며 실제 앱 연결 아님)
 - [x] [포함하지 않는 값](shared-data-contract.md#포함하지-않는-값과-검증-계획)의 필드 혼입 여부 확인
 - [x] 관련 패키지 빌드·단위 테스트·전체 회귀 테스트 후 실행 기록 갱신
-- [ ] AAR 관계 Fixture 연결 이후 영향받는 앱 타깃 빌드와 전체 검증 결과 갱신
+- [x] AAR 관계 Fixture 연결 이후 영향받는 앱 타깃 빌드와 전체 검증 결과 갱신
+
+### AAR 관계 Fixture 연결·검증 기록 (2026-10-10)
+
+목표는 기존 도메인 관계에 AAR 설정을 연결하고, [공통 계약 1.6](shared-data-contract.md#16-aar-설정)을 공개 API로 소비할 수 있음을 확인하는 것이다. 새 정책·Core API·운영 파일 schema를 추가하지 않았다.
+
+[TrainingDomainFixture](../CQB/Packages/CQBCore/Sources/CQBFixtures/TrainingDomainFixture.swift)의 `Snapshot`에 `members`와 `aarSettings`를 추가했다. 기존 `member`는 이전 소비자가 사용하는 주 대원 값이며, `members`에 동일한 값으로 정확히 한 번 포함됨을 검사한다. Snapshot의 Codable은 합성 자료의 왕복 검증용이지 운영 저장 형식이나 마이그레이션 계약이 아니다.
+
+| 합성 자료 | 이번 Fixture의 구성·확인 결과 |
+| --- | --- |
+| 세션·대원 | 완전한 참가자 목록 7명, 제외 대원 1명, 초기 동선 선택 6명. 인원은 경계 검증용 예시다 |
+| 자료가 있는 주 대원 | 기존 3개 기록·2개 raw/결과·2개 영상 조각을 유지. 표시 대상에서 기록을 찾고 각 기록의 선택 결과로 연결한다 |
+| 추가 대원 | 5명은 선택 대상이지만 기록·영상·보정 결과 자료 없음. 가짜 결과나 준비 보고를 만들어 채우지 않았다 |
+| 보정 결과 | 기존 partial·trackingLost/connectionUnverified와 coverage를 재검증. 최근 실패/취소 시도 ID로 선택 결과를 대체하지 않는다 |
+
+- [AARTrainingDomainFixtureTests](../CQB/Packages/CQBCore/Tests/CQBCoreTests/AARTrainingDomainFixtureTests.swift) **7개 통과**. `@testable` 없이 합성 자료와 공통 모델·검증기를 사용했다. 위 관계와 codec, 빈 선택·같은 4명 양모드·영상 5/6명 거부·외부/제외 참조·자료 미확보 대원 선택·입력 보존을 확인했다. 기대 판정은 1.6을 따른다.
+- `swift build --package-path CQB/Packages/CQBCore` 성공.
+- `swift test --package-path CQB/Packages/CQBCore --filter AARTrainingDomainFixtureTests` 성공.
+- `swift test --package-path CQB/Packages/CQBCore`: **187개 통과**(Core 178개 + Fixtures 9개, 기존 빈 example 1개 포함). 직전 180개에 관계 테스트 7개를 추가했다.
+- MemberApp·InstructorApp 모두 `xcodebuild -project CQB/CQB.xcodeproj -scheme <앱 이름> -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build` 성공. 검증 전용 DerivedData를 사용했다. 앱 코드는 수정하지 않았으며, 빌드 성공은 AAR 모델의 화면 주입이나 동작 검증을 의미하지 않는다.
+- `node scripts/check-minimal-track-fixture.mjs`: 기존 4개 사례·공개 기대값 6개·변형 검사 6개 통과. normal-v1/minimal-v1 리소스·V13·기존 raw/결과 생성 코드는 변경하지 않았다.
+- 독립 리뷰에서 필수 수정 사항 없음. 새 참조 소유·비동기 작업·UI 관찰을 추가하지 않았으며 메모리·실기기 성능 측정으로 해석하지 않는다.
+
+이번 단계는 값 관계·경계 검증이다. 모든 대원의 영상 파일을 갖춘 6명 AAR 재생 Fixture, 복수 기록 선택·타임라인 통합, 앱 Store의 전환 거부/상태 유지, 실제 UI·기기 간 통신은 구현하거나 검증하지 않았다. 기존 `Session.status == running` 자료를 유지한 것은 값 검증과 AAR 진입 조건을 구분하기 위한 것으로, 실행 중 AAR 진입을 허용하는 정책 추가가 아니다.
 
 ### AAR 모델·최소 검증 실행 기록 (2026-10-10)
 
-사용자가 요청한 권장 순서 1~3까지 수행했다. 문서 파일명·링크 정리와 계약 기준은 `ccad8c6`으로 먼저 커밋한 뒤 모델·검증·단위 테스트를 추가했다.
+아래는 관계 Fixture 연결 전, 사용자가 요청한 권장 순서 1~3의 실행 이력이다. 문서 파일명·링크 정리와 계약 기준은 `ccad8c6`으로 먼저 커밋한 뒤 모델·검증·단위 테스트를 추가했다.
 
 - [AARSettingsTests](../CQB/Packages/CQBCore/Tests/CQBCoreTests/AARSettingsTests.swift) **11개 통과**. `@testable` 없이 공개 API를 소비한다. 생성·필수 필드·미지원 값·집합 codec, 정상/오류 참조, 인원 경계, 검증 시 입력 보존을 확인했다. 기대 판정의 기준은 1.6이다.
 - `swift build --package-path CQB/Packages/CQBCore` 성공.
@@ -74,7 +97,7 @@
 
 ## 남은 확인과 검증 한계
 
-- AARSettings의 기존 관계 Fixture 연결, 통합 검증과 양쪽 앱 빌드가 남아 있다. 값 모델·단위 테스트 완료는 전체 이슈나 팀 승인 완료를 의미하지 않는다.
+- AARSettings의 기존 관계 Fixture 연결·자동 검증·양쪽 앱 빌드는 완료했다. 모델 구현·검증 완료는 팀 승인이나 실제 앱 서비스 연결 완료를 의미하지 않는다.
 - 팀원 3명 승인·노션 동기화, 양쪽 앱/Firebase 담당자의 필드 사용 확인 및 진행 중인 도메인 작업과의 중복 확인은 자동 완료 처리하지 않았다.
 - 담당자 확인 기준: [1.2 세션](shared-data-contract.md#12-세션), [1.3 대원과 준비 상태](shared-data-contract.md#13-대원과-준비-상태), [1.4 기록](shared-data-contract.md#14-기록), [1.6 AAR 설정](shared-data-contract.md#16-aar-설정), [2.1 변환 규칙](shared-data-contract.md#21-변환-규칙). 확인 결과와 이견은 이 작업 기록에 남기되 규칙 변경은 공통 계약에 반영한다.
 - 실제 앱 View/Store 주입·두 기기 통신·업로드·준비 판정·시계 동기화·영상/V13 이관은 이번 검증에 포함하지 않는다. 상태 snapshot 테스트는 실제 실행 정책을 검증한 것이 아니다.
