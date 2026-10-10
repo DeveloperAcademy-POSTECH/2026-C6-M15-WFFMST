@@ -58,13 +58,13 @@ func sessionWithoutStartedAt() throws {
 
 @Test("Member가 세션과 대원 식별자, 준비 상태를 보존한다")
 func memberCodableRoundTrip() throws {
-    let readyUpdatedAt = Date(timeIntervalSince1970: 1_800_000_100)
+    let lastActiveAt = Date(timeIntervalSince1970: 1_800_000_100)
     let member = Member(
         id: UUID(uuidString: "00000000-0000-0000-0000-000000000201")!,
         sessionID: UUID(uuidString: "00000000-0000-0000-0000-000000000202")!,
         name: "대원 1",
         isReady: true,
-        readyUpdatedAt: readyUpdatedAt
+        lastActiveAt: lastActiveAt
     )
 
     let decoded = try codableRoundTrip(member)
@@ -73,7 +73,7 @@ func memberCodableRoundTrip() throws {
     #expect(decoded.sessionID == member.sessionID)
     #expect(decoded.name == member.name)
     #expect(decoded.isReady)
-    #expect(decoded.readyUpdatedAt == readyUpdatedAt)
+    #expect(decoded.lastActiveAt == lastActiveAt)
 }
 
 @Test("RecordingState의 모든 상태가 Codable 왕복된다")

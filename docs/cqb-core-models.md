@@ -80,14 +80,14 @@ public struct Member: Codable, Sendable, Identifiable {
     public let sessionID: UUID
     public let name: String
     public let isReady: Bool
-    public let readyUpdatedAt: Date
+    public let lastActiveAt: Date
 }
 ```
 
 - `id`는 대원 기기에 저장하고 같은 세션에 재입장할 때 재사용한다.
 - `isReady`는 출발점 설정과 추적 준비가 끝났는지 대원 앱이 판단한 결과다.
-- `readyUpdatedAt`은 준비 상태를 마지막으로 갱신한 서버 시각이다.
-- 교관 앱은 기록 시작 전 대원의 연결 상태를 판단할 때 `readyUpdatedAt`을 사용한다.
+- `lastActiveAt`은 대원이 마지막 활동을 알린 서버 시각이다.
+- 교관 앱은 기록 시작 전 대원의 연결 상태를 판단할 때 `Member.lastActiveAt`을 사용한다.
 - 연결 끊김으로 판단하는 제한 시간은 이 데이터 계약에서 정하지 않는다.
 
 ### Recording
@@ -224,7 +224,7 @@ public struct TrackIdentity: Codable, Hashable, Sendable {
 
 | 단계 | 기준 시각 | 의미 |
 | --- | --- | --- |
-| 기록 시작 전 | `Member.readyUpdatedAt` | 대원이 마지막으로 준비 상태를 갱신한 서버 시각 |
+| 기록 시작 전 | `Member.lastActiveAt` | 대원이 마지막 활동을 알린 서버 시각 |
 | 기록 중 및 업로드 중 | `Recording.lastActiveAt` | 대원이 마지막 활동을 알린 서버 시각 |
 
 두 값은 연결 상태를 판단할 근거만 제공한다. 갱신 주기, timeout 값, 백그라운드 상태 처리와 자동 `failed` 전환은 후속 구현 정책에서 정한다.
@@ -258,7 +258,7 @@ public struct TrackIdentity: Codable, Hashable, Sendable {
 - 전체 영상 조각 수를 나타내는 `videoChunkCount`를 추가한다.
 - 기록 단계 연결 상태 기준으로 `Recording.lastActiveAt`을 추가한다.
 - 세션과 개별 기록의 시간축을 연결하기 위해 `Recording.startedAt`을 추가한다.
-- 준비 단계는 `Member.readyUpdatedAt`을 연결 상태 판단에 사용한다.
+- 준비 단계는 `Member.lastActiveAt`을 연결 상태 판단에 사용한다.
 - `FloorPlanReference.revisionID`와 Storage의 `revisions/` 계층을 제거한다.
 - 기록당 하나의 `result.json`만 사용하고 `resultID`, `selectedResultID`를 제거한다.
 - 기록 시작 offset은 `Recording.startedAt - Session.startedAt`으로 계산하고 별도로 저장하지 않는다.

@@ -11,21 +11,21 @@ public struct Member: Codable, Sendable, Identifiable {
     /// 출발점 설정과 추적 준비를 마친 뒤 대원 앱이 보고하는 준비 상태다.
     public let isReady: Bool
 
-    /// 준비 상태를 갱신한 서버 시각이며 기록 시작 전 연결 상태 판단에 사용한다.
+    /// 대원이 마지막 활동을 알린 서버 시각이며 기록 시작 전 연결 상태 판단에 사용한다.
     /// 구체적인 연결 끊김 판단 시간은 이 모델을 사용하는 쪽에서 결정한다.
-    public let readyUpdatedAt: Date
+    public let lastActiveAt: Date
 
     public init(
         id: UUID,
         sessionID: UUID,
         name: String,
         isReady: Bool,
-        readyUpdatedAt: Date
+        lastActiveAt: Date
     ) {
         self.id = id
         self.sessionID = sessionID
         self.name = name
         self.isReady = isReady
-        self.readyUpdatedAt = readyUpdatedAt
+        self.lastActiveAt = lastActiveAt
     }
 }
