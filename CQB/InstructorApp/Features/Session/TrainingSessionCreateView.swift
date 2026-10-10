@@ -63,7 +63,7 @@ struct TrainingSessionCreateView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("도면 미리보기").font(.headline)
             if let plan = store.selectedFloorPlan {
-                FloorPlanPreview(title: plan.name)
+                FloorPlanPreview(title: plan.name, image: store.selectedPlanImage)
                     .frame(minHeight: 360)
             } else {
                 ContentUnavailableView("도면을 선택하세요", systemImage: "map", description: Text("선택한 샘플 도면을 여기에 표시합니다."))

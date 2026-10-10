@@ -6,5 +6,6 @@ struct AppContainer: View {
     var body: some View {
         RootView()
             .environment(store)
+            .environment(store.floorPlanDraft)
     }
 }

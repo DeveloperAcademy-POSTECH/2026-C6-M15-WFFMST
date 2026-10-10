@@ -1,7 +1,15 @@
 # InstructorApp 작업 규칙
 
 이 문서는 `CQB/InstructorApp` 아래의 코드에 적용한다.
-저장소 공통 규칙은 루트 `AGENTS.md`를 함께 따른다.
+저장소 공통 규칙은 [루트 AGENTS.md](../../AGENTS.md)를 함께 따른다.
+
+## 참고 문서
+
+- [공통 아키텍처](../../docs/architecture.md)
+- [교관 앱 문서 안내](docs/README.md)
+- [화면 흐름과 상호작용 정책](docs/flows.md)
+
+교관 앱 전용 설명과 작업 기록은 이 앱의 `docs/`에 작성한다. 이 `AGENTS.md`는 코드 작업에 적용되는 규칙이므로 현재 위치에 유지한다.
 
 ## 기본 구조
 
@@ -101,4 +109,3 @@ try await
 store.phase =
 store.participants.append/remove
 ```
-

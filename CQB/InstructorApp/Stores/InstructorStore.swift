@@ -1,13 +1,18 @@
 import Foundation
 import Observation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 @MainActor
 @Observable
 final class InstructorStore {
+    let floorPlanDraft: FloorPlanDraftStore
+#if canImport(UIKit)
+    private(set) var selectedPlanImage: UIImage?
+#endif
     private(set) var phase: InstructorPhase = .home
     private(set) var floorPlans: [DemoFloorPlan]
-    private(set) var floorPlanDraftName = ""
-    private(set) var hasSampleFloorPlan = false
     private(set) var trainingName = "샘플 훈련"
     private(set) var selectedFloorPlanID: String?
     private(set) var participants: [DemoParticipant] = []
@@ -22,14 +27,14 @@ final class InstructorStore {
     let playbackDuration = 2172.0
     let maximumVideoCount = 4
 
-    init(floorPlans: [DemoFloorPlan]? = nil) {
+    init(floorPlans: [DemoFloorPlan]? = nil, floorPlanDraft: FloorPlanDraftStore? = nil) {
+        self.floorPlanDraft = floorPlanDraft ?? FloorPlanDraftStore()
         let plans = floorPlans ?? InstructorMockData.floorPlans
         self.floorPlans = plans
         selectedFloorPlanID = plans.first?.id
     }
 
     var selectedFloorPlan: DemoFloorPlan? { floorPlans.first { $0.id == selectedFloorPlanID } }
-    var canSaveFloorPlan: Bool { !floorPlanDraftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && hasSampleFloorPlan }
     var canCreateSession: Bool { !trainingName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedFloorPlan != nil }
     var readyCount: Int { participants.filter(\.isReady).count }
     var unreadyCount: Int { participants.count - readyCount }
@@ -48,26 +53,27 @@ final class InstructorStore {
 
     func openFloorPlanList() { phase = .floorPlanList }
     func openFloorPlanCreation() {
-        floorPlanDraftName = ""
-        hasSampleFloorPlan = false
+        floorPlanDraft.begin()
         phase = .floorPlanCreation
     }
-    func setFloorPlanDraftName(_ value: String) { floorPlanDraftName = value }
-    func useSampleFloorPlan() { hasSampleFloorPlan = true }
-    func saveFloorPlan() {
-        guard phase == .floorPlanCreation, canSaveFloorPlan else { return }
-        let plan = DemoFloorPlan(id: UUID().uuidString,
-                                 name: floorPlanDraftName.trimmingCharacters(in: .whitespacesAndNewlines),
-                                 fileName: "샘플 도면.png", referenceDistance: 15)
+    func openSessionCreation() { phase = .sessionCreation }
+    func registerFloorPlan() {
+        guard phase == .floorPlanCreation, let registered = floorPlanDraft.registration() else { return }
+        let plan = DemoFloorPlan(id: registered.id.uuidString, name: registered.name,
+            fileName: registered.image.fileName, referenceDistance: registered.scale.meters,
+            registeredPlan: registered)
         floorPlans.append(plan)
-        if selectedFloorPlanID == nil { selectedFloorPlanID = plan.id }
+        selectFloorPlan(plan.id)
+        floorPlanDraft.reset()
         phase = .floorPlanList
     }
-    func openSessionCreation() { phase = .sessionCreation }
     func setTrainingName(_ value: String) { trainingName = value }
     func selectFloorPlan(_ id: String?) {
         guard id == nil || floorPlans.contains(where: { $0.id == id }) else { return }
         selectedFloorPlanID = id
+#if canImport(UIKit)
+        selectedPlanImage = selectedFloorPlan?.registeredPlan.flatMap { UIImage(data: $0.image.pngData) }
+#endif
     }
     func createSession() {
         guard phase == .sessionCreation, canCreateSession else { return }
@@ -138,7 +144,7 @@ final class InstructorStore {
     }
     func returnHome() {
         trainingName = "샘플 훈련"
-        selectedFloorPlanID = floorPlans.first?.id
+        selectFloorPlan(floorPlans.first?.id)
         participants = []
         selectedParticipantIDs = []
         readinessSample = .ready
@@ -150,7 +156,9 @@ final class InstructorStore {
     func goBack() {
         switch phase {
         case .floorPlanList, .sessionCreation: phase = .home
-        case .floorPlanCreation: phase = .floorPlanList
+        case .floorPlanCreation:
+            floorPlanDraft.reset()
+            phase = .floorPlanList
         case .teamReadiness:
             participants = []
             phase = .sessionCreation

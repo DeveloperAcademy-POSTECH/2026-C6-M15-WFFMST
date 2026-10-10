@@ -7,10 +7,15 @@
 
 import SwiftUI
 import CQBCore
+import CQBFirebase
 
 @main
 struct MemberApp: App {
     @UIApplicationDelegateAdaptor(MemberAppDelegate.self) private var appDelegate
+    
+    init() {
+        CQBFirebaseModule.configure()
+    }
 
     var body: some Scene {
         WindowGroup {

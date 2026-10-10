@@ -17,7 +17,7 @@ struct RootView: View {
                     }
                 }
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    Text("화면 연결 데모 · 샘플 데이터 · 서버에 저장하거나 훈련 명령을 보내지 않습니다")
+                    Text("로컬 데모 · 등록 도면은 앱 종료 시 사라집니다 · 서버 저장 및 훈련 명령 전송 없음")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)

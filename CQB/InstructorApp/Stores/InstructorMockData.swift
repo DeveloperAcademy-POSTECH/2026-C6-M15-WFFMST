@@ -6,6 +6,7 @@ struct DemoFloorPlan: Identifiable, Equatable {
     let name: String
     let fileName: String
     let referenceDistance: Double
+    var registeredPlan: LocalRegisteredFloorPlan? = nil
 }
 
 struct DemoParticipant: Identifiable, Equatable {

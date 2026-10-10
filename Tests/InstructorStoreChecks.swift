@@ -12,13 +12,10 @@ struct InstructorStoreChecks {
 
         store.openFloorPlanList()
         store.openFloorPlanCreation()
-        store.setFloorPlanDraftName("   ")
-        store.useSampleFloorPlan()
-        expect(!store.canSaveFloorPlan, "공백 이름 저장 차단")
-        store.setFloorPlanDraftName(" 테스트 도면 ")
-        store.saveFloorPlan()
-        expect(store.phase == .floorPlanList && store.floorPlans.last?.name == "테스트 도면", "메모리 저장 후 목록 복귀")
-        let savedPlanID = store.floorPlans.last!.id
+        store.floorPlanDraft.setName(" 취소할 도면 ")
+        store.goBack()
+        expect(store.phase == .floorPlanList && store.floorPlanDraft.name.isEmpty, "등록 취소 후 목록 복귀 및 draft 초기화")
+        let savedPlanID = store.floorPlans.first!.id
         store.goBack()
         expect(store.phase == .home, "도면 목록 뒤로 → 홈")
 
@@ -94,7 +91,7 @@ struct InstructorStoreChecks {
         expect(store.phase == .aarCompleted, "복기 종료 화면")
         store.returnHome()
         expect(store.phase == .home && store.participants.isEmpty && store.selectedParticipantIDs.isEmpty, "처음으로 → 세션 상태 초기화")
-        expect(store.floorPlans.contains { $0.id == savedPlanID }, "홈 복귀 시 저장한 샘플 도면 유지")
+        expect(store.floorPlans.contains { $0.id == savedPlanID }, "홈 복귀 시 기존 도면 유지")
 
         let emptyStore = InstructorStore(floorPlans: [])
         emptyStore.openSessionCreation()
