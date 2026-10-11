@@ -6,7 +6,7 @@ public protocol RecordingRepository: Sendable {
     func startRecording(_ recording: Recording) async throws
 
     /// 대원 앱: 상태 변경과 생존 신호에 쓴다. `lastActiveAt`을 서버 시각으로 기록한다.
-    func saveRecording(_ recording: Recording) async throws
+    func updateRecording(_ recording: Recording) async throws
 
     /// 교관 앱: 세션의 기록 목록이 바뀔 때마다 새 값을 받는다. AAR로 넘어갈지 판단하는 데 쓴다.
     func observeRecordings(sessionID: UUID) -> AsyncThrowingStream<[Recording], Error>
