@@ -1,0 +1,22 @@
+rules_version = '2';
+
+// 개발용 규칙. Firebase 콘솔의 Storage 규칙과 같게 유지한다.
+service firebase.storage {
+  match /b/{bucket}/o {
+    // 세션 파일 (보정 결과, 영상): 올리기·덮어쓰기·삭제
+    match /sessions/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+                            && request.resource.size < 20 * 1024 * 1024;
+      allow delete: if request.auth != null;
+    }
+
+    // 도면: 처음 올리기만
+    match /floorPlans/{floorPlanID}/{fileName} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && resource == null
+                    && request.resource.size < 20 * 1024 * 1024;
+    }
+  }
+}

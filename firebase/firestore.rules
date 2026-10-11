@@ -1,0 +1,10 @@
+rules_version = '2';
+
+// 개발용 규칙. Firebase 콘솔의 Firestore 규칙과 같게 유지한다.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
