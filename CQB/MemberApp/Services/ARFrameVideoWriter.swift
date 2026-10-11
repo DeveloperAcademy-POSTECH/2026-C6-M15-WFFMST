@@ -52,17 +52,14 @@ nonisolated final class ARFrameVideoWriter: @unchecked Sendable {
             let width = CVPixelBufferGetWidth(firstFrame)
             let height = CVPixelBufferGetHeight(firstFrame)
             let assetWriter = try AVAssetWriter(outputURL: outputURL, fileType: .mov)
-            let pixelsPerFrame = width * height
-            let bitrate = min(max(pixelsPerFrame * 3, 3_000_000), 8_000_000)
             let settings: [String: Any] = [
-                AVVideoCodecKey: AVVideoCodecType.h264,
+                AVVideoCodecKey: AVVideoCodecType.hevc,
                 AVVideoWidthKey: width,
                 AVVideoHeightKey: height,
                 AVVideoCompressionPropertiesKey: [
-                    AVVideoAverageBitRateKey: bitrate,
+                    AVVideoAverageBitRateKey: 2_000_000,
                     AVVideoExpectedSourceFrameRateKey: 30,
-                    AVVideoMaxKeyFrameIntervalKey: 60,
-                    AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel
+                    AVVideoMaxKeyFrameIntervalKey: 60
                 ]
             ]
             let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
