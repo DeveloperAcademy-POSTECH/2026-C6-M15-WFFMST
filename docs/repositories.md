@@ -1,6 +1,6 @@
 # Repository 사용법
 
-앱의 Store가 Firestore에 저장하고, 읽고, 실시간으로 받는 방법을 정리한다.
+앱의 Store가 Firestore에 저장하고, 읽고, 실시간으로 받는 방법과 Storage에 파일을 올리고 받는 방법을 정리한다.
 저장 경로와 필드 계약은 [CQB 공유 데이터 계약](cqb-core-models.md)을 따른다.
 
 ## 구성
@@ -8,7 +8,7 @@
 | 위치 | 내용 |
 | --- | --- |
 | `CQBCore/Repositories/` | 앱이 의존하는 프로토콜과 `RepositoryError` |
-| `CQBFirebase/Repositories/` | Firestore 구현 (`FirestoreSessionRepository` 등) |
+| `CQBFirebase/Repositories/` | Firestore 구현 (`FirestoreSessionRepository` 등), Storage 구현 (`StorageVideoChunkRepository` 등) |
 
 Store는 `CQBCore`의 프로토콜만 안다. Firebase 구현을 아는 곳은 각 앱의 `AppContainer`뿐이다.
 
@@ -25,6 +25,9 @@ match /{document=**} {
 }
 ```
 
+- Storage 규칙도 로그인한 사용자의 읽기·쓰기를 허용해야 한다. 현재 개발용 규칙은 파일 하나를 20MB까지 받는다.
+- `.mp4`를 1일 뒤 지우는 Storage 수명 주기 규칙은 아직 설정하지 않았다. 설정 전에는 `deleteVideo`가 실패하면 영상이 남는다.
+
 ## 누가 무엇을 부르나
 
 보내는 쪽이 저장하고, 받는 쪽이 구독한다.
@@ -34,6 +37,9 @@ match /{document=**} {
 | `SessionRepository` | `createSession`, `updateStatus` | `session(forPin:)`, `observeSession` |
 | `MemberRepository` | `observeMembers` | `join`, `updateReadiness` |
 | `RecordingRepository` | `observeRecordings` | `startRecording`, `updateRecording` |
+| `FloorPlanFileRepository` | `upload` | `download` |
+| `TrackResultRepository` | `download` | `upload` |
+| `VideoChunkRepository` | `downloadVideo`, `deleteVideo` | `upload` |
 
 ## Store에 넣기
 
@@ -190,6 +196,67 @@ func startHeartbeat(member: Member) {
 
 갱신 주기와 연결 끊김 판단 시간은 아직 정하지 않았다. 위의 5초는 예시다.
 
+## 파일 올리기·받기 (Storage)
+
+Storage Repository도 Firestore와 같은 방식으로 `AppContainer`에서 넣는다.
+
+```swift
+// 교관 앱
+floorPlanFileRepository: StorageFloorPlanFileRepository(),
+trackResultRepository: StorageTrackResultRepository(),
+videoChunkRepository: StorageVideoChunkRepository(),
+```
+
+### 도면 (교관 → 대원)
+
+교관 앱은 세션을 만들기 전에 도면 파일 3개를 올린다. 대원 앱은 입장한 뒤 세션의 `floorPlan`으로 받는다.
+
+```swift
+// 교관 앱
+try await floorPlanFileRepository.upload(files, for: session.floorPlan)
+try await sessionRepository.createSession(session)
+
+// 대원 앱
+let files = try await floorPlanFileRepository.download(session.floorPlan)
+```
+
+### 보정 결과와 영상 (대원 → 교관)
+
+대원 앱은 녹화하면서 영상 조각을 하나씩 올리고, 녹화가 끝나면 보정 결과를 올린 뒤 기록을 `done`으로 바꾼다.
+
+```swift
+// 대원 앱: 녹화 중, 조각이 만들어질 때마다 (index는 0부터)
+try await videoChunkRepository.upload(fileURL: chunkURL, identity: identity, index: index)
+
+// 녹화 끝
+try await recordingRepository.updateRecording(
+    Recording(identity: identity, state: .finishing, lastActiveAt: .now, videoChunkCount: chunkCount))
+try await trackResultRepository.upload(result)
+try await recordingRepository.updateRecording(
+    Recording(identity: identity, state: .done, lastActiveAt: .now, videoChunkCount: chunkCount))
+```
+
+교관 앱은 기록이 `done`이 된 뒤에 받는다. 영상은 조각을 모두 받은 다음 재생한다.
+
+```swift
+// 교관 앱
+let result = try await trackResultRepository.download(recording.identity)
+
+let directory = FileManager.default.temporaryDirectory
+    .appending(path: recording.identity.recordingID.uuidString)
+let chunkURLs = try await videoChunkRepository.downloadVideo(
+    recording.identity, chunkCount: recording.videoChunkCount ?? 0, to: directory)
+// chunkURLs를 순서대로 AVQueuePlayer 등에 넣어 재생
+
+// AAR 종료
+do {
+    try await videoChunkRepository.deleteVideo(
+        recording.identity, chunkCount: recording.videoChunkCount ?? 0)
+} catch {
+    // 지우지 못한 영상은 Storage에 남는다. 다음에 다시 시도한다.
+}
+```
+
 ## 함수별 주의사항
 
 ### SessionRepository
@@ -214,9 +281,25 @@ func startHeartbeat(member: Member) {
 - `startRecording`: 기록을 시작할 때 한 번 부른다. `startedAt`과 `lastActiveAt`을 서버 시각으로 기록한다.
 - `updateRecording`: 상태 변경(`finishing`, `done`, `failed`)과 생존 신호에 쓴다. 모델에서 `nil`인 값은 서버에 있던 값을 지우지 않는다.
 
+### FloorPlanFileRepository
+
+- `upload`, `download`: `navigation-map.json`의 SHA-256이 `FloorPlanReference.navigationSHA256`과 다르면 `RepositoryError.integrityMismatch`. 받을 때 이 에러가 나면 도면이 바뀌었거나 깨진 것이다.
+
+### TrackResultRepository
+
+- `upload`: 경로는 `result.identity`로 정한다. 같은 기록에 다시 올리면 덮어쓴다.
+- `download`: 아직 올라오지 않았으면 `RepositoryError.notFound`. 기록이 `done`이 된 뒤에 부른다.
+
+### VideoChunkRepository
+
+- `upload`: 파일 하나가 20MB를 넘으면 `RepositoryError.fileTooLarge`. 조각 길이와 화질은 이 제한 안에 들어오게 정한다.
+- `downloadVideo`: 조각을 하나씩 순서대로 받는다. 하나라도 없으면 `RepositoryError.notFound`. `chunkCount`는 `Recording.videoChunkCount`를 넘긴다.
+- `deleteVideo`: AAR이 끝나면 부른다. 이미 없는 조각은 건너뛴다. 수명 주기 규칙을 설정하기 전에는 실패하면 영상이 그대로 남으므로, 실패를 무시하지 말고 다시 시도한다.
+- 영상은 Storage에서 내려받는 양만큼 요금이 나온다. 필요한 대원의 영상만 받고, 받은 파일은 기기에 두고 다시 쓴다.
+
 ### 공통
 
-- `RepositoryError` 외의 에러는 Firebase 에러가 그대로 온다. 예: 권한 오류(code 7), 네트워크 오류(code 14). 화면에는 "네트워크를 확인해 주세요" 같은 공통 메시지로 처리한다.
+- `RepositoryError` 외의 에러는 Firebase 에러가 그대로 온다. 예: Firestore 권한 오류(code 7), 네트워크 오류(code 14). 화면에는 "네트워크를 확인해 주세요" 같은 공통 메시지로 처리한다.
 
 - 모델의 `lastActiveAt`, `startedAt`에 넣은 값은 저장할 때 서버 시각으로 바뀐다. `.now`를 넣어도 된다.
 - 모든 함수는 익명 로그인이 끝날 때까지 기다린 뒤 요청한다. 앱 시작 직후에 불러도 된다.
@@ -224,4 +307,3 @@ func startHeartbeat(member: Member) {
 ## 아직 없는 것
 
 - `CQBFixtures`의 가짜 구현 (Preview·테스트용)
-- Storage 업로드 (도면 파일, 보정 결과, 영상 조각)
