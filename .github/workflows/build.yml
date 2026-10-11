@@ -1,0 +1,103 @@
+# PR은 develop과 합친 코드(refs/pull/N/merge)로, develop은 머지된 결과로 빌드를 검사한다.
+name: Build
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop]
+
+# PR에 결과 댓글을 남기기 위한 권한
+permissions:
+  contents: read
+  pull-requests: write
+
+# 같은 PR에 새 커밋이 올라오면 이전 실행은 취소한다.
+concurrency:
+  group: build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Package test · App build
+    runs-on: xcode-27
+    timeout-minutes: 45
+    env:
+      SPM_DIR: ${{ github.workspace }}/.spm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode 버전
+        run: xcodebuild -version
+
+      - name: SPM 의존성 캐시
+        uses: actions/cache@v4
+        with:
+          path: .spm
+          key: spm-${{ runner.os }}-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      # Firebase가 필요 없는 CQBCoreTests만 돌린다. CQBFirebaseTests는 Firebase를 macOS용으로 한 번 더 컴파일해서 뺀다.
+      - name: CQBCore 패키지 테스트
+        id: test
+        working-directory: CQB/Packages/CQBCore
+        run: |
+          xcodebuild test -quiet \
+            -scheme CQBCoreTests \
+            -destination 'platform=macOS' \
+            -clonedSourcePackagesDirPath "$SPM_DIR"
+
+      - name: MemberApp 빌드
+        id: member
+        run: |
+          xcodebuild build -quiet \
+            -project CQB/CQB.xcodeproj \
+            -scheme MemberApp \
+            -destination 'generic/platform=iOS Simulator' \
+            -clonedSourcePackagesDirPath "$SPM_DIR" \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: InstructorApp 빌드
+        id: instructor
+        run: |
+          xcodebuild build -quiet \
+            -project CQB/CQB.xcodeproj \
+            -scheme InstructorApp \
+            -destination 'generic/platform=iOS Simulator' \
+            -clonedSourcePackagesDirPath "$SPM_DIR" \
+            CODE_SIGNING_ALLOWED=NO
+
+      # 결과 댓글은 PR마다 하나만 두고, 다시 실행되면 내용을 고친다.
+      - name: PR에 결과 댓글
+        if: always() && github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        env:
+          TEST: ${{ steps.test.outcome }}
+          MEMBER: ${{ steps.member.outcome }}
+          INSTRUCTOR: ${{ steps.instructor.outcome }}
+        with:
+          script: |
+            const marker = '<!-- build-check -->';
+            const passed = [process.env.TEST, process.env.MEMBER, process.env.INSTRUCTOR]
+              .every(outcome => outcome === 'success');
+            // PR 작성자 login → 이름. 멘션하지 않고, 모르는 작성자는 login을 그대로 쓴다.
+            const names = { '0sunset0': '노을', 'LeeDayday': '새미', 'yoonjung561': '엘리' };
+            const login = context.payload.pull_request.user.login;
+            const name = names[login] ?? login;
+            const body = [
+              marker,
+              passed ? '✅ **빌드 성공!**' : '❌ **빌드 실패**',
+              '',
+              passed ? `${name}, 당신은 최고의 개발자에요! 🎉` : `${name}, 빌드 결과를 확인해 주세요. 🔍`,
+            ].join('\n');
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+            const existing = comments.find(c => c.user.type === 'Bot' && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
