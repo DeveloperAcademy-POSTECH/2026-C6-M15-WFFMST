@@ -1,73 +1,130 @@
+import CQBDesignSystem
 import SwiftUI
 
 struct HomeView: View {
     @Environment(InstructorStore.self) private var store
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
-        ScrollView {
-            choicesLayout {
-                choiceCard(
-                    title: "도면 정보 관리",
-                    description: "훈련에 사용할 도면을 확인하고 추가합니다.",
-                    systemImage: "map",
-                    accessibilityIdentifier: "home.floorPlans",
-                    action: store.openFloorPlanList
-                )
+        HStack(spacing: 24) {
+            HomeActionButton(
+                title: "도면 정보 관리",
+                tone: store.canOpenSessionCreation ? .secondary : .primary,
+                accessibilityHint: "등록된 도면 목록으로 이동합니다.",
+                accessibilityIdentifier: "home.floorPlans",
+                action: store.openFloorPlanList
+            )
 
-                choiceCard(
-                    title: "훈련 세션 생성",
-                    description: "도면을 선택하고 팀의 훈련을 준비합니다.",
-                    systemImage: "person.3",
-                    accessibilityIdentifier: "home.createSession",
-                    action: store.openSessionCreation
-                )
-            }
-            .frame(maxWidth: 1_100)
-            .frame(maxWidth: .infinity)
-            .padding(32)
+            HomeActionButton(
+                title: "훈련 세션 생성",
+                tone: store.canOpenSessionCreation ? .primary : .secondary,
+                accessibilityHint: store.canOpenSessionCreation
+                    ? "새 훈련 세션을 만드는 화면으로 이동합니다."
+                    : "도면을 등록한 후 사용할 수 있습니다.",
+                accessibilityIdentifier: "home.createSession",
+                action: store.openSessionCreation
+            )
+            .disabled(!store.canOpenSessionCreation)
         }
-        .defaultScrollAnchor(.center)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var choicesLayout: AnyLayout {
-        horizontalSizeClass == .compact
-            ? AnyLayout(VStackLayout(spacing: 24))
-            : AnyLayout(HStackLayout(spacing: 24))
-    }
-
-    private func choiceCard(
-        title: String,
-        description: String,
-        systemImage: String,
-        accessibilityIdentifier: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            GroupBox {
-                VStack(spacing: 24) {
-                    Image(systemName: systemImage)
-                        .font(.largeTitle)
-                        .accessibilityHidden(true)
-                    Text(description)
-                        .foregroundStyle(.secondary)
-                    Text(title)
-                        .foregroundStyle(Color.accentColor)
-                }
-                .frame(maxWidth: .infinity, minHeight: 220)
-                .padding()
-            }
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title)
-        .accessibilityHint(description)
-        .accessibilityIdentifier(accessibilityIdentifier)
+        .frame(maxWidth: 1_088)
+        .padding(.horizontal, 32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .background(InstructorColor.canvas.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
     }
 }
 
-#Preview {
-    HomeView()
-        .environment(InstructorStore())
+private struct HomeActionButton: View {
+    private static let titleFont: Font = {
+        DSFonts.register()
+        return .custom("NotoSansKR-Medium", size: 24)
+    }()
+
+    enum Tone {
+        case primary
+        case secondary
+
+        var foregroundColor: Color {
+            switch self {
+            case .primary: InstructorColor.canvas
+            case .secondary: InstructorColor.textPrimary
+            }
+        }
+
+        var backgroundColor: Color {
+            switch self {
+            case .primary: InstructorColor.actionPrimary
+            case .secondary: InstructorColor.surfaceRaised
+            }
+        }
+
+        var borderColor: Color {
+            switch self {
+            case .primary: InstructorColor.actionPrimary
+            case .secondary: InstructorColor.borderDefault
+            }
+        }
+    }
+
+    let title: String
+    let tone: Tone
+    let accessibilityHint: String
+    let accessibilityIdentifier: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(Self.titleFont)
+                .foregroundStyle(tone.foregroundColor)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(.rect)
+        }
+        .buttonStyle(HomeActionButtonStyle(tone: tone))
+        .frame(maxWidth: 532, minHeight: 300, maxHeight: 300)
+        .accessibilityLabel(title)
+        .accessibilityHint(accessibilityHint)
+        .accessibilityIdentifier(accessibilityIdentifier)
+    }
+
+}
+
+private struct HomeActionButtonStyle: ButtonStyle {
+    let tone: HomeActionButton.Tone
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(tone.backgroundColor)
+            .clipShape(.rect(cornerRadius: 4))
+            .overlay {
+                RoundedRectangle(cornerRadius: 4)
+                    .strokeBorder(tone.borderColor, lineWidth: 1)
+            }
+            .opacity(configuration.isPressed ? 0.86 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+#Preview("등록된 도면 없음") {
+    NavigationStack {
+        HomeView()
+            .environment(InstructorStore(floorPlans: []))
+    }
+    .frame(width: 1_366, height: 1_024)
+    .preferredColorScheme(.dark)
+}
+
+#Preview("등록된 도면 있음") {
+    NavigationStack {
+        HomeView()
+            .environment(InstructorStore(floorPlans: [
+                DemoFloorPlan(
+                    id: "preview-plan",
+                    name: "훈련장 A",
+                    fileName: "훈련장 A 도면.png",
+                    referenceDistance: 15
+                )
+            ]))
+    }
+    .frame(width: 1_366, height: 1_024)
+    .preferredColorScheme(.dark)
 }

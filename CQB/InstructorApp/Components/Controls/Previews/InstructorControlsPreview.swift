@@ -22,6 +22,10 @@ private struct InstructorControlsPreview: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 32) {
+                previewSection("Navigation") {
+                    InstructorBackButton(action: {})
+                }
+
                 previewSection("Primary button") {
                     ActionButton("훈련 시작", action: {})
                     ActionButton("훈련 시작", action: {})

@@ -32,10 +32,6 @@ enum ReadinessSample: String, CaseIterable, Identifiable {
 }
 
 enum InstructorMockData {
-    static let floorPlans = [
-        DemoFloorPlan(id: "plan-a", name: "훈련장 A", fileName: "훈련장 A 도면.png", referenceDistance: 15),
-        DemoFloorPlan(id: "plan-b", name: "훈련장 B", fileName: "B동 1층.png", referenceDistance: 12)
-    ]
     static let participants = ["유키", "매버릭", "도넛", "새미", "엘리", "노을"]
         .enumerated().map { index, name in
             DemoParticipant(id: "member-\(index + 1)", number: index + 1, name: name,
