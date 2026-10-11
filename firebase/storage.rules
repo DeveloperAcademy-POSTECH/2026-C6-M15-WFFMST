@@ -10,7 +10,7 @@ service firebase.storage {
     }
 
     function underSizeLimit() {
-      return request.resource.size < 20 * 1024 * 1024;
+      return request.resource.size <= 20 * 1024 * 1024;
     }
 
     // 도면: 로그인 사용자가 읽고, 처음 한 번만 올린다. 덮어쓰기·삭제는 막는다.
