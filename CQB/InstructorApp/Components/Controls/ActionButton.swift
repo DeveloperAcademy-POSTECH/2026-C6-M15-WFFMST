@@ -36,13 +36,13 @@ private struct InstructorPrimaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(isEnabled ? DSColor.background : DSColor.darkGreen)
+            .foregroundStyle(isEnabled ? InstructorColor.canvas : InstructorColor.textSecondary)
             .padding(.horizontal, 12)
-            .background(isEnabled ? DSColor.main : InstructorControlColor.actionDisabled)
+            .background(isEnabled ? InstructorColor.actionPrimary : InstructorColor.actionDisabled)
             .clipShape(.rect(cornerRadius: 4))
             .overlay {
                 RoundedRectangle(cornerRadius: 4)
-                    .stroke(isEnabled ? DSColor.main : DSColor.area3, lineWidth: 1)
+                    .stroke(isEnabled ? InstructorColor.actionPrimary : InstructorColor.borderDefault, lineWidth: 1)
             }
             .opacity(configuration.isPressed ? 0.86 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)

@@ -12,14 +12,14 @@ struct InstructorTextField: View {
             TextField(
                 placeholder,
                 text: $text,
-                prompt: Text(placeholder).foregroundStyle(DSColor.darkGreen)
+                prompt: Text(placeholder).foregroundStyle(InstructorColor.textSecondary)
             )
             .font(DSTypography.body)
-            .foregroundStyle(DSColor.white)
-            .tint(DSColor.main)
+            .foregroundStyle(InstructorColor.textPrimary)
+            .tint(InstructorColor.actionPrimary)
             .padding(.horizontal, 12)
             .frame(minHeight: 48)
-            .background(DSColor.area1)
+            .background(InstructorColor.surfaceBase)
             .clipShape(.rect(cornerRadius: 4))
             .overlay {
                 RoundedRectangle(cornerRadius: 4)
@@ -30,12 +30,12 @@ struct InstructorTextField: View {
             if let validationMessage {
                 Text(validationMessage)
                     .font(DSTypography.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(InstructorColor.validationError)
             }
         }
     }
 
     private var borderColor: Color {
-        validationMessage == nil ? DSColor.area3 : .red
+        validationMessage == nil ? InstructorColor.borderDefault : InstructorColor.validationError
     }
 }

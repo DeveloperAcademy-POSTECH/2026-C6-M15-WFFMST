@@ -10,7 +10,7 @@ struct SelectionFieldLabel: View {
     var body: some View {
         HStack(spacing: 8) {
             Text(text)
-                .foregroundStyle(isPlaceholder ? DSColor.darkGreen : DSColor.white)
+                .foregroundStyle(isPlaceholder ? InstructorColor.textSecondary : InstructorColor.textPrimary)
                 .lineLimit(1)
 
             if let color {
@@ -24,7 +24,7 @@ struct SelectionFieldLabel: View {
 
             Image(systemName: "chevron.down")
                 .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(DSColor.darkGreen)
+                .foregroundStyle(InstructorColor.textSecondary)
                 .rotationEffect(.degrees(isExpanded ? 180 : 0))
                 .animation(.easeOut(duration: 0.12), value: isExpanded)
                 .accessibilityHidden(true)
@@ -32,11 +32,11 @@ struct SelectionFieldLabel: View {
         .font(DSTypography.body)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(DSColor.area1)
+        .background(InstructorColor.surfaceBase)
         .clipShape(.rect(cornerRadius: 4))
         .overlay {
             RoundedRectangle(cornerRadius: 4)
-                .stroke(DSColor.area3, lineWidth: 1)
+                .stroke(InstructorColor.borderDefault, lineWidth: 1)
         }
         .contentShape(.rect)
     }
@@ -171,7 +171,7 @@ struct SelectionMenuList<Option: Identifiable>: View {
             if let footerTitle, let onFooterSelect {
                 Button(footerTitle, action: onFooterSelect)
                     .font(DSTypography.body)
-                    .foregroundStyle(DSColor.white)
+                    .foregroundStyle(InstructorColor.textPrimary)
                     .frame(maxWidth: .infinity, minHeight: 18, alignment: .leading)
                     .contentShape(.rect)
                     .buttonStyle(.plain)
@@ -179,11 +179,11 @@ struct SelectionMenuList<Option: Identifiable>: View {
         }
         .padding(12)
         .frame(width: 240, alignment: .topLeading)
-        .background(DSColor.area3)
+        .background(InstructorColor.menuSurface)
         .clipShape(.rect(cornerRadius: 4))
         .overlay {
             RoundedRectangle(cornerRadius: 4)
-                .stroke(DSColor.black, lineWidth: 1)
+                .stroke(InstructorColor.menuBorder, lineWidth: 1)
         }
     }
 
@@ -207,11 +207,12 @@ struct SelectionMenuList<Option: Identifiable>: View {
                 if isSelected(option.id) {
                     Image(systemName: "checkmark")
                         .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(InstructorColor.iconCheck)
                         .accessibilityHidden(true)
                 }
             }
             .font(DSTypography.body)
-            .foregroundStyle(DSColor.white)
+            .foregroundStyle(InstructorColor.textPrimary)
             .frame(maxWidth: .infinity, minHeight: 18, alignment: .leading)
             .contentShape(.rect)
         }
@@ -223,7 +224,7 @@ struct SelectionMenuList<Option: Identifiable>: View {
 
     private var menuDivider: some View {
         Rectangle()
-            .fill(DSColor.white)
+            .fill(InstructorColor.textPrimary)
             .frame(height: 1)
             .padding(.vertical, 11.5)
             .accessibilityHidden(true)

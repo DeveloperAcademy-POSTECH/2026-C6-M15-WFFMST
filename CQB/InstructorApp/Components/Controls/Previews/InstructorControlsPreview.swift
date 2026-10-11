@@ -14,9 +14,9 @@ private struct InstructorControlsPreview: View {
     ]
 
     private let teams = [
-        PreviewTeam(id: 1, name: "팀 1", color: DSColor.team1),
-        PreviewTeam(id: 2, name: "팀 2", color: DSColor.team2),
-        PreviewTeam(id: 3, name: "팀 3", color: DSColor.team3)
+        PreviewTeam(id: 1, name: "팀 1", color: InstructorColor.teamOne),
+        PreviewTeam(id: 2, name: "팀 2", color: InstructorColor.teamTwo),
+        PreviewTeam(id: 3, name: "팀 3", color: InstructorColor.teamThree)
     ]
 
     var body: some View {
@@ -100,7 +100,7 @@ private struct InstructorControlsPreview: View {
             .frame(width: 544)
             .padding(32)
         }
-        .background(DSColor.background)
+        .background(InstructorColor.canvas)
         .preferredColorScheme(.dark)
     }
 
@@ -111,7 +111,7 @@ private struct InstructorControlsPreview: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title)
                 .font(DSTypography.h3)
-                .foregroundStyle(DSColor.white)
+                .foregroundStyle(InstructorColor.textPrimary)
             content()
         }
     }
