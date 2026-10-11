@@ -33,15 +33,19 @@ jobs:
       - name: SPM 의존성 캐시
         uses: actions/cache@v4
         with:
-          path: |
-            .spm
-            CQB/Packages/CQBCore/.build
+          path: .spm
           key: spm-${{ runner.os }}-${{ hashFiles('**/Package.resolved') }}
           restore-keys: spm-${{ runner.os }}-
 
+      # Firebase가 필요 없는 CQBCoreTests만 돌린다. CQBFirebaseTests는 Firebase를 macOS용으로 한 번 더 컴파일해서 뺀다.
       - name: CQBCore 패키지 테스트
         id: test
-        run: swift test --package-path CQB/Packages/CQBCore
+        working-directory: CQB/Packages/CQBCore
+        run: |
+          xcodebuild test -quiet \
+            -scheme CQBCoreTests \
+            -destination 'platform=macOS' \
+            -clonedSourcePackagesDirPath "$SPM_DIR"
 
       - name: MemberApp 빌드
         id: member
