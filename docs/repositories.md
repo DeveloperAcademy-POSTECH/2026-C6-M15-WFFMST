@@ -17,6 +17,7 @@ Store는 `CQBCore`의 프로토콜만 안다. Firebase 구현을 아는 곳은 �
 - 앱 타깃이 `CQBCore`와 `CQBFirebase`를 링크하고, 앱 폴더에 `GoogleService-Info.plist`가 있어야 한다.
 - 앱 시작 시 `CQBFirebaseModule.configure()`와 `CQBFirebaseModule.signInAnonymously()`를 부른다. 두 앱의 `App` 진입점에 이미 있다.
 - Firebase 콘솔에서 익명 로그인이 켜져 있어야 한다.
+- 개발·테스트 중에는 운영 대신 로컬 에뮬레이터에 붙을 수 있다. [Firebase 로컬 에뮬레이터](firebase-emulator.md)
 - Firestore 규칙이 로그인한 사용자의 읽기·쓰기를 허용해야 한다. 막혀 있으면 모든 요청이 권한 오류(code 7)로 실패한다. 현재 개발용 규칙은 다음과 같다.
 
 ```
