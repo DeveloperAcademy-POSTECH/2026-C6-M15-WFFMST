@@ -1,4 +1,5 @@
 import CoreGraphics
+import CQBCore
 import Foundation
 import Observation
 
@@ -6,8 +7,18 @@ import Observation
 @MainActor
 @Observable
 final class MemberStore {
-    @ObservationIgnored let cameraService: CameraPreviewService
+    @ObservationIgnored let cameraService: ARRecordingService
     @ObservationIgnored private let recordingFileStore = LocalRecordingFileStore()
+
+    let trainingMap: TrainingMap?
+    private(set) var rawTrack: RawTrackDocument?
+    private(set) var correction: RouteCorrectionOutput?
+    private(set) var recordingFiles: LocalRecordingFiles?
+    private(set) var filesSaved = false
+    private(set) var isStarting = false
+    @ObservationIgnored private var identity: TrackIdentity?
+    @ObservationIgnored private var sessionID = UUID()
+    @ObservationIgnored private var memberID = UUID()
 
     private(set) var phase: MemberPhase = .join
     private(set) var pin = ""
@@ -22,8 +33,9 @@ final class MemberStore {
 
     @ObservationIgnored private var isSimulatingUpload = false
 
-    init(cameraService: CameraPreviewService = CameraPreviewService()) {
-        self.cameraService = cameraService
+    init(cameraService: ARRecordingService? = nil) {
+        self.cameraService = cameraService ?? ARRecordingService()
+        self.trainingMap = try? BundledTrainingMapLoader.load()
     }
 
     var isReady: Bool { startPoint != nil && directionPoint != nil }
@@ -33,6 +45,8 @@ final class MemberStore {
         let name = memberName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard phase == .join, pin.count == 6,
               pin.allSatisfy({ $0.isASCII && $0.isNumber }), !name.isEmpty else { return }
+        sessionID = UUID()
+        memberID = UUID()
         self.pin = pin
         self.memberName = name
         phase = .setup
@@ -42,6 +56,15 @@ final class MemberStore {
         guard phase == .setup, !isReady,
               [start.x, start.y, direction.x, direction.y].allSatisfy({ $0.isFinite && (0...1).contains($0) }),
               start != direction else { return }
+        guard let map = trainingMap else {
+            recordingError = "테스트 도면 파일을 불러올 수 없습니다."
+            return
+        }
+        guard map.navigation.grid.isFree(map.pixel(start)),
+              hypot(map.pixel(direction).x - map.pixel(start).x, map.pixel(direction).y - map.pixel(start).y) >= 10 else {
+            recordingError = "도면 내부의 이동 가능한 출발점과 충분히 떨어진 방향 지점을 선택해주세요."
+            return
+        }
         startPoint = start
         directionPoint = direction
         phase = .waiting
@@ -54,41 +77,85 @@ final class MemberStore {
         phase = .setup
     }
 
-    /// 로컬 목업 제어에서 호출한다. 실제 서버 신호 연결은 후속 작업이다.
+    /// 실제 세션/대원 ID를 서버에서 받은 뒤 임시 ID 주입을 교체한다.
     func startRecording() async {
-        guard phase == .waiting, isReady else { return }
+        guard phase == .waiting, !isStarting, let map = trainingMap,
+              let startPoint, let directionPoint else { return }
+        isStarting = true
+        defer { isStarting = false }
         recordingError = nil
-
         do {
-            let url = try recordingFileStore.makeRecordingURL()
-            try await cameraService.startRecording(to: url)
-            savedRecordingURL = url
+            let identity = TrackIdentity(sessionID: sessionID, memberID: memberID, recordingID: UUID())
+            let files = try recordingFileStore.makeFiles(recordingID: identity.recordingID)
+            try cameraService.startRecording(to: files.video, start: map.pixel(startPoint), direction: map.pixel(directionPoint))
+            self.identity = identity
+            recordingFiles = files
+            savedRecordingURL = nil
+            rawTrack = nil
+            correction = nil
+            filesSaved = false
             recordingStartedAt = Date()
             phase = .recording
-        } catch {
-            recordingError = error.localizedDescription
-        }
+        } catch { recordingError = error.localizedDescription }
     }
 
-    /// 로컬 녹화를 종료하고 파일 기록이 완료된 뒤 저장 완료 화면으로 이동한다.
     func finishRecording() async {
-        guard phase == .recording else { return }
+        guard phase == .recording, let map = trainingMap, let identity,
+              let startPoint, let directionPoint, let recordingStartedAt else { return }
         phase = .saving
-        recordingError = nil
+        recordingError = cameraService.fatalError
+        // 영상 마무리 실패와 동선 저장 실패를 독립적으로 처리한다.
+        do { savedRecordingURL = try await cameraService.stopRecording() }
+        catch { recordingError = error.localizedDescription }
+        rawTrack = RawTrackDocument(identity: identity, floorPlan: map.reference,
+            localStartedAt: recordingStartedAt, start: map.pixel(startPoint), direction: map.pixel(directionPoint),
+            pixelsPerMeter: map.pixelsPerMeter, rotationDegrees: cameraService.rotationDegrees,
+            samples: cameraService.samples)
+        cameraService.stop()
+        await saveAndCorrect()
+    }
 
+    /// 저장 공간 확보 후 재시도해도 동일한 원본 바이트를 보존한다.
+    func retrySaving() async {
+        guard phase == .saved, !filesSaved else { return }
+        recordingError = nil
+        await saveAndCorrect()
+    }
+
+    private func saveAndCorrect() async {
+        guard let raw = rawTrack, let files = recordingFiles, let map = trainingMap else { return }
+        phase = .saving
         do {
-            savedRecordingURL = try await cameraService.stopRecording()
-            phase = .saved
-        } catch {
-            recordingError = error.localizedDescription
-            recordingStartedAt = nil
-            phase = .waiting
-        }
+            let fileStore = recordingFileStore
+            let hash = try await Task.detached {
+                if FileManager.default.fileExists(atPath: files.raw.path) {
+                    return LocalRecordingFileStore.sha256(try Data(contentsOf: files.raw))
+                }
+                return try fileStore.saveRaw(raw, to: files.raw)
+            }.value
+            phase = .correcting
+            let output: RouteCorrectionOutput
+            if let correction { output = correction }
+            else {
+                output = await Task.detached(priority: .userInitiated) {
+                    RouteCorrectionService.correct(raw: raw, rawHash: hash, map: map)
+                }.value
+                correction = output
+            }
+            try await Task.detached {
+                try fileStore.save(output.document, to: files.result)
+                if let diagnostics = output.diagnostics {
+                    try fileStore.save(diagnostics, to: files.diagnostics)
+                }
+            }.value
+            filesSaved = true
+        } catch { recordingError = "동선 파일 저장 실패: \(error.localizedDescription). 저장 공간을 확보한 뒤 다시 시도해주세요." }
+        phase = .saved
     }
 
     /// 로컬 파일 저장 완료 후 업로드 흐름으로 전환한다.
     func startUploading() {
-        guard phase == .saved else { return }
+        guard phase == .saved, filesSaved, savedRecordingURL != nil else { return }
         uploadProgress = 0
         isUploadComplete = false
         phase = .uploading
@@ -136,7 +203,14 @@ final class MemberStore {
     }
 
     func returnToJoin() {
-        guard phase == .saved || (phase == .uploading && isUploadComplete) else { return }
+        guard (phase == .saved && filesSaved) || (phase == .uploading && isUploadComplete) else { return }
+        cameraService.discardFinishedCapture()
+        identity = nil
+        rawTrack = nil
+        correction = nil
+        recordingFiles = nil
+        savedRecordingURL = nil
+        filesSaved = false
         pin = ""
         memberName = ""
         startPoint = nil

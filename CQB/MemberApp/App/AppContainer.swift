@@ -8,7 +8,7 @@ struct AppContainer: View {
         RootView()
             .environment(store)
             .background(MemberOrientation(
-                usesLandscape: store.phase == .waiting || store.phase == .recording || store.phase == .saving
+                usesLandscape: store.phase == .waiting || store.phase == .recording || store.phase == .saving || store.phase == .correcting
             ))
             .onAppear { updateIdleTimer(for: store.phase) }
             .onChange(of: store.phase) { _, phase in updateIdleTimer(for: phase) }
@@ -16,7 +16,7 @@ struct AppContainer: View {
     }
 
     private func updateIdleTimer(for phase: MemberPhase) {
-        UIApplication.shared.isIdleTimerDisabled = phase == .recording || phase == .saving
+        UIApplication.shared.isIdleTimerDisabled = phase == .recording || phase == .saving || phase == .correcting
     }
 }
 

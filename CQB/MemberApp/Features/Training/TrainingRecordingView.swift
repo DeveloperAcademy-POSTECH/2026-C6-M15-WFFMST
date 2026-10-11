@@ -9,7 +9,7 @@ struct TrainingRecordingView: View {
     var onStart: (() -> Void)? = nil
     var onReset: (() -> Void)? = nil
     var showsMockControls = true
-    var cameraService = CameraPreviewService()
+    var cameraService = ARRecordingService()
     var onStopRecording: () async -> Void = {}
     @State private var isCameraReady = false
 
@@ -21,18 +21,18 @@ struct TrainingRecordingView: View {
                 CameraPreviewView(
                     service: cameraService,
                     isRecording: phase == .recording,
+                    isWaiting: isWaiting,
                     onStopRecording: onStopRecording,
                     onAvailabilityChange: { isCameraReady = $0 }
                 )
-                    .ignoresSafeArea()
 
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(alignment: .top) {
                         if isWaiting {
-                            Text("준비 완료")
+                            Text(isCameraReady ? "준비 완료" : "추적 준비 중")
                                 .font(DSTypography.h2)
-                        } else if phase == .saving {
-                            Text("영상 저장 중")
+                        } else if phase == .saving || phase == .correcting {
+                            Text(phase == .correcting ? "동선 보정 중" : "영상·동선 저장 중")
                                 .font(DSTypography.h2)
                         } else {
                             recordingStatus
@@ -44,7 +44,7 @@ struct TrainingRecordingView: View {
                         }
                     }
                     Spacer()
-                    Text(isWaiting ? "카메라 미리보기" : (phase == .saving ? "녹화 파일을 저장하고 있습니다" : "Body cam"))
+                    Text(isWaiting ? "카메라 미리보기" : (phase == .correcting ? "동선을 보정하고 있습니다" : (phase == .saving ? "녹화 파일을 저장하고 있습니다" : "Body cam")))
                         .font(DSTypography.caption)
                 }
                 .padding(24)
@@ -65,7 +65,7 @@ struct TrainingRecordingView: View {
 
                 // Figma에 없는 목업 조작은 별도 메뉴로 구분한다.
                 // 실제 신호/카메라 연동 시 showsMockControls를 false로 전달한다.
-                if showsMockControls {
+                if showsMockControls && (isWaiting || phase == .recording) {
                     VStack {
                         Spacer()
                         HStack {
@@ -73,6 +73,7 @@ struct TrainingRecordingView: View {
                             Menu {
                                 if isWaiting, let onStart {
                                     Button("시작 신호 보내기", action: onStart)
+                                        .disabled(!isCameraReady)
                                     if let onReset { Button("위치 다시 지정", action: onReset) }
                                 } else if phase == .recording {
                                     Button("훈련 종료", action: onFinish)
@@ -84,7 +85,6 @@ struct TrainingRecordingView: View {
                                     .padding(.vertical, 8)
                                     .background(DSColor.area1.opacity(0.94), in: RoundedRectangle(cornerRadius: 4))
                             }
-                            .disabled(isWaiting && !isCameraReady)
                         }
                     }
                     .padding(24)

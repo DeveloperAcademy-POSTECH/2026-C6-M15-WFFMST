@@ -1,0 +1,82 @@
+{
+  "coordinateSystem" : "image-pixel-top-left",
+  "extractionAlgorithmVersion" : "v13-wall-detector-test-fixture",
+  "floorPlanID" : "CF650000-0013-4000-8000-000000000001",
+  "imageHeight" : 724,
+  "imageSHA256" : "7c322c5509d011cbd177c7a9bcd506b3a2450ba8fda7455022be2681b80dbf54",
+  "imageWidth" : 2172,
+  "indoorOutline" : [
+    {
+      "x" : 0.053,
+      "y" : 0.09
+    },
+    {
+      "x" : 0.94,
+      "y" : 0.09
+    },
+    {
+      "x" : 0.94,
+      "y" : 0.355
+    },
+    {
+      "x" : 0.986,
+      "y" : 0.355
+    },
+    {
+      "x" : 0.986,
+      "y" : 0.63
+    },
+    {
+      "x" : 0.94,
+      "y" : 0.63
+    },
+    {
+      "x" : 0.94,
+      "y" : 0.885
+    },
+    {
+      "x" : 0.053,
+      "y" : 0.885
+    },
+    {
+      "x" : 0.053,
+      "y" : 0.625
+    },
+    {
+      "x" : 0.018,
+      "y" : 0.625
+    },
+    {
+      "x" : 0.018,
+      "y" : 0.345
+    },
+    {
+      "x" : 0.053,
+      "y" : 0.345
+    }
+  ],
+  "manuallyReviewed" : false,
+  "navigationGrid" : {
+    "blockedValue" : 1,
+    "cellSizePixels" : 2,
+    "columns" : 1086,
+    "encoding" : "uint8-row-major",
+    "freeValue" : 0,
+    "maskSHA256" : "55614a8131244654666f6416aaf697ff35d89a814c03abb32ecfa17d42092f01",
+    "outsideIsBlocked" : true,
+    "rows" : 362
+  },
+  "rasterizationVersion" : 1,
+  "scale" : {
+    "a" : {
+      "x" : 0,
+      "y" : 0
+    },
+    "b" : {
+      "x" : 231.1,
+      "y" : 0
+    },
+    "meters" : 10
+  },
+  "schemaVersion" : 1
+}
