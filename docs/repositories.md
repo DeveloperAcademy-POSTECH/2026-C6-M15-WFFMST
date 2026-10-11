@@ -18,15 +18,11 @@ Store는 `CQBCore`의 프로토콜만 안다. Firebase 구현을 아는 곳은 �
 - 앱 시작 시 `CQBFirebaseModule.configure()`와 `CQBFirebaseModule.signInAnonymously()`를 부른다. 두 앱의 `App` 진입점에 이미 있다.
 - Firebase 콘솔에서 익명 로그인이 켜져 있어야 한다.
 - 개발·테스트 중에는 운영 대신 로컬 에뮬레이터에 붙을 수 있다. [Firebase 로컬 에뮬레이터](firebase-emulator.md)
-- Firestore 규칙이 로그인한 사용자의 읽기·쓰기를 허용해야 한다. 막혀 있으면 모든 요청이 권한 오류(code 7)로 실패한다. 현재 개발용 규칙은 다음과 같다.
-
-```
-match /{document=**} {
-  allow read, write: if request.auth != null;
-}
-```
-
-- Storage 규칙도 로그인한 사용자의 읽기·쓰기를 허용해야 한다. 현재 개발용 규칙은 파일 하나를 20MB까지 받는다.
+- 보안 규칙은 저장소의 `firebase/firestore.rules`, `firebase/storage.rules`가 기준이고, Firebase 콘솔 규칙을 이와 같게 유지한다. 규칙에 맞지 않는 요청은 권한 오류(Firestore code 7)로 실패한다.
+  - 교관은 자기가 만든 세션(`instructorUid`)만 바꾼다. 상태는 앞으로만 바뀐다.
+  - 대원은 맞는 PIN으로 `preparing`·`waiting` 세션에만 입장하고, 본인 문서(`uid`)와 본인 기록만 쓴다. 다른 대원 목록은 볼 수 없다.
+  - 문서 목록 조회는 교관이 자기 세션의 대원·기록을 볼 때만 된다.
+  - Storage의 보정 결과·영상은 기록 주인이 올리고, 그 세션의 교관이 받고 지운다. 도면은 처음 한 번만 올린다.
 - `.mp4`를 1일 뒤 지우는 Storage 수명 주기 규칙은 아직 설정하지 않았다. 설정 전에는 `deleteVideo`가 실패하면 영상이 남는다.
 
 ## 누가 무엇을 부르나
