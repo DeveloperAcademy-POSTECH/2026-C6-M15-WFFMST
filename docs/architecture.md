@@ -217,6 +217,7 @@ MemberApp Store와 InstructorApp Store는 공유하지 않는다. 대원 앱은 
 
 Firebase 문서 구조를 SwiftUI View까지 전달하지 않는다.
 공유 모델과 Firestore·Storage 매핑의 구체적인 계약은 [CQB 공유 데이터 계약](cqb-core-models.md)을 따른다.
+Store에서 Repository를 쓰는 방법은 [Repository 사용법](repositories.md)을 따른다.
 
 ```text
 View
