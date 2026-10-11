@@ -8,8 +8,10 @@ public protocol SessionRepository: Sendable {
     /// 대원 앱: PIN으로 세션을 찾는다. 없으면 `RepositoryError.notFound`.
     func session(forPin pin: String) async throws -> Session
 
-    /// 교관 앱: 세션 상태를 바꾼다.
-    /// `running`이면 `startedAt`을 서버 시각으로 기록하고, `ended`면 PIN을 다시 쓸 수 있게 지운다.
+    /// 교관 앱: 세션 상태를 바꾼다. 상태는 preparing → waiting → running → ended 방향으로만 바뀐다.
+    /// - 같은 상태로 다시 부르면 아무것도 바꾸지 않는다. `startedAt`도 다시 기록하지 않는다.
+    /// - 이전 단계로 되돌리려 하면 `RepositoryError.invalidStatusChange`.
+    /// - `running`이 되면 `startedAt`을 서버 시각으로 기록하고, `ended`면 PIN을 다시 쓸 수 있게 지운다.
     func updateStatus(of session: Session, to status: SessionStatus) async throws
 
     /// 대원 앱: 교관의 시작·종료 신호(`status` 변경)를 실시간으로 받는다.
