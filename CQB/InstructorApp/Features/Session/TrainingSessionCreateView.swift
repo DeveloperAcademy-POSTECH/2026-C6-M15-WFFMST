@@ -4,30 +4,32 @@ struct TrainingSessionCreateView: View {
     @Environment(InstructorStore.self) private var store
 
     var body: some View {
-        ScrollView {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: 32) {
-                    sessionFields
-                        .frame(minWidth: 280, maxWidth: .infinity, alignment: .topLeading)
-                    planPreview
-                        .frame(minWidth: 320, maxWidth: .infinity)
+        DropdownHost {
+            ScrollView {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 32) {
+                        sessionFields
+                            .frame(minWidth: 280, maxWidth: .infinity, alignment: .topLeading)
+                        planPreview
+                            .frame(minWidth: 320, maxWidth: .infinity)
+                    }
+                    VStack(alignment: .leading, spacing: 24) {
+                        sessionFields
+                        planPreview
+                    }
                 }
-                VStack(alignment: .leading, spacing: 24) {
-                    sessionFields
-                    planPreview
+                .padding(24)
+            }
+            .safeAreaInset(edge: .bottom) {
+                HStack {
+                    Spacer()
+                    ActionButton("세션 생성", action: store.createSession)
+                        .disabled(!store.canCreateSession)
+                        .accessibilityIdentifier("session.create")
                 }
+                .padding(24)
+                .background(.bar)
             }
-            .padding(24)
-        }
-        .safeAreaInset(edge: .bottom) {
-            HStack {
-                Spacer()
-                ActionButton("세션 생성", action: store.createSession)
-                    .disabled(!store.canCreateSession)
-                    .accessibilityIdentifier("session.create")
-            }
-            .padding(24)
-            .background(.bar)
         }
     }
 
