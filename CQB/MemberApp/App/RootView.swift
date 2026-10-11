@@ -31,8 +31,10 @@ struct RootView: View {
                     phase: store.phase,
                     startedAt: store.recordingStartedAt,
                     onFinish: { Task { await store.finishRecording() } },
-                    onStart: { Task { await store.startRecording() } },
                     onReset: { store.resetPosition() },
+                    allowsPositionReset: store.canResetPosition,
+                    allowsManualStop: true,
+                    onCameraReadinessChange: { store.updateTrackingReadiness($0) },
                     cameraService: store.cameraService,
                     onStopRecording: { await store.finishRecording() }
                 )
