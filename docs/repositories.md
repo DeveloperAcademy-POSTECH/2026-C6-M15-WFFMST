@@ -86,6 +86,8 @@ func join(pin: String, name: String) async {
         try await memberRepository.join(member, pin: pin)
     } catch RepositoryError.notFound {
         // 없는 PIN
+    } catch RepositoryError.sessionClosed {
+        // 이미 시작했거나 끝난 훈련
     } catch {
         // 네트워크 등
     }
@@ -200,6 +202,8 @@ func startHeartbeat(member: Member) {
 ### MemberRepository
 
 - `join`: 입장할 때 한 번 부른다. 입장 검증용 `pin`과 인증 `uid`를 함께 저장한다.
+  - PIN이 없거나 다른 세션을 가리키면 `RepositoryError.notFound`.
+  - 훈련이 시작했거나 끝났으면(`running`, `ended`) `RepositoryError.sessionClosed`. 입장은 `preparing`, `waiting`에서만 된다.
 - `updateReadiness`: `isReady`와 `lastActiveAt`만 바꾼다. 문서가 있어야 하므로 `join` 다음에만 부른다.
 
 ### RecordingRepository
