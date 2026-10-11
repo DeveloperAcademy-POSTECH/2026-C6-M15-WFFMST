@@ -1,10 +1,105 @@
 rules_version = '2';
 
-// 개발용 규칙. Firebase 콘솔의 Firestore 규칙과 같게 유지한다.
+// Firebase 콘솔의 Firestore 규칙과 같게 유지한다. 바꿀 때는 에뮬레이터에서 먼저 확인한다.
+// 교관은 세션의 instructorUid, 대원은 대원 문서의 uid로 본인을 확인한다.
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function sessionPath(sessionID) {
+      return /databases/$(database)/documents/sessions/$(sessionID);
+    }
+
+    function isInstructor(sessionID) {
+      return signedIn() && get(sessionPath(sessionID)).data.instructorUid == request.auth.uid;
+    }
+
+    function statusOrder(status) {
+      return {'preparing': 0, 'waiting': 1, 'running': 2, 'ended': 3}[status];
+    }
+
+    // 바뀐 필드가 fields 안에만 있는지
+    function changesOnly(fields) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
+    }
+
+    // 대원은 PIN으로 세션을 찾는다. 목록 조회는 막는다.
+    match /pins/{pin} {
+      allow get: if signedIn();
+      // 세션과 같은 요청(트랜잭션)에서 만들고, 그 세션의 교관만 만든다.
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['sessionID'])
+        && getAfter(sessionPath(request.resource.data.sessionID)).data.instructorUid == request.auth.uid
+        && getAfter(sessionPath(request.resource.data.sessionID)).data.pin == pin;
+      // 세션이 끝날 때 그 세션의 교관만 지운다.
+      allow delete: if isInstructor(resource.data.sessionID);
+    }
+
+    match /sessions/{sessionID} {
+      // 세션 ID(UUID)를 아는 로그인 사용자만 읽는다. 대원은 입장 전에 PIN으로 찾은 세션을 읽는다.
+      allow get: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.instructorUid == request.auth.uid
+        && request.resource.data.id == sessionID
+        && request.resource.data.status in ['preparing', 'waiting']
+        && !('startedAt' in request.resource.data)
+        && getAfter(/databases/$(database)/documents/pins/$(request.resource.data.pin)).data.sessionID == sessionID;
+
+      // 교관만 상태를 앞으로 바꾼다. startedAt은 running이 될 때 서버 시각으로만 기록한다.
+      allow update: if isInstructor(sessionID)
+        && changesOnly(['status', 'startedAt'])
+        && statusOrder(request.resource.data.status) > statusOrder(resource.data.status)
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['startedAt'])
+            || (request.resource.data.status == 'running' && request.resource.data.startedAt == request.time));
+
+      // 대원: 본인 문서만 읽고 쓴다. 교관: 자기 세션의 대원 목록을 본다.
+      match /members/{memberID} {
+        function isOwner() {
+          return signedIn() && resource.data.uid == request.auth.uid;
+        }
+
+        // PIN이 이 세션의 것이고, 훈련이 시작되기 전일 때만 입장한다.
+        function canJoin() {
+          let session = get(sessionPath(sessionID)).data;
+          let data = request.resource.data;
+          return signedIn()
+            && data.uid == request.auth.uid
+            && data.id == memberID
+            && data.sessionID == sessionID
+            && data.pin == session.pin
+            && session.status in ['preparing', 'waiting']
+            && data.lastActiveAt == request.time;
+        }
+
+        allow get: if isOwner() || isInstructor(sessionID);
+        allow list: if isInstructor(sessionID);
+        allow create: if canJoin();
+        allow update: if isOwner()
+          && (canJoin()
+              || (changesOnly(['isReady', 'lastActiveAt']) && request.resource.data.lastActiveAt == request.time));
+      }
+
+      // 기록 주인(대원)만 쓰고, 교관이 목록을 본다.
+      match /recordings/{recordingID} {
+        function ownsMember(memberID) {
+          return signedIn()
+            && get(/databases/$(database)/documents/sessions/$(sessionID)/members/$(memberID)).data.uid == request.auth.uid;
+        }
+
+        function validIdentity() {
+          let identity = request.resource.data.identity;
+          return identity.sessionID == sessionID
+            && identity.recordingID == recordingID
+            && ownsMember(identity.memberID);
+        }
+
+        allow get, list: if isInstructor(sessionID);
+        allow create, update: if validIdentity() && request.resource.data.lastActiveAt == request.time;
+      }
     }
   }
 }
