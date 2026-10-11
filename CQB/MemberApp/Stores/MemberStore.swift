@@ -9,6 +9,8 @@ import Observation
 final class MemberStore {
     @ObservationIgnored let cameraService: ARRecordingService
     @ObservationIgnored private let recordingFileStore = LocalRecordingFileStore()
+    @ObservationIgnored private let sessionRepository: any SessionRepository
+    @ObservationIgnored private let memberRepository: any MemberRepository
 
     let trainingMap: TrainingMap?
     private(set) var rawTrack: RawTrackDocument?
@@ -16,9 +18,10 @@ final class MemberStore {
     private(set) var recordingFiles: LocalRecordingFiles?
     private(set) var filesSaved = false
     private(set) var isStarting = false
+    private(set) var isJoining = false
     @ObservationIgnored private var identity: TrackIdentity?
-    @ObservationIgnored private var sessionID = UUID()
-    @ObservationIgnored private var memberID = UUID()
+    @ObservationIgnored private var sessionID: UUID?
+    @ObservationIgnored private let memberID: UUID
 
     private(set) var phase: MemberPhase = .join
     private(set) var pin = ""
@@ -33,23 +36,71 @@ final class MemberStore {
 
     @ObservationIgnored private var isSimulatingUpload = false
 
-    init(cameraService: ARRecordingService? = nil) {
+    init(
+        sessionRepository: any SessionRepository,
+        memberRepository: any MemberRepository,
+        cameraService: ARRecordingService? = nil
+    ) {
+        self.sessionRepository = sessionRepository
+        self.memberRepository = memberRepository
         self.cameraService = cameraService ?? ARRecordingService()
+        self.memberID = Self.loadOrCreateMemberID()
         self.trainingMap = try? BundledTrainingMapLoader.load()
     }
 
     var isReady: Bool { startPoint != nil && directionPoint != nil }
 
-    // TODO: 실제 세션 참가 성공 결과를 받은 뒤 setup으로 전환한다.
+    /// PIN으로 세션을 조회하고 대원 등록이 성공한 뒤에만 setup으로 전환한다.
     func join(pin: String, memberName: String) {
         let name = memberName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard phase == .join, pin.count == 6,
+        guard phase == .join, !isJoining, pin.count == 6,
               pin.allSatisfy({ $0.isASCII && $0.isNumber }), !name.isEmpty else { return }
-        sessionID = UUID()
-        memberID = UUID()
-        self.pin = pin
-        self.memberName = name
-        phase = .setup
+
+        isJoining = true
+        recordingError = nil
+        Task { @MainActor in
+            defer { isJoining = false }
+            do {
+                let session = try await sessionRepository.session(forPin: pin)
+                let member = Member(
+                    id: memberID,
+                    sessionID: session.id,
+                    name: name,
+                    isReady: false,
+                    lastActiveAt: .now
+                )
+                try await memberRepository.join(member, pin: pin)
+
+                sessionID = session.id
+                self.pin = pin
+                self.memberName = name
+                phase = .setup
+            } catch let error as RepositoryError {
+                switch error {
+                case .notFound:
+                    recordingError = "PIN을 확인해주세요."
+                case .sessionClosed:
+                    recordingError = "이미 시작했거나 종료된 훈련에는 참가할 수 없습니다."
+                case .pinTaken, .invalidStatusChange:
+                    recordingError = "세션에 참가하지 못했습니다. 잠시 후 다시 시도해주세요."
+                }
+            } catch {
+                recordingError = "세션에 참가하지 못했습니다. 네트워크 연결을 확인해주세요."
+            }
+        }
+    }
+
+    private static let memberIDDefaultsKey = "com.wffmst.cqb.memberID"
+
+    private static func loadOrCreateMemberID() -> UUID {
+        if let value = UserDefaults.standard.string(forKey: memberIDDefaultsKey),
+           let memberID = UUID(uuidString: value) {
+            return memberID
+        }
+
+        let memberID = UUID()
+        UserDefaults.standard.set(memberID.uuidString, forKey: memberIDDefaultsKey)
+        return memberID
     }
 
     func confirmPosition(start: CGPoint, direction: CGPoint) {
@@ -77,10 +128,10 @@ final class MemberStore {
         phase = .setup
     }
 
-    /// 실제 세션/대원 ID를 서버에서 받은 뒤 임시 ID 주입을 교체한다.
+    /// 참가가 확인된 세션 ID와 기기에 저장한 대원 ID를 기록에 연결한다.
     func startRecording() async {
         guard phase == .waiting, !isStarting, let map = trainingMap,
-              let startPoint, let directionPoint else { return }
+              let sessionID, let startPoint, let directionPoint else { return }
         isStarting = true
         defer { isStarting = false }
         recordingError = nil
@@ -211,6 +262,7 @@ final class MemberStore {
         recordingFiles = nil
         savedRecordingURL = nil
         filesSaved = false
+        sessionID = nil
         pin = ""
         memberName = ""
         startPoint = nil
