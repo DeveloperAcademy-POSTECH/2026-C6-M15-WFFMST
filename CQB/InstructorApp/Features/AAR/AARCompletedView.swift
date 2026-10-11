@@ -1,28 +1,50 @@
+import CQBDesignSystem
 import SwiftUI
 
 struct AARCompletedView: View {
     @Environment(InstructorStore.self) private var store
 
     var body: some View {
-        VStack(spacing: 24) {
-            Spacer()
-            VStack(spacing: 16) {
-                Text("AAR 종료").font(.largeTitle.bold())
-                Text("화면 연결 데모를 완료했습니다.")
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            HStack {
+        ZStack {
+            Text("AAR 종료")
+                .font(completionFont)
+                .foregroundStyle(InstructorColor.textPrimary)
+                .frame(minWidth: 270, minHeight: 80)
+                .accessibilityAddTraits(.isHeader)
+
+            VStack {
                 Spacer()
-                ActionButton("처음으로", systemImage: "house", action: store.returnHome)
+
+                HStack {
+                    Spacer()
+
+                    ActionButton(
+                        "처음으로",
+                        tone: .secondary,
+                        fillsWidth: true,
+                        action: store.returnHome
+                    )
+                    .frame(width: 300, height: 48)
                     .accessibilityIdentifier("aar.home")
+                }
             }
+            .padding(.trailing, 40)
+            .padding(.bottom, 18)
         }
-        .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(InstructorColor.canvas.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+    }
+
+    private var completionFont: Font {
+        DSFonts.register()
+        return .custom("NotoSansKR-Bold", size: 64, relativeTo: .largeTitle)
     }
 }
 
-#Preview {
-    AARCompletedView().environment(InstructorStore())
+#Preview("AAR 종료") {
+    AARCompletedView()
+        .environment(InstructorStore())
+        .frame(width: 1_366, height: 1_024)
+        .preferredColorScheme(.dark)
 }
