@@ -81,30 +81,15 @@ jobs:
             const marker = '<!-- build-check -->';
             const passed = [process.env.TEST, process.env.MEMBER, process.env.INSTRUCTOR]
               .every(outcome => outcome === 'success');
-            // PR 작성자 login → 별호. 멘션하지 않고 별호만 쓴다.
-            const titles = { '0sunset0': '산', 'LeeDayday': '림', 'yoonjung561': '풍' };
-            const lines = {
-              success: {
-                산: ['산이 우뚝 섰군.', '오늘도 산은 흔들리지 않았어.', '제법 높은 산이 되었군.'],
-                림: ['숲이 무성하군.', '오늘도 숲은 평화롭군.', '제법 울창해졌어.'],
-                풍: ['바람이 순풍을 탔군.', '오늘은 바람이 제법 시원하군.', '풍향이 아주 좋군.'],
-                default: ['강호가 조용하군.', '제법이군. 누군지는 모르겠지만.'],
-              },
-              failure: {
-                산: ['산이 무너졌군.', '산사태가 났군. 복구는 직접 하게.', '태산도 빌드 앞에서는 무너지는군.'],
-                림: ['숲이 불타고 있네.', '산불이 났군. 발화 원인은 자네야.', '숲이 황폐해졌군.'],
-                풍: ['바람이 역풍이 되었군.', '바람이 방향을 잃었군.', '태풍인 줄 알았더니 미풍이었군.'],
-                default: ['강호에 낯선 마가 끼었군.', '이름 모를 협객이 일을 냈군.'],
-              },
-            };
-            const title = titles[context.payload.pull_request.user.login];
-            const pool = lines[passed ? 'success' : 'failure'][title ?? 'default'];
-            const line = pool[Math.floor(Math.random() * pool.length)];
+            // PR 작성자 login → 이름. 멘션하지 않고, 모르는 작성자는 login을 그대로 쓴다.
+            const names = { '0sunset0': '노을', 'LeeDayday': '새미', 'yoonjung561': '엘리' };
+            const login = context.payload.pull_request.user.login;
+            const name = names[login] ?? login;
             const body = [
               marker,
-              passed ? '🌿 **빌드 성공. 중원은 평화롭다.**' : '🔥 **빌드 실패. 중원에 마가 끼었다.**',
+              passed ? '✅ **빌드 성공!**' : '❌ **빌드 실패**',
               '',
-              `**${title ?? '무명'} 소협**, ${line}`,
+              passed ? `${name}, 당신은 최고의 개발자에요! 🎉` : `${name}, 빌드 결과를 확인해 주세요. 🔍`,
             ].join('\n');
 
             const { owner, repo } = context.repo;
