@@ -1,0 +1,56 @@
+# PR은 develop과 합친 코드(refs/pull/N/merge)로, develop은 머지된 결과로 빌드를 검사한다.
+name: Build
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop]
+
+# 같은 PR에 새 커밋이 올라오면 이전 실행은 취소한다.
+concurrency:
+  group: build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Package test · App build
+    runs-on: xcode-27
+    timeout-minutes: 45
+    env:
+      SPM_DIR: ${{ github.workspace }}/.spm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode 버전
+        run: xcodebuild -version
+
+      - name: SPM 의존성 캐시
+        uses: actions/cache@v4
+        with:
+          path: |
+            .spm
+            CQB/Packages/CQBCore/.build
+          key: spm-${{ runner.os }}-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: CQBCore 패키지 테스트
+        run: swift test --package-path CQB/Packages/CQBCore
+
+      - name: MemberApp 빌드
+        run: |
+          xcodebuild build -quiet \
+            -project CQB/CQB.xcodeproj \
+            -scheme MemberApp \
+            -destination 'generic/platform=iOS Simulator' \
+            -clonedSourcePackagesDirPath "$SPM_DIR" \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: InstructorApp 빌드
+        run: |
+          xcodebuild build -quiet \
+            -project CQB/CQB.xcodeproj \
+            -scheme InstructorApp \
+            -destination 'generic/platform=iOS Simulator' \
+            -clonedSourcePackagesDirPath "$SPM_DIR" \
+            CODE_SIGNING_ALLOWED=NO
