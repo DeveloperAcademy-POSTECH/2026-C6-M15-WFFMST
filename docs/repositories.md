@@ -86,6 +86,8 @@ func join(pin: String, name: String) async {
         try await memberRepository.join(member, pin: pin)
     } catch RepositoryError.notFound {
         // 없는 PIN
+    } catch RepositoryError.sessionClosed {
+        // 이미 시작했거나 끝난 훈련
     } catch {
         // 네트워크 등
     }
@@ -194,12 +196,17 @@ func startHeartbeat(member: Member) {
 
 - `createSession`: PIN은 앱이 만든다. 이미 쓰이는 PIN이면 `RepositoryError.pinTaken`을 던지므로 새 PIN으로 다시 시도한다.
 - `session(forPin:)`: 없는 PIN이거나 종료된 세션이면 `RepositoryError.notFound`.
-- `updateStatus`: `running`이면 `startedAt`을 서버 시각으로 기록한다. `ended`면 PIN을 지워 다시 쓸 수 있게 한다.
+- `updateStatus`: 상태는 `preparing → waiting → running → ended` 방향으로만 바뀐다. 중간 단계는 건너뛸 수 있다.
+  - 같은 상태로 다시 부르면 아무것도 바꾸지 않는다. `startedAt`도 다시 기록하지 않는다.
+  - 이전 단계로 되돌리면 `RepositoryError.invalidStatusChange`.
+  - `running`이면 `startedAt`을 서버 시각으로 기록한다. `ended`면 PIN을 지워 다시 쓸 수 있게 한다.
 - `observeSession`: 대원 앱은 신호를 놓치지 않도록 입장 직후부터 `ended`를 받을 때까지 구독한다.
 
 ### MemberRepository
 
 - `join`: 입장할 때 한 번 부른다. 입장 검증용 `pin`과 인증 `uid`를 함께 저장한다.
+  - PIN이 없거나 다른 세션을 가리키면 `RepositoryError.notFound`.
+  - 훈련이 시작했거나 끝났으면(`running`, `ended`) `RepositoryError.sessionClosed`. 입장은 `preparing`, `waiting`에서만 된다.
 - `updateReadiness`: `isReady`와 `lastActiveAt`만 바꾼다. 문서가 있어야 하므로 `join` 다음에만 부른다.
 
 ### RecordingRepository
