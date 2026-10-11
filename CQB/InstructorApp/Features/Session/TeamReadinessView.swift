@@ -1,3 +1,4 @@
+import CQBDesignSystem
 import SwiftUI
 
 struct TeamReadinessView: View {
@@ -5,63 +6,39 @@ struct TeamReadinessView: View {
     @State private var isShowingExclusionConfirmation = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .center) {
-                    sampleSelector
-                    Spacer()
-                    invitationCode
-                }
-                VStack(alignment: .leading, spacing: 12) {
-                    invitationCode
-                    sampleSelector
-                }
+        VStack(alignment: .leading, spacing: 0) {
+            InstructorBackButton(action: store.goBack)
+
+            HStack(alignment: .top) {
+                Text("팀 준비 상태")
+                    .font(DSTypography.h1)
+                    .foregroundStyle(InstructorColor.textPrimary)
+                    .frame(height: 48, alignment: .leading)
+
+                Spacer()
+
+                invitationCode
             }
+            .frame(height: 56, alignment: .top)
+
+            readinessList
+                .padding(.top, 42)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
             HStack {
-                Text("대원명")
                 Spacer()
-                Text("준비 상태 \(store.readyCount)/\(store.participants.count)")
-                    .monospacedDigit()
-            }
-            .font(.headline)
-
-            Divider()
-
-            if store.participants.isEmpty {
-                ContentUnavailableView("참가자가 없습니다", systemImage: "person.3", description: Text("위의 샘플 상태 메뉴에서 참가자가 있는 상태를 확인할 수 있습니다."))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(store.participants) { participant in
-                            participantRow(participant)
-                            Divider()
-                        }
-                    }
-                }
+                ActionButton("훈련 시작", fillsWidth: true, action: requestTrainingStart)
+                    .frame(width: 354, height: 52)
+                    .disabled(!store.canRequestTrainingStart)
+                    .accessibilityIdentifier("readiness.start")
             }
         }
-        .padding(24)
-        .safeAreaInset(edge: .bottom) {
-            HStack(spacing: 24) {
-                Text("미준비 대원이 있으면 확인 후 해당 대원을 제외하고 시작합니다.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                ActionButton("훈련 시작") {
-                    if store.requiresUnreadyExclusionConfirmation {
-                        isShowingExclusionConfirmation = true
-                    } else {
-                        store.startTraining()
-                    }
-                }
-                .disabled(!store.canRequestTrainingStart)
-                .accessibilityIdentifier("readiness.start")
-            }
-            .padding(24)
-            .background(.bar)
-        }
+        .padding(.top, 32)
+        .padding(.horizontal, 48)
+        .padding(.bottom, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(InstructorColor.canvas.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
         .alert("미준비 대원 제외", isPresented: $isShowingExclusionConfirmation) {
             Button("제외하고 시작", role: .destructive) {
                 store.startTrainingExcludingUnreadyParticipants()
@@ -72,49 +49,87 @@ struct TeamReadinessView: View {
         }
     }
 
-    private var sampleSelector: some View {
-        Menu {
-            ForEach(ReadinessSample.allCases) { sample in
-                ActionButton(sample.title) {
-                    store.loadReadinessSample(sample)
-                }
+    private var invitationCode: some View {
+        Text("PIN · \(store.invitationCode)")
+            .font(DSTypography.h2)
+            .foregroundStyle(InstructorColor.textPrimary)
+            .monospacedDigit()
+            .frame(width: 314, height: 56)
+            .background(InstructorColor.surfaceBase)
+            .clipShape(.rect(cornerRadius: 4))
+            .overlay {
+                RoundedRectangle(cornerRadius: 4)
+                    .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
             }
-        } label: {
-            Label("샘플 상태: \(store.readinessSample.title)", systemImage: "slider.horizontal.3")
-        }
-        .accessibilityIdentifier("readiness.samples")
+            .accessibilityLabel("세션 PIN \(store.invitationCode)")
     }
 
-    private var invitationCode: some View {
-        VStack(alignment: .trailing, spacing: 4) {
-            Text("PIN · \(store.invitationCode)")
-                .font(.title2.bold())
-                .monospacedDigit()
-            Text("샘플 코드 · 실제 참가 불가")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+    private var readinessList: some View {
+        ScrollView {
+            LazyVStack(spacing: 24) {
+                readinessHeader
+
+                if store.participants.isEmpty {
+                    ContentUnavailableView(
+                        "참가자가 없습니다",
+                        systemImage: "person.3",
+                        description: Text("대원이 세션에 참가하면 준비 상태가 표시됩니다.")
+                    )
+                    .foregroundStyle(InstructorColor.textSecondary)
+                    .frame(maxWidth: .infinity, minHeight: 240)
+                } else {
+                    ForEach(store.participants) { participant in
+                        ParticipantReadyRow(participant: participant)
+                    }
+                }
+            }
         }
+        .scrollIndicators(.hidden)
+    }
+
+    private var readinessHeader: some View {
+        HStack(spacing: 32) {
+            Text("대원명")
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text("준비상태")
+
+            Text("\(store.readyCount)/\(store.participants.count)")
+                .monospacedDigit()
+        }
+        .font(DSTypography.h3)
+        .foregroundStyle(InstructorColor.textPrimary)
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, minHeight: 56, maxHeight: 56)
+        .background(InstructorColor.surfaceRaised)
+        .clipShape(.rect(cornerRadius: 4))
         .accessibilityElement(children: .combine)
     }
 
-    private func participantRow(_ participant: DemoParticipant) -> some View {
-        HStack(spacing: 20) {
-            Text(participant.number, format: .number.precision(.integerLength(2)))
-                .font(.headline.monospacedDigit())
-            Text(participant.name)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Label(participant.isReady ? "준비 완료" : "설정 중", systemImage: participant.isReady ? "checkmark.circle" : "clock")
-                .foregroundStyle(.secondary)
+    private func requestTrainingStart() {
+        if store.requiresUnreadyExclusionConfirmation {
+            isShowingExclusionConfirmation = true
+        } else {
+            store.startTraining()
         }
-        .padding(.vertical, 20)
     }
 }
 
-#Preview {
-    let store = InstructorStore()
+#Preview("팀 준비 상태 · 일부 준비") {
+    let store = InstructorStore(floorPlans: [
+        DemoFloorPlan(
+            id: "preview-plan",
+            name: "훈련장 A 도면",
+            fileName: "훈련장 A 도면.png",
+            referenceDistance: 15
+        )
+    ])
     store.openSessionCreation()
     store.createSession()
     store.loadReadinessSample(.partial)
+
     return TeamReadinessView()
         .environment(store)
+        .frame(width: 1_366, height: 1_024)
+        .preferredColorScheme(.dark)
 }
