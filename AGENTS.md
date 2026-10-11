@@ -29,7 +29,7 @@
 
 ## 데이터 계약
 
-- `CQBCore/Models`, `CQBCore/Services`, 저장 경로, 파일 형식, 공통 enum 변경은 데이터 계약 변경으로 취급한다.
+- `CQBCore/Models`, `CQBCore/Repositories`, `CQBCore/Services`, 저장 경로, 파일 형식, 공통 enum 변경은 데이터 계약 변경으로 취급한다.
 - 데이터 계약 변경은 기능 구현과 분리된 이슈 및 PR로 먼저 진행한다.
 - 계약 변경 시 팀 동의와 문서 변경 기록을 남긴다.
 - 특정 앱에서만 필요한 임시 UI 데이터는 공통 모델로 올리지 않는다.
