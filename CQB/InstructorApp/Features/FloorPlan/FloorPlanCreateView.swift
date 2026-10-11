@@ -179,9 +179,13 @@ struct FloorPlanCreateView: View {
                     }
                 }
                 if let error = store.errorMessage {
-                    Text(error).foregroundStyle(.red).accessibilityIdentifier("floorPlan.error")
+                    Text(error)
+                        .foregroundStyle(InstructorColor.validationError)
+                        .accessibilityIdentifier("floorPlan.error")
                 }
-                if let message = importer.message { Text(message).foregroundStyle(.red) }
+                if let message = importer.message {
+                    Text(message).foregroundStyle(InstructorColor.validationError)
+                }
             }
             .font(.callout).padding(10)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))

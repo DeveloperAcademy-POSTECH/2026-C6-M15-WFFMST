@@ -70,8 +70,12 @@ store.goBack()
 
 ## UI 구현
 
-- InstructorApp에서는 `CQBDesignSystem`을 사용하지 않는다.
-- `CQBDesignSystem`을 import하거나 InstructorApp 구현을 위해 수정하지 않는다.
+- InstructorApp은 색상·타이포그래피·폰트 등 기존 `CQBDesignSystem`의 기반 토큰을 우선 사용한다.
+- 화면과 앱 전용 컴포넌트에 Package 토큰과 동일한 값을 중복 정의하지 않는다.
+- 현재 `CQBDesignSystem`에 없는 토큰은 MVP 단계에서 InstructorApp 내부에 필요한 범위만 정의한다.
+- 앱 내부 토큰의 원시 색상값은 지정된 토큰 파일 또는 Asset Catalog에서만 관리하고, 화면과 컴포넌트에 직접 작성하지 않는다.
+- InstructorApp 기능 구현을 위해 `CQBDesignSystem`의 기존 값을 임의로 변경하지 않는다.
+- Package에 새로운 토큰이나 컴포넌트를 추가하는 작업은 양쪽 앱의 공통성이 확인된 후 별도 작업으로 진행한다.
 - SwiftUI 기본 컴포넌트와 InstructorApp 내부 스타일을 사용한다.
 - 동일한 UI가 두 곳 이상에서 실제로 반복될 때만 `Components`로 분리한다.
 - 화면 전체를 절대 좌표와 `offset`으로 구성하지 않는다.
@@ -91,6 +95,10 @@ store.goBack()
 
 ## 공통 패키지
 
+- InstructorApp은 `CQBDesignSystem`의 공개 토큰을 사용할 수 있다.
+- InstructorApp UI 작업 범위에서는 `CQBDesignSystem`의 소스와 기존 자산 값을 수정하지 않는다.
+- InstructorApp 내부에서 새로 검증한 토큰과 컴포넌트는 공통성이 확인되기 전까지 앱 내부에 유지한다.
+- 공통성이 확인된 토큰과 컴포넌트의 Package 승격은 별도 작업 단위로 진행한다.
 - 화면 구현을 위해 `CQBCore`, `CQBFirebase`, `CQBFixtures`의 계약을 임의로 변경하지 않는다.
 - 앱 내부에서만 필요한 Mock 데이터는 InstructorApp 내부에 둔다.
 - 공통 모델이나 Repository 계약이 필요하다고 확인되면 별도 데이터 계약 이슈로 분리한다.

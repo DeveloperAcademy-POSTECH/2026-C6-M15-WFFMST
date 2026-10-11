@@ -1,67 +1,70 @@
+import CQBDesignSystem
 import SwiftUI
 
 struct MultiSelectionPicker<Option: Identifiable>: View {
-    @State private var isPresented = false
-
     let title: String
     let options: [Option]
     let selectedIDs: Set<Option.ID>
     let optionTitle: (Option) -> String
+    let optionColor: (Option) -> Color?
     let canToggle: (Option.ID) -> Bool
     let onToggle: (Option.ID) -> Void
     var onSelectAll: (() -> Void)? = nil
 
+    init(
+        title: String,
+        options: [Option],
+        selectedIDs: Set<Option.ID>,
+        optionTitle: @escaping (Option) -> String,
+        optionColor: @escaping (Option) -> Color? = { _ in nil },
+        canToggle: @escaping (Option.ID) -> Bool,
+        onToggle: @escaping (Option.ID) -> Void,
+        onSelectAll: (() -> Void)? = nil
+    ) {
+        self.title = title
+        self.options = options
+        self.selectedIDs = selectedIDs
+        self.optionTitle = optionTitle
+        self.optionColor = optionColor
+        self.canToggle = canToggle
+        self.onToggle = onToggle
+        self.onSelectAll = onSelectAll
+    }
+
     var body: some View {
-        Button {
-            isPresented.toggle()
-        } label: {
-            Label(title, systemImage: "chevron.down")
+        SelectionDropdown(
+            isEnabled: !options.isEmpty
+        ) { isExpanded in
+            SelectionFieldLabel(
+                text: selectionSummary,
+                isPlaceholder: selectedIDs.isEmpty,
+                isExpanded: isExpanded
+            )
+        } content: { _ in
+            SelectionMenuList(
+                options: options,
+                optionTitle: optionTitle,
+                optionColor: optionColor,
+                isSelected: selectedIDs.contains,
+                canSelect: canToggle,
+                onSelect: onToggle,
+                footerTitle: onSelectAll == nil ? nil : "전체 선택",
+                onFooterSelect: onSelectAll
+            )
         }
-        .disabled(options.isEmpty)
-        .popover(isPresented: $isPresented, arrowEdge: .trailing) {
-            VStack(spacing: 0) {
-                HStack {
-                    Text("표시 대상")
-                        .font(.headline)
-                    Spacer()
-                    Button("완료") {
-                        isPresented = false
-                    }
-                }
-                .padding()
+        .accessibilityLabel(title)
+        .accessibilityValue(selectionSummary)
+    }
 
-                Divider()
+    private var selectionSummary: String {
+        let selectedTitles = options
+            .filter { selectedIDs.contains($0.id) }
+            .map(optionTitle)
 
-                List(options) { option in
-                    Button {
-                        onToggle(option.id)
-                    } label: {
-                        HStack {
-                            Text(optionTitle(option))
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            if selectedIDs.contains(option.id) {
-                                Image(systemName: "checkmark")
-                                    .accessibilityHidden(true)
-                            }
-                        }
-                        .contentShape(.rect)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!canToggle(option.id))
-                    .accessibilityValue(selectedIDs.contains(option.id) ? "선택됨" : "선택 안 됨")
-                }
-                .listStyle(.plain)
-
-                if let onSelectAll {
-                    Divider()
-                    Button("전체 대원", action: onSelectAll)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding()
-                }
-            }
-            .frame(minWidth: 320, idealWidth: 360, minHeight: 300, idealHeight: 420)
-            .presentationCompactAdaptation(.popover)
+        guard !selectedTitles.isEmpty else {
+            return title
         }
+
+        return selectedTitles.joined(separator: ", ")
     }
 }
