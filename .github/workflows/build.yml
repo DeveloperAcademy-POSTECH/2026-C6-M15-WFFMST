@@ -86,7 +86,7 @@ jobs:
             const runURL = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const body = [
               marker,
-              `### ${passed ? '✅ 빌드 검사 통과' : '❌ 빌드 검사 실패'}`,
+              `### ${passed ? '🌿 빌드 성공. 풍림화산음뢰 건재!' : '🔥 빌드 실패. 풍림화산음뢰 위기..'}`,
               '',
               `${context.payload.pull_request.base.ref}과 합친 코드 기준 · 커밋 \`${sha}\``,
               '',
