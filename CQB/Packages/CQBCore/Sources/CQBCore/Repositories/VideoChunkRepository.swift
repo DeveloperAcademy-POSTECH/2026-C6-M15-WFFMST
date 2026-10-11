@@ -11,6 +11,6 @@ public protocol VideoChunkRepository: Sendable {
     func downloadVideo(_ identity: TrackIdentity, chunkCount: Int, to directory: URL) async throws -> [URL]
 
     /// 교관 앱: AAR이 끝나면 기록의 조각을 모두 Storage에서 지운다. 이미 없는 조각은 건너뛴다.
-    /// 삭제가 실패해도 Storage 수명 주기 규칙(1일)이 남은 영상을 지운다.
+    /// 실패하면 영상이 Storage에 남는다. 1일 수명 주기 규칙은 아직 설정하지 않았다.
     func deleteVideo(_ identity: TrackIdentity, chunkCount: Int) async throws
 }
