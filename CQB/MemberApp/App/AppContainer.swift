@@ -1,8 +1,12 @@
 import SwiftUI
 import UIKit
+import CQBFirebase
 
 struct AppContainer: View {
-    @State private var store = MemberStore()
+    @State private var store = MemberStore(
+        sessionRepository: FirestoreSessionRepository(),
+        memberRepository: FirestoreMemberRepository()
+    )
 
     var body: some View {
         RootView()
