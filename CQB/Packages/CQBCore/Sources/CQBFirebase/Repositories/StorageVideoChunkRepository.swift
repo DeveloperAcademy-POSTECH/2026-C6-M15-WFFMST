@@ -36,4 +36,16 @@ public struct StorageVideoChunkRepository: VideoChunkRepository {
         }
         return files
     }
+
+    public func deleteVideo(_ identity: TrackIdentity, chunkCount: Int) async throws {
+        for index in 0..<max(chunkCount, 0) {
+            let reference = try await StorageTransfer.reference(StoragePaths.videoChunk(identity, index: index))
+            do {
+                try await reference.delete()
+            } catch {
+                // 이미 지워진 조각은 성공으로 본다. 다시 불러도 같은 결과가 되게 한다.
+                guard case RepositoryError.notFound = StorageTransfer.mapNotFound(error) else { throw error }
+            }
+        }
+    }
 }
