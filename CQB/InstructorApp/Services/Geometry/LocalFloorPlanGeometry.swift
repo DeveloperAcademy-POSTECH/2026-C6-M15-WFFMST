@@ -20,8 +20,16 @@ enum LocalFloorPlanGeometry {
     }
 
     nonisolated static func validateOutline(_ points: [LocalPlanPoint]) throws {
+        try validatePolygon(points, subject: "실내 외곽")
+    }
+
+    nonisolated static func validateRegion(_ points: [LocalPlanPoint]) throws {
+        try validatePolygon(points, subject: "선택 영역")
+    }
+
+    nonisolated private static func validatePolygon(_ points: [LocalPlanPoint], subject: String) throws {
         guard (3...512).contains(points.count), points.allSatisfy(\.isValid) else {
-            throw LocalFloorPlanError.invalid("실내 외곽은 도면 안의 점 3~512개로 지정해 주세요.")
+            throw LocalFloorPlanError.invalid("\(subject)은 도면 안의 점 3~512개로 지정해 주세요.")
         }
         var twiceArea = 0.0
         for index in points.indices {
@@ -29,37 +37,45 @@ enum LocalFloorPlanGeometry {
             let next = (index + 1) % points.count
             let a = points[index], b = points[next]
             guard hypot(a.x - b.x, a.y - b.y) > 1e-9 else {
-                throw LocalFloorPlanError.invalid("외곽에 같은 점을 연속해서 지정할 수 없습니다.")
+                throw LocalFloorPlanError.invalid("\(subject)에 같은 점을 연속해서 지정할 수 없습니다.")
             }
             // Adjacent edges may share only their endpoint, not overlap backwards.
             let c = points[(index + 2) % points.count]
             if abs(cross(a, b, c)) <= 1e-12,
                (a.x - b.x) * (c.x - b.x) + (a.y - b.y) * (c.y - b.y) > 0 {
-                throw LocalFloorPlanError.invalid("외곽 선분이 겹치지 않게 지정해 주세요.")
+                throw LocalFloorPlanError.invalid("\(subject)의 선분이 겹치지 않게 지정해 주세요.")
             }
             twiceArea += a.x * b.y - b.x * a.y
             for other in (index + 1)..<points.count {
                 let otherNext = (other + 1) % points.count
                 if next == other || otherNext == index { continue }
                 if intersects(a, b, points[other], points[otherNext]) {
-                    throw LocalFloorPlanError.invalid("외곽 선분이 서로 교차하지 않게 지정해 주세요.")
+                    throw LocalFloorPlanError.invalid("\(subject)의 선분이 서로 교차하지 않게 지정해 주세요.")
                 }
             }
         }
         guard abs(twiceArea) > 1e-12 else {
-            throw LocalFloorPlanError.invalid("외곽은 면적이 있는 닫힌 영역이어야 합니다.")
+            throw LocalFloorPlanError.invalid("\(subject)은 면적이 있는 닫힌 영역이어야 합니다.")
         }
+    }
+
+    nonisolated static func resolve(
+        base: LocalObstacleGrid, width: Int, height: Int,
+        edits: [LocalEditAction], outline: [LocalPlanPoint]
+    ) throws -> LocalObstacleGrid {
+        try validateInput(base: base, width: width, height: height)
+        var result = try replay(base: base, width: width, height: height, edits: edits)
+        let outside = try outsideMask(base: base, width: width, height: height, outline: outline)
+        try applyOutside(outside, to: &result)
+        return result
     }
 
     nonisolated static func resolve(
         base: LocalObstacleGrid, width: Int, height: Int,
         strokes: [LocalEditStroke], outline: [LocalPlanPoint]
     ) throws -> LocalObstacleGrid {
-        try validateInput(base: base, width: width, height: height)
-        var result = try replay(base: base, width: width, height: height, strokes: strokes)
-        let outside = try outsideMask(base: base, width: width, height: height, outline: outline)
-        try applyOutside(outside, to: &result)
-        return result
+        try resolve(base: base, width: width, height: height,
+                    edits: strokes.map(LocalEditAction.stroke), outline: outline)
     }
 
     nonisolated fileprivate static func validateInput(base: LocalObstacleGrid, width: Int, height: Int) throws {
@@ -72,31 +88,46 @@ enum LocalFloorPlanGeometry {
     }
 
     nonisolated fileprivate static func replay(base: LocalObstacleGrid, width: Int, height: Int,
-                                               strokes: [LocalEditStroke]) throws -> LocalObstacleGrid {
-        try validateStrokes(strokes)
+                                               edits: [LocalEditAction]) throws -> LocalObstacleGrid {
+        try validateEdits(edits)
         var result = base
         let cellSize = Double(base.cellSizePixels)
         let extent = (Double(width) / cellSize, Double(height) / cellSize)
-        for stroke in strokes {
+        for edit in edits {
             try Task.checkCancellation()
-            let radius = max(0.5, stroke.normalizedDiameter * Double(min(width, height)) / cellSize / 2)
-            let value: UInt8 = stroke.mode == .block ? 1 : 0
-            try paint(stroke.points, radius: radius, value: value, extent: extent, grid: &result)
+            switch edit {
+            case .stroke(let stroke):
+                let radius = max(0.5, stroke.normalizedDiameter * Double(min(width, height)) / cellSize / 2)
+                let value: UInt8 = stroke.mode == .block ? 1 : 0
+                try paint(stroke.points, radius: radius, value: value, extent: extent, grid: &result)
+            case .region(let region):
+                try paintRegion(region.points, value: region.mode == .block ? 1 : 0,
+                                extent: extent, grid: &result)
+            }
         }
         return result
     }
 
-    nonisolated fileprivate static func validateStrokes(_ strokes: [LocalEditStroke]) throws {
-        guard strokes.count <= 20_000 else { throw LocalFloorPlanError.invalid("편집 횟수를 초과했습니다.") }
+    nonisolated fileprivate static func validateEdits(_ edits: [LocalEditAction]) throws {
+        guard edits.count <= 20_000 else { throw LocalFloorPlanError.invalid("편집 횟수를 초과했습니다.") }
         var pointCount = 0
-        for stroke in strokes {
+        for edit in edits {
             try Task.checkCancellation()
-            guard !stroke.points.isEmpty, stroke.points.count <= 250_000 - pointCount,
-                  stroke.normalizedDiameter.isFinite, stroke.normalizedDiameter > 0,
-                  stroke.normalizedDiameter <= 0.1, stroke.points.allSatisfy(\.isValid) else {
-                throw LocalFloorPlanError.invalid("편집 획의 좌표·굵기 또는 최대 입력량을 확인해 주세요.")
+            switch edit {
+            case .stroke(let stroke):
+                guard !stroke.points.isEmpty, stroke.points.count <= 250_000 - pointCount,
+                      stroke.normalizedDiameter.isFinite, stroke.normalizedDiameter > 0,
+                      stroke.normalizedDiameter <= 0.1, stroke.points.allSatisfy(\.isValid) else {
+                    throw LocalFloorPlanError.invalid("편집 획의 좌표·굵기 또는 최대 입력량을 확인해 주세요.")
+                }
+                pointCount += stroke.points.count
+            case .region(let region):
+                guard region.points.count <= 250_000 - pointCount else {
+                    throw LocalFloorPlanError.invalid("선택 영역의 최대 입력량을 초과했습니다.")
+                }
+                try validateRegion(region.points)
+                pointCount += region.points.count
             }
-            pointCount += stroke.points.count
         }
     }
 
@@ -197,6 +228,23 @@ enum LocalFloorPlanGeometry {
         }
     }
 
+    nonisolated private static func paintRegion(_ points: [LocalPlanPoint], value: UInt8,
+                                                extent: (Double, Double), grid: inout LocalObstacleGrid) throws {
+        try validateRegion(points)
+        for y in 0..<grid.rows {
+            if y % 64 == 0 { try Task.checkCancellation() }
+            for x in 0..<grid.columns {
+                let point = LocalPlanPoint(
+                    x: (Double(x) + 0.5) / extent.0,
+                    y: (Double(y) + 0.5) / extent.1
+                )
+                if point.x < 1, point.y < 1, contains(point, polygon: points) {
+                    grid.blocked[y * grid.columns + x] = value
+                }
+            }
+        }
+    }
+
     nonisolated private static func paintDisk(at center: (x: Double, y: Double), radius: Double,
                                               value: UInt8, grid: inout LocalObstacleGrid) throws {
         let minX = max(0, Int(floor(center.x - radius)))
@@ -230,7 +278,7 @@ nonisolated struct LocalFloorPlanReplayCache: Sendable {
     private let width: Int
     private let height: Int
     private var edited: LocalObstacleGrid
-    private var appliedStrokes: [LocalEditStroke] = []
+    private var appliedEdits: [LocalEditAction] = []
     private var appliedOutline: [LocalPlanPoint]?
     private var outside: [UInt8] = []
 
@@ -242,21 +290,25 @@ nonisolated struct LocalFloorPlanReplayCache: Sendable {
         self.height = height
     }
 
-    mutating func resolve(strokes: [LocalEditStroke], outline: [LocalPlanPoint]) throws -> LocalObstacleGrid {
-        try LocalFloorPlanGeometry.validateStrokes(strokes)
-        let isAppend = strokes.count >= appliedStrokes.count && strokes.starts(with: appliedStrokes)
-        let pending = isAppend ? Array(strokes.dropFirst(appliedStrokes.count)) : strokes
+    mutating func resolve(edits: [LocalEditAction], outline: [LocalPlanPoint]) throws -> LocalObstacleGrid {
+        try LocalFloorPlanGeometry.validateEdits(edits)
+        let isAppend = edits.count >= appliedEdits.count && edits.starts(with: appliedEdits)
+        let pending = isAppend ? Array(edits.dropFirst(appliedEdits.count)) : edits
         // Work in local values: cancellation/errors must not partially advance the cache.
         let nextEdited = try LocalFloorPlanGeometry.replay(base: isAppend ? edited : base,
-            width: width, height: height, strokes: pending)
+            width: width, height: height, edits: pending)
         let nextOutside = appliedOutline == outline ? outside :
             try LocalFloorPlanGeometry.outsideMask(base: base, width: width, height: height, outline: outline)
         var result = nextEdited
         try LocalFloorPlanGeometry.applyOutside(nextOutside, to: &result)
         edited = nextEdited
-        appliedStrokes = strokes
+        appliedEdits = edits
         appliedOutline = outline
         outside = nextOutside
         return result
+    }
+
+    mutating func resolve(strokes: [LocalEditStroke], outline: [LocalPlanPoint]) throws -> LocalObstacleGrid {
+        try resolve(edits: strokes.map(LocalEditAction.stroke), outline: outline)
     }
 }

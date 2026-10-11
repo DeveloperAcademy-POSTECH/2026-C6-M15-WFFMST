@@ -15,6 +15,18 @@ nonisolated struct LocalEditStroke: Equatable, Sendable {
     var normalizedDiameter: Double
 }
 
+/// 펜툴로 지정한 다각형 내부를 한 번에 막거나 여는 편집입니다.
+nonisolated struct LocalEditRegion: Equatable, Sendable {
+    var mode: LocalEditMode
+    var points: [LocalPlanPoint]
+}
+
+/// 브러시와 다각형 편집의 적용 순서를 보존하는 앱 내부 편집 이력입니다.
+nonisolated enum LocalEditAction: Equatable, Sendable {
+    case stroke(LocalEditStroke)
+    case region(LocalEditRegion)
+}
+
 nonisolated struct LocalObstacleGrid: Equatable, Sendable {
     var columns: Int
     var rows: Int
@@ -45,18 +57,26 @@ nonisolated struct LocalRegisteredFloorPlan: Equatable, Sendable {
     let name: String
     let image: LocalImportedImage
     let baseGrid: LocalObstacleGrid
-    let strokes: [LocalEditStroke]
+    let edits: [LocalEditAction]
     let outline: [LocalPlanPoint]
     let scale: LocalPlanScale
     let resolvedGrid: LocalObstacleGrid
 }
 
 nonisolated enum LocalCanvasTool: String, CaseIterable, Sendable {
-    case move, block, open, outline, scaleA, scaleB
+    case move, pen, brush, scaleA, scaleB
+}
+
+nonisolated enum LocalFloorPlanEditorMode: String, CaseIterable, Sendable {
+    case pen, brush
+}
+
+nonisolated enum LocalScaleMarker: Sendable {
+    case a, b
 }
 
 nonisolated enum FloorPlanRegistrationStep: Int, Sendable {
-    case information, editing, scaling, reviewing
+    case information, editing, scaling
 }
 
 nonisolated enum LocalFloorPlanError: LocalizedError, Sendable {

@@ -1,30 +1,40 @@
+import CQBDesignSystem
 import SwiftUI
 import UniformTypeIdentifiers
 
 struct FloorPlanCreateView: View {
     @Environment(InstructorStore.self) private var app
     @Environment(FloorPlanDraftStore.self) private var store
-    @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var importer = FloorPlanImportPresentation()
-    @State private var layers = FloorPlanLayerDisplay()
+    @State private var layers = FloorPlanLayerDisplay(planOpacity: 0.5, maskOpacity: 0.5)
     @FocusState private var focusedField: InputField?
+
     private enum InputField: Hashable { case name, distance }
 
     var body: some View {
-        VStack(spacing: 12) {
-            Text("파일 선택 → 장애물·외곽 편집 → 축척 → 확인·등록").font(.subheadline)
-            layout {
-                ScrollView { controls.padding().frame(maxWidth: .infinity, alignment: .leading) }
-                    .frame(maxWidth: sizeClass == .compact ? .infinity : 340)
-                canvas.frame(maxWidth: .infinity, maxHeight: .infinity).frame(minHeight: 300)
-                    .overlay(alignment: .topTrailing) { statusOverlay.padding(12) }
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                header
+                previewArea
             }
-            footer
+            .containerRelativeFrame(.horizontal, count: 10, span: 7, spacing: 0)
+            .frame(maxHeight: .infinity)
+            .background(InstructorColor.canvas)
+
+            sidePanel
+                .containerRelativeFrame(.horizontal, count: 10, span: 3, spacing: 0)
         }
-        .padding()
+        .background(InstructorColor.canvas.ignoresSafeArea())
+        .ignoresSafeArea(.keyboard, edges: .bottom)
+        .toolbar(.hidden, for: .navigationBar)
         .background(FloorPlanInputAnchor(presentation: importer).frame(width: 0, height: 0))
-        .fileImporter(isPresented: Binding(get: { importer.isPresented }, set: { importer.isPresented = $0 }),
-                      allowedContentTypes: [.png, .jpeg]) { result in
+        .fileImporter(
+            isPresented: Binding(
+                get: { importer.isPresented },
+                set: { importer.isPresented = $0 }
+            ),
+            allowedContentTypes: [.png, .jpeg]
+        ) { result in
             switch result {
             case .success(let url): store.importImage(from: url)
             case .failure(let error): store.reportImportFailure(error)
@@ -36,146 +46,435 @@ struct FloorPlanCreateView: View {
         .onDisappear { importer.finish() }
     }
 
-    private var layout: AnyLayout {
-        sizeClass == .compact ? AnyLayout(VStackLayout(spacing: 12)) : AnyLayout(HStackLayout(alignment: .top, spacing: 20))
-    }
+    private var header: some View {
+        HStack(spacing: 16) {
+            InstructorBackButton(action: app.goBack)
 
-    private var controls: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("도면 이름").font(.headline)
-            TextField("훈련장 이름", text: Binding(get: { store.name }, set: store.setName))
-                .focused($focusedField, equals: .name)
-                .textFieldStyle(.roundedBorder).accessibilityIdentifier("floorPlan.name")
-            editingButton(store.image == nil ? "도면 파일 선택" : "다른 파일 선택") {
+            Text(store.image?.fileName ?? "도면 설정")
+                .font(DSTypography.h2)
+                .foregroundStyle(InstructorColor.textPrimary)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
+
+            ActionButton(
+                store.image == nil ? "파일 첨부" : "파일 변경",
+                tone: .secondary,
+                density: .file
+            ) {
                 importer.request { focusedField = nil }
             }
-                .disabled(store.isProcessing || store.isDrawing).accessibilityIdentifier("floorPlan.import")
-            Text(store.image?.fileName ?? "PNG 또는 JPEG · 최대 40 MiB").font(.caption).foregroundStyle(.secondary)
-            if let image = store.image {
-                Text("처리 이미지: \(image.width) × \(image.height) px").font(.caption)
-                // Display-only controls can remain interactive during a stroke.
-                FloorPlanLayerControls(display: $layers)
-            }
-            Divider()
-            switch store.step {
-            case .information:
-                Text("도면을 선택하면 장애물 초안을 자동 추출합니다. 이후 통로와 외곽을 직접 확인해주세요.")
-            case .editing: editingControls
-            case .scaling: scaleControls
-            case .reviewing: reviewControls
-            }
+            .disabled(store.isProcessing || store.isDrawing)
+            .accessibilityIdentifier("floorPlan.import")
         }
-        .disabled(importer.isPreparing || importer.isPresented || store.isImporting)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 22)
     }
 
-    private var editingControls: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("장애물·외곽 편집").font(.title3)
-            Text("장애물 색으로 칠해진 곳은 통과 불가 영역입니다. 자동 추출은 초안이며 문·가구·문자를 검수해주세요.").font(.caption)
-            HStack { toolButton("이동", .move); toolButton("막기", .block); toolButton("열기", .open) }
-            Text("붓 지름: 짧은 변의 \(store.normalizedDiameter * 100, specifier: "%.1f")%").font(.caption)
-            Slider(value: Binding(get: { store.normalizedDiameter }, set: store.setBrushDiameter), in: 0.001...0.05)
-                .accessibilityLabel("브러시 굵기")
-            HStack {
-                editingButton("획 되돌리기", available: !store.strokes.isEmpty, action: store.undoStroke)
-                editingButton("편집 초기화", available: !store.strokes.isEmpty, action: store.resetEdits)
-            }
-            Divider()
-            Text("실내 외곽").font(.headline)
-            Text("유효한 실내 영역의 꼭짓점을 순서대로 누르고 외곽을 확정하세요.").font(.caption)
-            toolButton("외곽 점 찍기", .outline)
-            HStack {
-                editingButton("한 점 취소", available: !store.outline.isEmpty, action: store.undoOutlinePoint)
-                editingButton("외곽 초기화", action: store.resetOutline)
-            }
-            editingButton(store.outlineConfirmed ? "외곽 확정됨" : "외곽 확정",
-                          available: store.outline.count >= 3 && !store.outlineConfirmed, action: store.confirmOutline)
-                .accessibilityIdentifier("floorPlan.outline.confirm")
-            Text("\(store.outline.count)개 꼭짓점 · 외곽 밖은 열기 도구로 열 수 없습니다.").font(.caption)
-            Text("Pencil·한 손가락: 편집 / 두 손가락: 이동·확대").font(.caption).foregroundStyle(.secondary)
-            if store.resolvedGrid == nil && !store.isProcessing {
-                ActionButton("미리보기 다시 계산", action: store.refreshMask)
+    private var previewArea: some View {
+        GeometryReader { geometry in
+            let topInset = previewTopInset(for: geometry.size.height)
+            let cardSize = previewCardSize(in: geometry.size, topInset: topInset)
+
+            ZStack {
+                VStack(spacing: 0) {
+                    previewCard
+                        .frame(width: cardSize.width, height: cardSize.height)
+
+                    Spacer(minLength: 24)
+
+                    HStack {
+                        if store.step == .editing, store.image != nil {
+                            historyControls
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .frame(height: 52)
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, topInset)
+                .padding(.bottom, 24)
+
+                statusOverlay
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(24)
             }
         }
-        .disabled(store.isProcessing || store.isDrawing)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var scaleControls: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("축척 설정").font(.title3)
-            Text("도면에서 실제 거리를 아는 두 점을 선택하세요. A 선택 후 B를 지정합니다.")
-            HStack { toolButton("A 지정", .scaleA); toolButton("B 지정", .scaleB) }
-            Text("A: \(store.scaleA == nil ? "미지정" : "지정됨") / B: \(store.scaleB == nil ? "미지정" : "지정됨")").font(.caption)
-            TextField("실제 거리 (m)", text: Binding(get: { store.distanceText }, set: store.setDistance))
-                .focused($focusedField, equals: .distance)
-                .keyboardType(.decimalPad).textFieldStyle(.roundedBorder).accessibilityIdentifier("floorPlan.distance")
-            Text("두 점 간 10px 이상 · 거리 0 초과 1000m 이하").font(.caption)
-            if let value = store.pixelsPerMeter { Text("1m = \(value, specifier: "%.2f") px") }
-            ActionButton("장애물 편집으로", action: store.returnToEditing)
+    private var previewCard: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            Text("도면 미리보기")
+                .font(DSTypography.h3)
+                .foregroundStyle(InstructorColor.textPrimary)
+                .frame(height: 24)
+
+            canvas
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipShape(.rect(cornerRadius: 4))
+
+            if store.image != nil, store.step == .editing {
+                Text("출발점·방향은 대원 기기에서 보정")
+                    .font(DSTypography.bodySmall)
+                    .foregroundStyle(InstructorColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
+            }
         }
-    }
-
-    private var reviewControls: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("최종 확인").font(.title3)
-            Text("원본 도면과 장애물, 문·통로, 실내 외곽, 기준 거리를 확인해주세요.")
-            Text("수동 편집 \(store.strokes.count)획 · 외곽 \(store.outline.count)점")
-            Text("기준 거리 \(store.scale?.meters ?? 0, specifier: "%.2f") m")
-            Toggle("최종 장애물과 축척을 확인했습니다", isOn: Binding(get: { store.reviewed }, set: store.setReviewed))
-                .accessibilityIdentifier("floorPlan.reviewed")
-            ActionButton("축척 다시 설정", action: store.returnToScale)
-            ActionButton("장애물 다시 편집", action: store.returnToEditing)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(InstructorColor.surfaceBase)
+        .clipShape(.rect(cornerRadius: 4))
+        .overlay {
+            RoundedRectangle(cornerRadius: 4)
+                .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
         }
     }
 
-    private func toolButton(_ title: String, _ tool: LocalCanvasTool) -> some View {
-        editingButton(title, action: { store.setTool(tool) })
-        .fontWeight(store.tool == tool ? .bold : .regular)
-        .accessibilityAddTraits(store.tool == tool ? .isSelected : [])
-        .accessibilityIdentifier("floorPlan.tool.\(tool.rawValue)")
+    private func previewTopInset(for availableHeight: CGFloat) -> CGFloat {
+        min(56, max(24, availableHeight * 0.06))
     }
 
-    private func editingButton(_ title: String, available: Bool = true, action: @escaping () -> Void) -> some View {
-        ActionButton(title, action: action)
-            .buttonStyle(FloorPlanEditingButtonStyle(
-                preservesEnabledAppearance: available && (store.isDrawing || store.isReplayingEdits)))
-            .disabled(!available)
+    private func previewCardSize(in availableSize: CGSize, topInset: CGFloat) -> CGSize {
+        let referenceSize = CGSize(width: 702, height: 728)
+        let availableWidth = max(0, availableSize.width - 48)
+        let availableHeight = max(0, availableSize.height - topInset - 24 - 52 - 24)
+        return CGSize(
+            width: min(referenceSize.width, availableWidth),
+            height: min(referenceSize.height, availableHeight)
+        )
     }
 
-    @ViewBuilder private var canvas: some View {
+    @ViewBuilder
+    private var canvas: some View {
         if let image = store.previewImage {
-            LocalFloorPlanCanvas(image: image, mask: store.maskImage, tool: store.tool,
-                normalizedDiameter: store.normalizedDiameter, outline: store.outline,
-                scaleA: store.scaleA, scaleB: store.scaleB,
-                scaleLabel: store.pixelsPerMeter == nil ? nil : store.scale.map { String(format: "%.2f m", $0.meters) },
+            LocalFloorPlanCanvas(
+                image: image,
+                mask: store.maskImage,
+                tool: store.tool,
+                normalizedDiameter: store.normalizedDiameter,
+                outline: store.outline,
+                selection: store.selection,
+                pendingBrushStrokes: store.pendingBrushStrokes,
+                scaleA: store.scaleA,
+                scaleB: store.scaleB,
+                scaleLabel: nil,
                 importPresentation: importer,
                 layers: layers,
-                onStroke: store.appendStroke, onPoint: store.placePoint, onEditingChanged: store.setDrawing)
-                .allowsHitTesting(!store.isProcessing).accessibilityIdentifier("floorPlan.canvas")
+                onStroke: store.stageBrushStroke,
+                onPoint: store.placePoint,
+                onScaleMarkerMoved: store.moveScaleMarker,
+                onEditingChanged: store.setDrawing
+            )
+            .allowsHitTesting(!store.isProcessing)
+            .accessibilityIdentifier("floorPlan.canvas")
         } else {
-            ContentUnavailableView("도면 파일을 선택하세요", systemImage: "map",
-                description: Text("선택한 이미지와 장애물을 여기에서 확인합니다."))
+            Text("이미지가 업로드 되지 않았습니다.")
+                .font(DSTypography.bodySmall)
+                .foregroundStyle(InstructorColor.textSecondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
-    // An overlay never reduces canvas height or changes the image's fit zoom during replay.
-    @ViewBuilder private var statusOverlay: some View {
-        if (store.isProcessing && !store.isReplayingEdits) || importer.isPreparing || store.errorMessage != nil || importer.message != nil {
+    private var historyControls: some View {
+        HStack(spacing: 8) {
+            historyButton(asset: "InstructorUndoIcon", label: "실행 취소", enabled: store.canUndo, action: store.undo)
+            historyButton(asset: "InstructorRedoIcon", label: "다시 실행", enabled: store.canRedo, action: store.redo)
+        }
+        .padding(4)
+        .frame(width: 104, height: 52)
+        .background(InstructorColor.surfaceBase)
+        .clipShape(.rect(cornerRadius: 4))
+        .overlay {
+            RoundedRectangle(cornerRadius: 4)
+                .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
+        }
+    }
+
+    private func historyButton(asset: String, label: String, enabled: Bool,
+                               action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(asset)
+                .renderingMode(.original)
+                .frame(width: 24, height: 24)
+                .frame(width: 44, height: 44)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.35)
+        .accessibilityLabel(label)
+    }
+
+    private var sidePanel: some View {
+        Group {
+            if store.step == .scaling {
+                scalePanel
+            } else {
+                editingPanel
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(InstructorColor.surfaceBase)
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(InstructorColor.borderDefault)
+                .frame(width: 1)
+        }
+    }
+
+    private var editingPanel: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("벽 편집")
+                        .font(DSTypography.h2)
+                        .foregroundStyle(InstructorColor.textPrimary)
+
+                    Text("인식되지 않은 부분을 추가하거나 지우세요")
+                        .font(DSTypography.bodySmall)
+                        .foregroundStyle(InstructorColor.textSecondary)
+                        .padding(.top, 8)
+
+                    editorControls
+                        .padding(.top, 20)
+
+                    FloorPlanLayerControls(display: $layers)
+                        .padding(.top, 32)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.top, 24)
+                .padding(.bottom, 20)
+            }
+
+            ActionButton("다음", fillsWidth: true, action: store.continueToScale)
+                .frame(height: 52)
+                .disabled(!store.canContinueEditing)
+                .accessibilityIdentifier("floorPlan.next.scale")
+                .padding(.horizontal, 24)
+                .padding(.top, 12)
+                .padding(.bottom, 32)
+        }
+    }
+
+    private var editorControls: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            editorTabs
+
+            Group {
+                if store.editorMode == .pen {
+                    penControls
+                } else {
+                    brushControls
+                }
+            }
+            .padding(.top, 24)
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(InstructorColor.surfaceRaised)
+        .clipShape(.rect(cornerRadius: 4))
+        .overlay {
+            RoundedRectangle(cornerRadius: 4)
+                .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
+        }
+        .disabled(store.image == nil || store.isProcessing || importer.isPresented)
+    }
+
+    private var editorTabs: some View {
+        HStack(spacing: 4) {
+            editorTab("펜툴", mode: .pen)
+            editorTab("브러시", mode: .brush)
+        }
+        .padding(4)
+        .frame(height: 44)
+        .background(InstructorColor.canvas)
+        .clipShape(.rect(cornerRadius: 4))
+        .overlay {
+            RoundedRectangle(cornerRadius: 4)
+                .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
+        }
+    }
+
+    private func editorTab(_ title: String, mode: LocalFloorPlanEditorMode) -> some View {
+        let selected = store.editorMode == mode
+        return Button(title) { store.setEditorMode(mode) }
+            .font(Self.mediumBodyFont)
+            .foregroundStyle(selected ? InstructorColor.canvas : InstructorColor.textSecondary)
+            .frame(maxWidth: .infinity, minHeight: 36, maxHeight: 36)
+            .background(selected ? InstructorColor.actionPrimary : .clear)
+            .clipShape(.rect(cornerRadius: 4))
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private var penControls: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("필요한 영역을 점으로 찍어 선택하세요")
+                .font(DSTypography.bodySmall)
+                .foregroundStyle(InstructorColor.textPrimary)
+
+            panelButton("외곽 추가하기", enabled: store.canApplySelection, action: store.applyOutlineSelection)
+                .padding(.top, 24)
+
+            Text("선택영역의 외부를 통과 불가 영역으로 지정합니다")
+                .font(DSTypography.caption)
+                .foregroundStyle(InstructorColor.textSecondary)
+                .padding(.top, 12)
+
+            panelButton("선택영역 추가하기", enabled: store.canApplySelection) {
+                store.applySelection(.block)
+            }
+            .padding(.top, 24)
+
+            panelButton("선택영역 삭제하기", enabled: store.canApplySelection) {
+                store.applySelection(.open)
+            }
+            .padding(.top, 12)
+
+            Text("선택영역의 내부에 장애물을 추가하거나 삭제합니다")
+                .font(DSTypography.caption)
+                .foregroundStyle(InstructorColor.textSecondary)
+                .padding(.top, 12)
+        }
+    }
+
+    private var brushControls: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("필요한 영역을 그리세요")
+                .font(DSTypography.bodySmall)
+                .foregroundStyle(InstructorColor.textPrimary)
+
+            HStack(spacing: 12) {
+                panelButton("추가하기", enabled: store.canApplyBrush) {
+                    store.applyPendingBrush(.block)
+                }
+                panelButton("지우기", enabled: store.canApplyBrush) {
+                    store.applyPendingBrush(.open)
+                }
+            }
+            .padding(.top, 24)
+
+            FloorPlanLabeledSlider(
+                label: "브러시 크기",
+                value: Binding(
+                    get: { store.normalizedDiameter },
+                    set: store.setBrushDiameter
+                ),
+                range: 0.001...0.05,
+                step: 0.001,
+                formattedValue: { value in
+                    guard let image = store.image else { return "–" }
+                    let points = value * Double(min(image.width, image.height))
+                    return "\(Int(points.rounded()))pt"
+                }
+            )
+            .padding(.top, 32)
+        }
+    }
+
+    private func panelButton(_ title: String, enabled: Bool,
+                             action: @escaping () -> Void) -> some View {
+        ActionButton(title, tone: .secondary, fillsWidth: true, action: action)
+            .frame(height: 48)
+            .disabled(!enabled)
+    }
+
+    private var scalePanel: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("축척 설정")
+                        .font(DSTypography.h2)
+                        .foregroundStyle(InstructorColor.textPrimary)
+
+                    Text("A지점과 B지점이 될 부분을 클릭하세요.")
+                        .font(DSTypography.bodySmall)
+                        .foregroundStyle(InstructorColor.textSecondary)
+                        .padding(.top, 8)
+
+                    HStack(spacing: 12) {
+                        Text("A-B 실제 거리")
+                            .font(Self.mediumBodyFont)
+                            .foregroundStyle(InstructorColor.textPrimary)
+                        Spacer()
+                        TextField(
+                            "입력",
+                            text: Binding(get: { store.distanceText }, set: store.setDistance)
+                        )
+                        .focused($focusedField, equals: .distance)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.center)
+                        .font(DSTypography.body)
+                        .foregroundStyle(InstructorColor.textPrimary)
+                        .tint(InstructorColor.actionPrimary)
+                        .frame(maxWidth: 104, minHeight: 48)
+                        .background(InstructorColor.canvas)
+                        .clipShape(.rect(cornerRadius: 4))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 4)
+                                .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
+                        }
+                        .accessibilityIdentifier("floorPlan.distance")
+                        Text("m")
+                            .font(DSTypography.body)
+                            .foregroundStyle(InstructorColor.textPrimary)
+                    }
+                    .padding(.top, 50)
+
+                    Text("도면 이름 설정")
+                        .font(DSTypography.h2)
+                        .foregroundStyle(InstructorColor.textPrimary)
+                        .padding(.top, 32)
+
+                    TextField(
+                        "훈련장 A",
+                        text: Binding(get: { store.name }, set: store.setName),
+                        prompt: Text("훈련장 A").foregroundStyle(InstructorColor.textSecondary)
+                    )
+                    .focused($focusedField, equals: .name)
+                    .font(DSTypography.body)
+                    .foregroundStyle(InstructorColor.textPrimary)
+                    .tint(InstructorColor.actionPrimary)
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 48)
+                    .background(InstructorColor.canvas)
+                    .clipShape(.rect(cornerRadius: 4))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 4)
+                            .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
+                    }
+                    .padding(.top, 8)
+                    .accessibilityIdentifier("floorPlan.name")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.top, 24)
+                .padding(.bottom, 20)
+            }
+
+            ActionButton("저장", fillsWidth: true, action: app.registerFloorPlan)
+                .frame(height: 52)
+                .disabled(!store.canRegister)
+                .accessibilityIdentifier("floorPlan.save")
+                .padding(.horizontal, 24)
+                .padding(.top, 12)
+                .padding(.bottom, 32)
+        }
+    }
+
+    @ViewBuilder
+    private var statusOverlay: some View {
+        if (store.isProcessing && !store.isReplayingEdits)
+            || store.errorMessage != nil || importer.message != nil {
             VStack(alignment: .leading, spacing: 8) {
                 if store.isProcessing && !store.isReplayingEdits {
                     HStack {
                         ProgressView()
                         Text(store.activity)
-                        ActionButton("처리 취소", action: store.cancelProcessing)
-                    }
-                }
-                if !store.isProcessing && store.maskPNGData != nil && store.resolvedGrid == nil {
-                    Text("직전 결과 표시 중 · 재계산 완료 전 등록 불가").font(.caption)
-                }
-                if importer.isPreparing {
-                    HStack {
-                        ProgressView("파일 선택 준비 중")
-                        ActionButton("취소", action: importer.finish)
+                        Button("취소", action: store.cancelProcessing)
                     }
                 }
                 if let error = store.errorMessage {
@@ -187,46 +486,24 @@ struct FloorPlanCreateView: View {
                     Text(message).foregroundStyle(InstructorColor.validationError)
                 }
             }
-            .font(.callout).padding(10)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .font(DSTypography.bodySmall)
+            .foregroundStyle(InstructorColor.textPrimary)
+            .padding(12)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 4))
         }
     }
 
-    private var footer: some View {
-        HStack {
-            Text("임시 등록 · 앱 종료 시 사라집니다").font(.caption).foregroundStyle(.secondary)
-            Spacer()
-            switch store.step {
-            case .information: EmptyView()
-            case .editing:
-                ActionButton("축척 설정으로", action: store.continueToScale).disabled(!store.canContinueEditing)
-                    .accessibilityIdentifier("floorPlan.next.scale")
-            case .scaling:
-                ActionButton("최종 확인", action: store.showReview).disabled(!store.canReview)
-                    .accessibilityIdentifier("floorPlan.next.review")
-            case .reviewing:
-                ActionButton("도면 등록", action: app.registerFloorPlan).disabled(!store.canRegister)
-                    .accessibilityIdentifier("floorPlan.save")
-            }
-        }
-        .disabled(importer.isPreparing || importer.isPresented)
-    }
+    private static let mediumBodyFont: Font = {
+        DSFonts.register()
+        return .custom("NotoSansKR-Medium", size: 16, relativeTo: .body)
+    }()
 }
 
-// Keep disabled semantics (including keyboard/VoiceOver) during brief input locks,
-// without flashing every tool gray. Persistent unavailable states remain dimmed.
-struct FloorPlanEditingButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
-    let preservesEnabledAppearance: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(isEnabled || preservesEnabledAppearance ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
-            .opacity(configuration.isPressed ? 0.6 : 1)
-    }
-}
-
-#Preview {
+#Preview("도면 생성 · 파일 미첨부") {
     let app = InstructorStore()
-    return FloorPlanCreateView().environment(app).environment(app.floorPlanDraft)
+    return FloorPlanCreateView()
+        .environment(app)
+        .environment(app.floorPlanDraft)
+        .frame(width: 1_366, height: 1_024)
+        .preferredColorScheme(.dark)
 }

@@ -14,18 +14,9 @@ xcrun --sdk iphonesimulator swiftc -parse-as-library -swift-version 5 \
   -sdk "$test_sdk" -target "${test_arch}-apple-ios17.0-simulator" \
   -module-cache-path "$test_build_dir/ModuleCache" \
   "$task_root/CQB/InstructorApp/Models/LocalFloorPlan.swift" \
+  "$task_root/CQB/InstructorApp/Features/FloorPlan/Editing/FloorPlanLayerDisplay.swift" \
   "$task_root/CQB/InstructorApp/Features/FloorPlan/Editing/LocalFloorPlanCanvas.swift" \
   "$task_root/CQB/InstructorApp/Features/FloorPlan/Editing/FloorPlanImportPresentation.swift" \
-  "$task_root/CQB/InstructorApp/Features/FloorPlan/Editing/FloorPlanLayerControls.swift" \
-  "$task_root/CQB/InstructorApp/Components/Controls/ActionButton.swift" \
-  "$task_root/CQB/InstructorApp/Features/FloorPlan/FloorPlanCreateView.swift" \
-  "$task_root/CQB/InstructorApp/Services/FloorPlanImporting.swift" \
-  "$task_root/CQB/InstructorApp/Services/Import/"*.swift \
-  "$task_root/CQB/InstructorApp/Services/Geometry/"*.swift \
-  "$task_root/CQB/InstructorApp/Stores/FloorPlanDraftStore.swift" \
-  "$task_root/CQB/InstructorApp/Stores/InstructorStore.swift" \
-  "$task_root/CQB/InstructorApp/Stores/InstructorPhase.swift" \
-  "$task_root/CQB/InstructorApp/Stores/InstructorMockData.swift" \
   "$task_root/Tests/FloorPlanCanvasChecks.swift" \
   -o "$test_app/FloorPlanCanvasChecks"
 plutil -create xml1 "$test_app/Info.plist"
