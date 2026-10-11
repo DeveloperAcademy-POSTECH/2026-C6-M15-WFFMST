@@ -30,7 +30,7 @@ final class MemberStore {
     private(set) var directionPoint: CGPoint?
     private(set) var recordingStartedAt: Date?
     private(set) var savedRecordingURL: URL?
-    private(set) var recordingError: String?
+    private(set) var errorMessage: String?
     private(set) var uploadProgress = 0.0
     private(set) var isUploadComplete = false
 
@@ -57,7 +57,7 @@ final class MemberStore {
               pin.allSatisfy({ $0.isASCII && $0.isNumber }), !name.isEmpty else { return }
 
         isJoining = true
-        recordingError = nil
+        errorMessage = nil
         Task { @MainActor in
             defer { isJoining = false }
             do {
@@ -78,14 +78,14 @@ final class MemberStore {
             } catch let error as RepositoryError {
                 switch error {
                 case .notFound:
-                    recordingError = "PIN을 확인해주세요."
+                    errorMessage = "PIN을 확인해주세요."
                 case .sessionClosed:
-                    recordingError = "이미 시작했거나 종료된 훈련에는 참가할 수 없습니다."
+                    errorMessage = "이미 시작했거나 종료된 훈련에는 참가할 수 없습니다."
                 case .pinTaken, .invalidStatusChange:
-                    recordingError = "세션에 참가하지 못했습니다. 잠시 후 다시 시도해주세요."
+                    errorMessage = "세션에 참가하지 못했습니다. 잠시 후 다시 시도해주세요."
                 }
             } catch {
-                recordingError = "세션에 참가하지 못했습니다. 네트워크 연결을 확인해주세요."
+                errorMessage = "세션에 참가하지 못했습니다. 네트워크 연결을 확인해주세요."
             }
         }
     }
@@ -108,12 +108,12 @@ final class MemberStore {
               [start.x, start.y, direction.x, direction.y].allSatisfy({ $0.isFinite && (0...1).contains($0) }),
               start != direction else { return }
         guard let map = trainingMap else {
-            recordingError = "테스트 도면 파일을 불러올 수 없습니다."
+            errorMessage = "테스트 도면 파일을 불러올 수 없습니다."
             return
         }
         guard map.navigation.grid.isFree(map.pixel(start)),
               hypot(map.pixel(direction).x - map.pixel(start).x, map.pixel(direction).y - map.pixel(start).y) >= 10 else {
-            recordingError = "도면 내부의 이동 가능한 출발점과 충분히 떨어진 방향 지점을 선택해주세요."
+            errorMessage = "도면 내부의 이동 가능한 출발점과 충분히 떨어진 방향 지점을 선택해주세요."
             return
         }
         startPoint = start
@@ -134,7 +134,7 @@ final class MemberStore {
               let sessionID, let startPoint, let directionPoint else { return }
         isStarting = true
         defer { isStarting = false }
-        recordingError = nil
+        errorMessage = nil
         do {
             let identity = TrackIdentity(sessionID: sessionID, memberID: memberID, recordingID: UUID())
             let files = try recordingFileStore.makeFiles(recordingID: identity.recordingID)
@@ -147,17 +147,17 @@ final class MemberStore {
             filesSaved = false
             recordingStartedAt = Date()
             phase = .recording
-        } catch { recordingError = error.localizedDescription }
+        } catch { errorMessage = error.localizedDescription }
     }
 
     func finishRecording() async {
         guard phase == .recording, let map = trainingMap, let identity,
               let startPoint, let directionPoint, let recordingStartedAt else { return }
         phase = .saving
-        recordingError = cameraService.fatalError
+        errorMessage = cameraService.fatalError
         // 영상 마무리 실패와 동선 저장 실패를 독립적으로 처리한다.
         do { savedRecordingURL = try await cameraService.stopRecording() }
-        catch { recordingError = error.localizedDescription }
+        catch { errorMessage = error.localizedDescription }
         rawTrack = RawTrackDocument(identity: identity, floorPlan: map.reference,
             localStartedAt: recordingStartedAt, start: map.pixel(startPoint), direction: map.pixel(directionPoint),
             pixelsPerMeter: map.pixelsPerMeter, rotationDegrees: cameraService.rotationDegrees,
@@ -169,7 +169,7 @@ final class MemberStore {
     /// 저장 공간 확보 후 재시도해도 동일한 원본 바이트를 보존한다.
     func retrySaving() async {
         guard phase == .saved, !filesSaved else { return }
-        recordingError = nil
+        errorMessage = nil
         await saveAndCorrect()
     }
 
@@ -200,7 +200,7 @@ final class MemberStore {
                 }
             }.value
             filesSaved = true
-        } catch { recordingError = "동선 파일 저장 실패: \(error.localizedDescription). 저장 공간을 확보한 뒤 다시 시도해주세요." }
+        } catch { errorMessage = "동선 파일 저장 실패: \(error.localizedDescription). 저장 공간을 확보한 뒤 다시 시도해주세요." }
         phase = .saved
     }
 
@@ -250,7 +250,7 @@ final class MemberStore {
     }
 
     func clearRecordingError() {
-        recordingError = nil
+        errorMessage = nil
     }
 
     func returnToJoin() {

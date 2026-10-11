@@ -56,13 +56,13 @@ struct RootView: View {
         .alert(
             "기록 안내",
             isPresented: Binding(
-                get: { store.recordingError != nil },
+                get: { store.errorMessage != nil },
                 set: { if !$0 { store.clearRecordingError() } }
             )
         ) {
             Button("확인", role: .cancel) { store.clearRecordingError() }
         } message: {
-            Text(store.recordingError ?? "녹화 중 문제가 발생했습니다.")
+            Text(store.errorMessage ?? "녹화 중 문제가 발생했습니다.")
         }
     }
 }
