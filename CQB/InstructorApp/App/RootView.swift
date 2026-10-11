@@ -29,7 +29,16 @@ struct RootView: View {
     }
 
     private var usesHiFiChrome: Bool {
-        [.home, .floorPlanList].contains(store.phase)
+        [
+            .home,
+            .floorPlanList,
+            .floorPlanCreation,
+            .sessionCreation,
+            .teamReadiness,
+            .trainingInProgress,
+            .aar,
+            .aarCompleted
+        ].contains(store.phase)
     }
 
     @ViewBuilder

@@ -1,49 +1,85 @@
+import CQBDesignSystem
 import SwiftUI
 
 struct AARMovementView: View {
     @Environment(InstructorStore.self) private var store
 
     var body: some View {
-        let selectedParticipants = store.selectedParticipants
+        GeometryReader { geometry in
+            ZStack {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(InstructorColor.surfaceBase)
 
-        VStack(alignment: .leading, spacing: 12) {
-            Text("동선 복기").font(.headline)
+                floorPlan
 
-            if selectedParticipants.isEmpty {
-                ContentUnavailableView("표시할 대원을 선택하세요", systemImage: "person.crop.circle.badge.questionmark",
-                                       description: Text("오른쪽 표시 대상 메뉴에서 대원을 선택할 수 있습니다."))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                FloorPlanPreview(title: store.selectedFloorPlan?.name ?? "샘플 훈련 도면", image: store.selectedPlanImage)
-                    .overlay {
-                        GeometryReader { geometry in
-                            ForEach(selectedParticipants) { participant in
-                                Text("\(participant.number)")
-                                    .font(.headline.monospacedDigit())
-                                    .frame(width: 36, height: 36)
-                                    .background(.regularMaterial, in: Circle())
-                                    .overlay(Circle().stroke(.primary))
-                                    .position(x: geometry.size.width * participant.x,
-                                              y: geometry.size.height * participant.y)
-                                    .accessibilityLabel("\(participant.displayName) 샘플 위치")
-                            }
-                        }
-                    }
-                    .accessibilityIdentifier("aar.movement")
+                ForEach(store.selectedParticipants) { participant in
+                    participantMarker(participant)
+                        .position(
+                            x: geometry.size.width * participant.x,
+                            y: geometry.size.height * participant.y
+                        )
+                }
             }
-
-            Text("고정 샘플 위치 · 실제 이동 기록이 아닙니다.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            .clipShape(.rect(cornerRadius: 4))
+            .overlay {
+                RoundedRectangle(cornerRadius: 4)
+                    .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
+            }
         }
+        .accessibilityIdentifier("aar.movement")
+    }
+
+    @ViewBuilder
+    private var floorPlan: some View {
+        if let image = store.selectedPlanImage {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+                .opacity(0.5)
+                .padding(20)
+                .accessibilityLabel("선택한 훈련 도면")
+        } else {
+            ContentUnavailableView(
+                "도면 미리보기 없음",
+                systemImage: "map",
+                description: Text("선택한 훈련 도면을 불러오지 못했습니다.")
+            )
+            .foregroundStyle(InstructorColor.textSecondary)
+        }
+    }
+
+    private func participantMarker(_ participant: DemoParticipant) -> some View {
+        Text("\(participant.number)")
+            .font(markerFont)
+            .foregroundStyle(InstructorColor.textPrimary)
+            .monospacedDigit()
+            .frame(width: 49, height: 49)
+            .background(InstructorColor.teamOne, in: Circle())
+            .accessibilityLabel("\(participant.displayName) 위치")
+    }
+
+    private var markerFont: Font {
+        DSFonts.register()
+        return .custom("NotoSansKR-Bold", size: 14, relativeTo: .body)
     }
 }
 
-#Preview {
-    let store = InstructorStore()
+#Preview("AAR 동선") {
+    let store = InstructorStore(floorPlans: [
+        DemoFloorPlan(
+            id: "preview-plan",
+            name: "훈련장 A 도면",
+            fileName: "훈련장 A 도면.png",
+            referenceDistance: 15
+        )
+    ])
     store.openSessionCreation()
     store.createSession()
     store.startTraining()
     store.finishTraining()
-    return AARMovementView().environment(store)
+
+    return AARMovementView()
+        .environment(store)
+        .frame(width: 1_008, height: 896)
+        .preferredColorScheme(.dark)
 }
