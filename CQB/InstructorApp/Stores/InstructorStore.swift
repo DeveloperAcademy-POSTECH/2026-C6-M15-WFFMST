@@ -160,8 +160,12 @@ final class InstructorStore {
         switch phase {
         case .floorPlanList, .sessionCreation: phase = .home
         case .floorPlanCreation:
-            floorPlanDraft.reset()
-            phase = .floorPlanList
+            if floorPlanDraft.step == .scaling {
+                floorPlanDraft.returnToEditing()
+            } else {
+                floorPlanDraft.reset()
+                phase = .floorPlanList
+            }
         case .teamReadiness:
             participants = []
             phase = .sessionCreation
