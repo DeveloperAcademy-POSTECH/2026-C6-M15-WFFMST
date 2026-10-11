@@ -81,7 +81,7 @@ final class MemberStore {
                     errorMessage = "PIN을 확인해주세요."
                 case .sessionClosed:
                     errorMessage = "이미 시작했거나 종료된 훈련에는 참가할 수 없습니다."
-                case .pinTaken, .invalidStatusChange:
+                default:
                     errorMessage = "세션에 참가하지 못했습니다. 잠시 후 다시 시도해주세요."
                 }
             } catch {
