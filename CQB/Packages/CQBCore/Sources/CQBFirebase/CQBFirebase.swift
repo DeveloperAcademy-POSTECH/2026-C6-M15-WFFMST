@@ -32,7 +32,12 @@ public enum CQBFirebaseModule {
         let host = ProcessInfo.processInfo.environment["FIREBASE_EMULATOR_HOST"].flatMap { $0.isEmpty ? nil : $0 }
         if let host {
             Auth.auth().useEmulator(withHost: host, port: 9099)
-            Firestore.firestore().useEmulator(withHost: host, port: 8080)
+            let firestore = Firestore.firestore()
+            firestore.useEmulator(withHost: host, port: 8080)
+            // Firebase 12.19.2의 useEmulator는 host만 바꾼다. 로컬 에뮬레이터는 TLS를 사용하지 않는다.
+            let settings = firestore.settings
+            settings.isSSLEnabled = false
+            firestore.settings = settings
             Storage.storage().useEmulator(withHost: host, port: 9199)
             logger.notice("Firebase 에뮬레이터 사용: \(host, privacy: .public)")
         }

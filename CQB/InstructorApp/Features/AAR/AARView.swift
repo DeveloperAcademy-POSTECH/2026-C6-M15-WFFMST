@@ -41,16 +41,12 @@ struct AARView: View {
 }
 
 #Preview("AAR 동선") {
-    let store = InstructorStore(floorPlans: [
-        DemoFloorPlan(
-            id: "preview-plan",
-            name: "훈련장 A 도면",
-            fileName: "훈련장 A 도면.png",
-            referenceDistance: 15
-        )
-    ])
-    store.openSessionCreation()
-    store.createSession()
+    let store = InstructorPreviewFixture.store(floorPlan: DemoFloorPlan(
+        id: "preview-plan",
+        name: "훈련장 A 도면",
+        fileName: "훈련장 A 도면.png",
+        referenceDistance: 15
+    ))
     store.startTraining()
     store.finishTraining()
 
@@ -61,16 +57,12 @@ struct AARView: View {
 }
 
 #Preview("AAR 영상") {
-    let store = InstructorStore(floorPlans: [
-        DemoFloorPlan(
-            id: "preview-plan",
-            name: "훈련장 A 도면",
-            fileName: "훈련장 A 도면.png",
-            referenceDistance: 15
-        )
-    ])
-    store.openSessionCreation()
-    store.createSession()
+    let store = InstructorPreviewFixture.store(floorPlan: DemoFloorPlan(
+        id: "preview-plan",
+        name: "훈련장 A 도면",
+        fileName: "훈련장 A 도면.png",
+        referenceDistance: 15
+    ))
     store.startTraining()
     store.finishTraining()
     store.toggleParticipantSelection("member-5")
