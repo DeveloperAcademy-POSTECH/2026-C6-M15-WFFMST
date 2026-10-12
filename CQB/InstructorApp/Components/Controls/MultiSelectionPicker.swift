@@ -9,6 +9,9 @@ struct MultiSelectionPicker<Option: Identifiable>: View {
     let optionColor: (Option) -> Color?
     let canToggle: (Option.ID) -> Bool
     let onToggle: (Option.ID) -> Void
+    var selectedSummary: String? = nil
+    var fieldBackground: Color = InstructorColor.surfaceBase
+    var menuFillsFieldWidth = false
     var onSelectAll: (() -> Void)? = nil
 
     init(
@@ -19,6 +22,9 @@ struct MultiSelectionPicker<Option: Identifiable>: View {
         optionColor: @escaping (Option) -> Color? = { _ in nil },
         canToggle: @escaping (Option.ID) -> Bool,
         onToggle: @escaping (Option.ID) -> Void,
+        selectedSummary: String? = nil,
+        fieldBackground: Color = InstructorColor.surfaceBase,
+        menuFillsFieldWidth: Bool = false,
         onSelectAll: (() -> Void)? = nil
     ) {
         self.title = title
@@ -28,6 +34,9 @@ struct MultiSelectionPicker<Option: Identifiable>: View {
         self.optionColor = optionColor
         self.canToggle = canToggle
         self.onToggle = onToggle
+        self.selectedSummary = selectedSummary
+        self.fieldBackground = fieldBackground
+        self.menuFillsFieldWidth = menuFillsFieldWidth
         self.onSelectAll = onSelectAll
     }
 
@@ -36,9 +45,10 @@ struct MultiSelectionPicker<Option: Identifiable>: View {
             isEnabled: !options.isEmpty
         ) { isExpanded in
             SelectionFieldLabel(
-                text: selectionSummary,
+                text: displayedSelectionSummary,
                 isPlaceholder: selectedIDs.isEmpty,
-                isExpanded: isExpanded
+                isExpanded: isExpanded,
+                backgroundColor: fieldBackground
             )
         } content: { _ in
             SelectionMenuList(
@@ -49,14 +59,19 @@ struct MultiSelectionPicker<Option: Identifiable>: View {
                 canSelect: canToggle,
                 onSelect: onToggle,
                 footerTitle: onSelectAll == nil ? nil : "전체 선택",
-                onFooterSelect: onSelectAll
+                onFooterSelect: onSelectAll,
+                fillsAvailableWidth: menuFillsFieldWidth
             )
         }
         .accessibilityLabel(title)
-        .accessibilityValue(selectionSummary)
+        .accessibilityValue(displayedSelectionSummary)
     }
 
-    private var selectionSummary: String {
+    private var displayedSelectionSummary: String {
+        if let selectedSummary, !selectedIDs.isEmpty {
+            return selectedSummary
+        }
+
         let selectedTitles = options
             .filter { selectedIDs.contains($0.id) }
             .map(optionTitle)

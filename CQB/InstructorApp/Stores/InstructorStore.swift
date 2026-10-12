@@ -27,14 +27,14 @@ final class InstructorStore {
     let playbackDuration = 2172.0
     let maximumVideoCount = 4
 
-    init(floorPlans: [DemoFloorPlan]? = nil, floorPlanDraft: FloorPlanDraftStore? = nil) {
+    init(floorPlans: [DemoFloorPlan] = [], floorPlanDraft: FloorPlanDraftStore? = nil) {
         self.floorPlanDraft = floorPlanDraft ?? FloorPlanDraftStore()
-        let plans = floorPlans ?? InstructorMockData.floorPlans
-        self.floorPlans = plans
-        selectedFloorPlanID = plans.first?.id
+        self.floorPlans = floorPlans
+        selectedFloorPlanID = floorPlans.first?.id
     }
 
     var selectedFloorPlan: DemoFloorPlan? { floorPlans.first { $0.id == selectedFloorPlanID } }
+    var canOpenSessionCreation: Bool { !floorPlans.isEmpty }
     var canCreateSession: Bool { !trainingName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedFloorPlan != nil }
     var readyCount: Int { participants.filter(\.isReady).count }
     var unreadyCount: Int { participants.count - readyCount }
@@ -56,7 +56,10 @@ final class InstructorStore {
         floorPlanDraft.begin()
         phase = .floorPlanCreation
     }
-    func openSessionCreation() { phase = .sessionCreation }
+    func openSessionCreation() {
+        guard canOpenSessionCreation else { return }
+        phase = .sessionCreation
+    }
     func registerFloorPlan() {
         guard phase == .floorPlanCreation, let registered = floorPlanDraft.registration() else { return }
         let plan = DemoFloorPlan(id: registered.id.uuidString, name: registered.name,
