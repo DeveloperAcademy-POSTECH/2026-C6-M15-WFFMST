@@ -54,8 +54,9 @@ struct LocalFloorPlanImportService: FloorPlanImporting {
             throw LocalFloorPlanError.invalid("이미지를 변환하지 못했습니다.")
         }
         try Task.checkCancellation()
-        let width = thumbnail.width
-        let height = thumbnail.height
+        let cellSize = LocalV13WallDetector.cellSizePixels
+        let width = (thumbnail.width + cellSize - 1) / cellSize * cellSize
+        let height = (thumbnail.height + cellSize - 1) / cellSize * cellSize
         var pixels = [UInt8](repeating: 255, count: width * height * 4)
         let image = pixels.withUnsafeMutableBytes { bytes -> CGImage? in
             guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
@@ -65,8 +66,10 @@ struct LocalFloorPlanImportService: FloorPlanImporting {
             else { return nil }
             context.setFillColor(CGColor(gray: 1, alpha: 1))
             context.fill(CGRect(x: 0, y: 0, width: width, height: height))
-            // CGImage bitmap rows already match the top-left image coordinates. Do not flip.
-            context.draw(thumbnail, in: CGRect(x: 0, y: 0, width: width, height: height))
+            // Keep the source pixels at the top-left; only pad the right and bottom.
+            // CGContext's drawing origin is bottom-left. Do not scale or flip the image.
+            context.draw(thumbnail, in: CGRect(x: 0, y: height - thumbnail.height,
+                width: thumbnail.width, height: thumbnail.height))
             return context.makeImage()
         }
         guard let image else { throw LocalFloorPlanError.invalid("도면 픽셀을 읽지 못했습니다.") }

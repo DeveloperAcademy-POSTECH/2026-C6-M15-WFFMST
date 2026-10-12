@@ -12,6 +12,7 @@
 		788A10F030769F19003DEA3E /* CQBFixtures in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10EF30769F19003DEA3E /* CQBFixtures */; };
 		788A10F530770001003DEA3E /* CQBFirebase in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10F430770001003DEA3E /* CQBFirebase */; };
 		788A10F730770001003DEA3E /* CQBFirebase in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10F630770001003DEA3E /* CQBFirebase */; };
+		C4600001307B000100000001 /* CQBCore in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10D8307697FA003DEA3E /* CQBCore */; };
 		D5100001307ABCDE00000001 /* CQBDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = D5100002307ABCDE00000002 /* CQBDesignSystem */; };
 /* End PBXBuildFile section */
 
@@ -27,6 +28,7 @@
 				AGENTS.md,
 				docs/flows.md,
 				"docs/issue-8-implementation.md",
+				"docs/issue-46-implementation.md",
 				docs/README.md,
 			);
 			target = 788A1084307682B8003DEA3E /* InstructorApp */;
@@ -82,6 +84,7 @@
 		788A1082307682B8003DEA3E /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				C4600001307B000100000001 /* CQBCore in Frameworks */,
 				D5100001307ABCDE00000001 /* CQBDesignSystem in Frameworks */,
 				788A10F730770001003DEA3E /* CQBFirebase in Frameworks */,
 			);
@@ -159,6 +162,7 @@
 			);
 			name = InstructorApp;
 			packageProductDependencies = (
+				788A10D8307697FA003DEA3E /* CQBCore */,
 				D5100002307ABCDE00000002 /* CQBDesignSystem */,
 				788A10F630770001003DEA3E /* CQBFirebase */,
 			);

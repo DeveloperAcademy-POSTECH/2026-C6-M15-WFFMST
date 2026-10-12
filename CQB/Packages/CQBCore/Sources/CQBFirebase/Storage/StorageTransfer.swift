@@ -26,6 +26,16 @@ enum StorageTransfer {
         _ = try await ref.putDataAsync(data, metadata: metadata)
     }
 
+    /// 불변 파일 업로드가 일부 성공한 뒤 재시도돼도 같은 바이트는 덮어쓰지 않고 성공으로 처리한다.
+    static func uploadIfMissingOrMatching(_ data: Data, to path: String, contentType: String) async throws {
+        do {
+            let existing = try await download(path)
+            guard existing == data else { throw RepositoryError.integrityMismatch }
+        } catch let error as RepositoryError where error == .notFound {
+            try await upload(data, to: path, contentType: contentType)
+        }
+    }
+
     static func download(_ path: String) async throws -> Data {
         let ref = try await reference(path)
         do {

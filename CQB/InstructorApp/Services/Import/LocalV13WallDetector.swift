@@ -2,6 +2,8 @@ import Foundation
 
 /// floorplanPoC/FloorPlanWallDetector의 V13 규칙. 문과 통로의 빈틈을 임의로 메우지 않는다.
 enum LocalV13WallDetector {
+    nonisolated static let cellSizePixels = 2
+
     nonisolated static func grid(rgba: [UInt8], width: Int, height: Int) throws -> LocalObstacleGrid {
         guard width > 0, height > 0, width <= 4_096, height <= 4_096,
               rgba.count == width * height * 4 else {
@@ -52,7 +54,7 @@ enum LocalV13WallDetector {
                 }
             }
         }
-        let cellSize = 2
+        let cellSize = cellSizePixels
         let columns = (width + cellSize - 1) / cellSize
         let rows = (height + cellSize - 1) / cellSize
         var blocked = [UInt8](repeating: 0, count: columns * rows)
