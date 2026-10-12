@@ -73,18 +73,23 @@ final class AARStore {
         tracks = Dictionary(uniqueKeysWithValues: participantIDs.map { ($0, TrackState.loading) })
         defer { isLoading = false }
 
-        await loadFloorPlan(session.floorPlan, local: localFloorPlan)
+        // 도면과 동선은 서로 기다릴 필요가 없어 함께 받기 시작한다.
+        // 세션 시작 시각과 기록 목록은 AAR에 들어갈 때 한 번만 받는다.
+        async let floorPlanLoaded: Void = loadFloorPlan(session.floorPlan, local: localFloorPlan)
+        async let latestSession = Self.first(sessionRepository.observeSession(id: session.id))
+        async let recordings = Self.first(recordingRepository.observeRecordings(sessionID: session.id))
         do {
-            // 세션 시작 시각과 기록 목록은 AAR에 들어갈 때 한 번만 받는다.
-            let latestSession = try await Self.first(sessionRepository.observeSession(id: session.id)) ?? session
-            let recordings = try await Self.first(recordingRepository.observeRecordings(sessionID: session.id)) ?? []
-            guard loadedSessionID == session.id else { return }
-            await loadTracks(session: latestSession, recordings: recordings, participantIDs: participantIDs)
+            let (sessionValue, recordingList) = try await (latestSession, recordings)
+            if loadedSessionID == session.id {
+                await loadTracks(session: sessionValue ?? session, recordings: recordingList ?? [], participantIDs: participantIDs)
+            }
         } catch {
-            guard loadedSessionID == session.id else { return }
-            Self.logger.error("AAR 기록 불러오기 실패: \(error.localizedDescription, privacy: .private)")
-            tracks = Dictionary(uniqueKeysWithValues: participantIDs.map { ($0, TrackState.unavailable("기록을 불러오지 못했습니다.")) })
+            if loadedSessionID == session.id {
+                Self.logger.error("AAR 기록 불러오기 실패: \(error.localizedDescription, privacy: .private)")
+                tracks = Dictionary(uniqueKeysWithValues: participantIDs.map { ($0, TrackState.unavailable("기록을 불러오지 못했습니다.")) })
+            }
         }
+        await floorPlanLoaded
     }
 
     func togglePlayback() {
