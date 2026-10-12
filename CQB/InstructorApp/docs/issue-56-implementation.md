@@ -16,7 +16,7 @@
 
 MemberApp이 실제 영상과 보정 동선을 업로드하고 `Recording` 문서를 생성·갱신하는 일은 #47의 범위다. 이번 구현은 기존 `RecordingRepository.observeRecordings`가 전달하는 상태를 소비하며, 파일 업로드나 기록 문서 생성의 우회 구현을 InstructorApp에 넣지 않았다.
 
-따라서 시뮬레이터 검증에서는 MemberApp의 AR·녹화를 대신하지 않는다. 실제 앱으로 세션 시작·종료와 교관 SDK 구독을 실행하고, #47이 제공할 `finishing → done` 기록 상태만 로컬 Firestore Emulator에 주입해 결과 준비 화면과 AAR 전환을 검증한다. 대원 자격으로 기록 상태를 쓰고 교관의 기록 변조가 거부되는 보안 규칙은 별도의 Emulator REST 테스트로 검증한다.
+시뮬레이터 검증에서는 MemberApp의 AR·녹화를 대신하지 않는다. 실제 앱으로 세션 시작·종료와 교관 SDK 구독을 실행하고, `finishing → done` 기록 상태를 로컬 Firestore Emulator에 주입해 결과 준비 화면과 AAR 전환을 먼저 검증했다. #47이 반영된 뒤에는 두 실기기로 실제 녹화·보정·Storage 업로드까지 종단 검증했다. 대원 자격으로 기록 상태를 쓰고 교관의 기록 변조가 거부되는 보안 규칙은 별도의 Emulator REST 테스트로 검증한다.
 
 ## 회귀 검사
 
@@ -35,7 +35,7 @@ MemberApp이 실제 영상과 보정 동선을 업로드하고 `Recording` 문�
 - InstructorApp iOS Simulator Debug 빌드 통과
 - MemberApp `MemberApp (Emulator)` iOS Simulator 서명 빌드 통과
 
-## 실제 앱·에뮬레이터 검증
+## 시뮬레이터·에뮬레이터 검증
 
 2026-10-12, iPad Pro 13-inch (M5) / iPhone 18 Pro iOS 27 시뮬레이터와 로컬 Auth·Firestore·Storage Emulator를 사용했다.
 
@@ -46,4 +46,17 @@ MemberApp이 실제 영상과 보정 동선을 업로드하고 `Recording` 문�
 5. 결과 준비 화면은 기록이 없을 때 `기록 수신 대기`, `finishing` 문서 수신 뒤 `기록 처리·업로드 중`을 표시했다.
 6. 같은 기록을 `done`으로 바꾸자 추가 조작 없이 AAR 화면으로 자동 전환됐다.
 
-로컬 에뮬레이터 검증 데이터는 운영 Firebase에 전송되지 않는다. 실제 실기기의 AR 녹화와 업로드 완료까지의 종단 검증은 #47 구현 후 진행한다.
+## 실기기 종단 검증
+
+2026-10-12, iPad와 iPhone 실기기의 개인 Debug 스킴을 Mac의 로컬 Auth·Firestore·Storage Emulator에 연결했다. 개인 스킴과 Mac IP는 저장소에 포함하지 않았다.
+
+1. InstructorApp이 생성한 도면의 `original.png`, `navigation-map.json`, `resolved-mask.bin`이 Storage에 업로드되는 것을 확인했다.
+2. MemberApp이 PIN으로 참가하고 실제 AR 준비 판정을 통과하자 교관 앱에 준비 완료가 실시간 반영됐다.
+3. 교관 앱의 훈련 시작 뒤 세션이 `running`과 서버 `startedAt`을 저장하고, MemberApp이 녹화를 시작해 `Recording.recording`을 생성했다.
+4. 훈련 종료 뒤 세션이 `ended`가 되고 PIN 문서가 삭제됐으며, MemberApp이 녹화를 종료해 보정과 업로드를 수행했다.
+5. `Recording`이 `done`, `videoChunkCount`가 `1`로 확정되고 Storage에 `video/chunk_0000.mp4`와 `result.json`이 생성됐다.
+6. InstructorApp이 결과 준비 상태를 실시간 수신한 뒤 추가 조작 없이 AAR로 전환됐다.
+
+Firebase Storage 12.19 이상은 실기기에서 비루프백 HTTP Emulator로 인증 토큰을 기본 전송하지 않는다. `FIREBASE_EMULATOR_HOST`를 명시한 Debug 실행에서만 `allowInsecureTokenAttachment`를 켜 실제 업로드를 허용했다. Release와 운영 Firebase에는 적용하지 않는다.
+
+로컬 에뮬레이터 검증 데이터는 운영 Firebase에 전송되지 않는다.
