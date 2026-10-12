@@ -58,6 +58,18 @@ firebase emulators:start
 firebase emulators:start --import firebase/emulator-data --export-on-exit
 ```
 
+## AAR 시험 데이터 넣기
+
+에뮬레이터를 켠 상태에서 AAR용 세션·대원 4명·기록과 보정 결과(`result.json`)를 넣는다. 대원 1은 정상, 대원 2는 일부 보정(구간 끊김·추적 끊김), 대원 3은 보정 실패, 대원 4는 결과 없음이다.
+
+```bash
+python3 scripts/seed-aar-emulator.py --instructor-uid <교관 앱 uid>
+```
+
+- 교관 앱이 이 세션을 읽으려면 교관 앱의 익명 uid를 넣어야 한다. 교관 앱을 (Emulator) 스킴으로 한 번 실행한 뒤 `http://localhost:4000/auth`에서 확인한다.
+- 등록한 도면과 맞추려면 `--floor-plan-id`, `--navigation-sha256`, `--width`, `--height`를 넣는다.
+- 만든 세션 ID와 대원별 기록 ID를 출력한다. 에뮬레이터를 끄면 사라진다.
+
 ## 앱을 에뮬레이터에 붙이기
 
 ### 시뮬레이터
