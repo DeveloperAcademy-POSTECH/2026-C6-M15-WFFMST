@@ -20,6 +20,12 @@ struct AARView: View {
 
             DropdownHost {
                 VStack(spacing: AARLayout.contentToTimelineSpacing) {
+                    if store.trainingRecords.failedCount > 0 {
+                        Text("\(store.trainingRecords.failedCount)명의 기록 처리가 실패했습니다. 해당 기록의 재생 자료가 없을 수 있습니다.")
+                            .font(.callout)
+                            .foregroundStyle(InstructorColor.textSecondary)
+                            .accessibilityIdentifier("aar.recordingFailures")
+                    }
                     HStack(alignment: .top, spacing: AARLayout.contentToSettingsSpacing) {
                         AARContentView()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -61,9 +67,7 @@ struct AARView: View {
         name: "훈련장 A 도면",
         fileName: "훈련장 A 도면.png",
         referenceDistance: 15
-    ))
-    store.startTraining()
-    store.finishTraining()
+    ), phase: .aar)
 
     return AARView()
         .environment(store)
@@ -78,9 +82,7 @@ struct AARView: View {
         name: "훈련장 A 도면",
         fileName: "훈련장 A 도면.png",
         referenceDistance: 15
-    ))
-    store.startTraining()
-    store.finishTraining()
+    ), phase: .aar)
     store.toggleParticipantSelection("member-5")
     store.toggleParticipantSelection("member-6")
     store.changeAARMode(to: .video)

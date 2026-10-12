@@ -67,12 +67,14 @@ enum InstructorPreviewFixture {
     @MainActor
     static func store(
         floorPlan: DemoFloorPlan,
-        participants: [InstructorParticipant]? = nil
+        participants: [InstructorParticipant]? = nil,
+        phase: InstructorPhase = .teamReadiness
     ) -> InstructorStore {
         InstructorStore(
             floorPlans: [floorPlan],
             previewSession: session(floorPlan: floorPlan.reference),
-            previewParticipants: participants ?? Self.participants
+            previewParticipants: participants ?? Self.participants,
+            previewPhase: phase
         )
     }
 }
@@ -105,5 +107,13 @@ struct DemoMemberRepository: MemberRepository {
             continuation.yield([])
             continuation.finish()
         }
+    }
+}
+
+struct DemoRecordingRepository: RecordingRepository {
+    func startRecording(_ recording: Recording) async throws {}
+    func updateRecording(_ recording: Recording) async throws {}
+    func observeRecordings(sessionID: UUID) -> AsyncThrowingStream<[Recording], Error> {
+        AsyncThrowingStream { $0.yield([]); $0.finish() }
     }
 }

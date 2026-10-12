@@ -44,7 +44,7 @@ final class AARStore {
     init(
         sessionRepository: any SessionRepository = DemoSessionRepository(),
         memberRepository: any MemberRepository = DemoMemberRepository(),
-        recordingRepository: any RecordingRepository = DemoRecordingRepository(),
+        recordingRepository: any RecordingRepository = DemoAARRecordingRepository(),
         trackResultRepository: any TrackResultRepository = DemoTrackResultRepository(),
         floorPlanFileRepository: any FloorPlanFileRepository = DemoFloorPlanFileRepository()
     ) {
@@ -245,7 +245,7 @@ extension AARStore {
 #endif
 
 /// Preview에서 Firebase 없이 Store를 생성하기 위한 빈 Repository다.
-struct DemoRecordingRepository: RecordingRepository {
+struct DemoAARRecordingRepository: RecordingRepository {
     func startRecording(_ recording: Recording) async throws {}
     func updateRecording(_ recording: Recording) async throws {}
     func observeRecordings(sessionID: UUID) -> AsyncThrowingStream<[Recording], Error> {

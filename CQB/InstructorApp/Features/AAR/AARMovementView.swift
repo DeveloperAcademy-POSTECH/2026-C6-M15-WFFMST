@@ -85,9 +85,7 @@ struct AARMovementView: View {
         name: "훈련장 A 도면",
         fileName: "훈련장 A 도면.png",
         referenceDistance: 15
-    ))
-    store.startTraining()
-    store.finishTraining()
+    ), phase: .aar)
 
     return AARMovementView()
         .environment(store)

@@ -85,6 +85,7 @@ Xcode 위쪽에서 스킴을 고르고 실행한다.
 
 - (Emulator) 스킴은 스킴의 환경 변수 `FIREBASE_EMULATOR_HOST`로 연결 대상을 바꾼다. 앱 코드는 `CQBFirebaseModule.configure()`에서 이 값을 읽는다.
 - 로컬 Firestore는 TLS를 사용하지 않는다. 현재 Firebase SDK 12.19.2의 `useEmulator`는 주소만 바꾸므로, 에뮬레이터 분기에서 `settings.isSSLEnabled = false`를 명시한다. 운영 연결에는 적용하지 않는다.
+- Firebase Storage 12.19 이상은 비루프백 HTTP 주소로 인증 토큰을 기본 전송하지 않는다. Debug에서 Emulator를 명시한 경우에만 `allowInsecureTokenAttachment`를 켜서 실기기의 로컬 업로드를 허용한다. Release와 운영 Firebase에는 적용되지 않으므로 신뢰할 수 있는 로컬 네트워크에서만 사용한다.
 - 에뮬레이터가 꺼져 있으면 운영으로 넘어가지 않고 요청이 실패한다. 먼저 에뮬레이터를 켠다.
 - 디버그 빌드에서 Xcode로 실행할 때만 적용된다. 홈 화면에서 앱을 열거나 릴리스 빌드(TestFlight, App Store)는 항상 운영 Firebase에 붙는다.
 - 공유 스킴(`InstructorApp`, `MemberApp`)에는 이 환경 변수를 넣지 않는다.

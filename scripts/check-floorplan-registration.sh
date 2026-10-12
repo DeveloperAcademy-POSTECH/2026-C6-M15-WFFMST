@@ -22,6 +22,7 @@ xcrun swiftc -parse-as-library -module-cache-path "$test_build_dir/ModuleCache" 
   "$task_root/CQB/InstructorApp/Stores/InstructorPhase.swift" \
   "$task_root/CQB/InstructorApp/Stores/InstructorMockData.swift" \
   "$task_root/CQB/InstructorApp/Stores/InstructorStore.swift" \
+  "$task_root/CQB/InstructorApp/Stores/TrainingRecordStore.swift" \
   "$task_root/Tests/FloorPlanRegistrationChecks.swift" \
   -o "$test_build_dir/FloorPlanRegistrationChecks"
 DYLD_LIBRARY_PATH="$test_build_dir${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" \

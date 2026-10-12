@@ -36,6 +36,7 @@ struct RootView: View {
             .sessionCreation,
             .teamReadiness,
             .trainingInProgress,
+            .resultsPreparation,
             .aar,
             .aarCompleted
         ].contains(store.phase)
@@ -50,6 +51,7 @@ struct RootView: View {
         case .sessionCreation: TrainingSessionCreateView()
         case .teamReadiness: TeamReadinessView()
         case .trainingInProgress: TrainingInProgressView()
+        case .resultsPreparation: TrainingResultsPreparationView()
         case .aar: AARView()
         case .aarCompleted: AARCompletedView()
         }
