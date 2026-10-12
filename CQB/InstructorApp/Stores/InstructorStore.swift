@@ -20,6 +20,7 @@ final class InstructorStore {
     @ObservationIgnored private let sessionRepository: any SessionRepository
     @ObservationIgnored private let memberRepository: any MemberRepository
     @ObservationIgnored private let pinGenerator: () -> String
+    @ObservationIgnored private let now: () -> Date
     @ObservationIgnored private var floorPlanUploadTask: Task<Void, Never>?
     @ObservationIgnored private var sessionCreationTask: Task<Void, Never>?
     @ObservationIgnored private var memberObservationTask: Task<Void, Never>?
@@ -46,9 +47,9 @@ final class InstructorStore {
     private(set) var memberConnectionState: MemberConnectionState = .idle
     private(set) var isEndingSession = false
     private(set) var sessionEndError: String?
+    private(set) var trainingStartedAt: Date?
     private var failedFloorPlanRegistration: LocalRegisteredFloorPlan?
 
-    let sampleTrainingElapsed = "00:12:34"
     let playbackDuration = 2172.0
     let maximumVideoCount = 4
 
@@ -59,6 +60,7 @@ final class InstructorStore {
         sessionRepository: any SessionRepository = DemoSessionRepository(),
         memberRepository: any MemberRepository = DemoMemberRepository(),
         pinGenerator: @escaping () -> String = InstructorStore.makePIN,
+        now: @escaping () -> Date = Date.init,
         previewSession: Session? = nil,
         previewParticipants: [InstructorParticipant] = []
     ) {
@@ -67,6 +69,7 @@ final class InstructorStore {
         self.sessionRepository = sessionRepository
         self.memberRepository = memberRepository
         self.pinGenerator = pinGenerator
+        self.now = now
         self.floorPlans = floorPlans
         self.currentSession = previewSession
         self.participants = previewParticipants
@@ -107,6 +110,19 @@ final class InstructorStore {
     }
     var canSelectAllParticipants: Bool { aarMode == .movement || participants.count <= maximumVideoCount }
 
+    func formattedTrainingElapsed(at date: Date) -> String {
+        guard let trainingStartedAt else { return Self.formatTrainingElapsed(0) }
+        return Self.formatTrainingElapsed(date.timeIntervalSince(trainingStartedAt))
+    }
+
+    nonisolated static func formatTrainingElapsed(_ interval: TimeInterval) -> String {
+        let totalSeconds = max(0, Int(interval))
+        let hours = totalSeconds / 3_600
+        let minutes = totalSeconds % 3_600 / 60
+        let seconds = totalSeconds % 60
+        return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
+    }
+
     func openFloorPlanList() { phase = .floorPlanList }
     func openFloorPlanCreation() {
         floorPlanDraft.begin()
@@ -145,6 +161,7 @@ final class InstructorStore {
         isCreatingSession = true
         sessionCreationError = nil
         sessionEndError = nil
+        trainingStartedAt = nil
         participants = []
         currentSession = nil
 
@@ -180,12 +197,14 @@ final class InstructorStore {
     func startTraining() {
         guard phase == .teamReadiness, canStartTraining else { return }
         stopObservingMembers()
+        trainingStartedAt = now()
         phase = .trainingInProgress
     }
     func startTrainingExcludingUnreadyParticipants() {
         guard phase == .teamReadiness, canRequestTrainingStart else { return }
         stopObservingMembers()
         participants.removeAll { !$0.isReady }
+        trainingStartedAt = now()
         phase = .trainingInProgress
     }
     func finishTraining() {
@@ -243,6 +262,7 @@ final class InstructorStore {
         aarMode = .movement
         aarNotice = nil
         currentSession = nil
+        trainingStartedAt = nil
         playbackPosition = 331
         phase = .home
     }
