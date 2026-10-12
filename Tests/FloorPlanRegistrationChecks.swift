@@ -1,3 +1,4 @@
+import CQBCore
 import Foundation
 
 /// Intentionally ignores cancellation until the test releases a result. This models a slow external decoder.
@@ -20,6 +21,33 @@ private actor ControlledImporter: FloorPlanImporting {
     }
 }
 
+private actor ControlledFloorPlanFileRepository: FloorPlanFileRepository {
+    private var failuresRemaining: Int
+    private var references: [FloorPlanReference] = []
+    private var files: [FloorPlanFiles] = []
+
+    init(failures: Int = 0) {
+        failuresRemaining = failures
+    }
+
+    func upload(_ files: FloorPlanFiles, for reference: FloorPlanReference) async throws {
+        self.files.append(files)
+        references.append(reference)
+        if failuresRemaining > 0 {
+            failuresRemaining -= 1
+            throw URLError(.notConnectedToInternet)
+        }
+    }
+
+    func download(_ reference: FloorPlanReference) async throws -> FloorPlanFiles {
+        throw RepositoryError.notFound
+    }
+
+    func uploadCount() -> Int { references.count }
+    func uploadedReferences() -> [FloorPlanReference] { references }
+    func latestFiles() -> FloorPlanFiles? { files.last }
+}
+
 @main
 @MainActor
 enum FloorPlanRegistrationChecks {
@@ -33,7 +61,12 @@ enum FloorPlanRegistrationChecks {
     static func fullRegistration() async throws {
         let service = ControlledImporter()
         let draft = FloorPlanDraftStore(importer: service)
-        let store = InstructorStore(floorPlans: [], floorPlanDraft: draft)
+        let repository = ControlledFloorPlanFileRepository(failures: 1)
+        let store = InstructorStore(
+            floorPlans: [],
+            floorPlanDraft: draft,
+            floorPlanFileRepository: repository
+        )
         store.openFloorPlanCreation()
         draft.setName("  새 도면  ")
         try await load("first.png", draft: draft, service: service)
@@ -95,15 +128,46 @@ enum FloorPlanRegistrationChecks {
         precondition(snapshot.resolvedGrid.blocked[0] == 1, "outside outline must be blocked")
         let expectedPreview = try LocalFloorPlanMaskRenderer.pngData(grid: snapshot.resolvedGrid)
         precondition(draft.maskPNGData == expectedPreview)
+
+        let expectedUpload = try LocalFloorPlanFileBuilder.build(from: snapshot)
+        let manifest = try JSONDecoder().decode(FloorPlanManifest.self, from: expectedUpload.files.navigationMapJSON)
+        precondition(expectedUpload.files.imagePNG == snapshot.image.pngData)
+        precondition(expectedUpload.files.resolvedMask == Data(snapshot.resolvedGrid.blocked))
+        precondition(manifest.floorPlanID == snapshot.id && manifest.imageWidth == snapshot.image.width)
+        precondition(manifest.imageHeight == snapshot.image.height && manifest.manuallyReviewed)
+        precondition(manifest.imageSHA256 == LocalFloorPlanFileBuilder.sha256(expectedUpload.files.imagePNG))
+        precondition(manifest.navigationGrid.maskSHA256 == LocalFloorPlanFileBuilder.sha256(expectedUpload.files.resolvedMask))
+        precondition(expectedUpload.reference.navigationSHA256
+            == LocalFloorPlanFileBuilder.sha256(expectedUpload.files.navigationMapJSON))
+
         store.registerFloorPlan()
-        precondition(store.phase == .floorPlanList && store.floorPlans.count == 1)
+        precondition(store.isUploadingFloorPlan && !store.canGoBack)
+        try await wait { !store.isUploadingFloorPlan }
+        precondition(store.phase == .floorPlanCreation && store.floorPlans.isEmpty)
+        precondition(store.floorPlanUploadError != nil && draft.canRegister,
+                     "failed upload must preserve the reviewed registration")
+        store.retryFloorPlanUpload()
+        try await wait { store.phase == .floorPlanList }
+        precondition(store.floorPlans.count == 1 && store.floorPlanUploadError == nil)
         precondition(store.selectedFloorPlan?.registeredPlan?.resolvedGrid == snapshot.resolvedGrid)
         precondition(store.selectedFloorPlan?.registeredPlan?.image == snapshot.image)
+        let uploadCount = await repository.uploadCount()
+        let uploadedReferences = await repository.uploadedReferences()
+        let latestFiles = await repository.latestFiles()
+        precondition(uploadCount == 2)
+        precondition(uploadedReferences.count == 2 && uploadedReferences[0] == uploadedReferences[1])
+        let uploadedReference = uploadedReferences[0]
+        precondition(store.selectedFloorPlan?.reference == uploadedReference)
+        precondition(latestFiles.map { LocalFloorPlanFileBuilder.sha256($0.navigationMapJSON) }
+            == uploadedReference.navigationSHA256)
         precondition(draft.image == nil && draft.name.isEmpty && draft.strokes.isEmpty && draft.scale == nil)
         store.registerFloorPlan()
         precondition(store.floorPlans.count == 1, "duplicate register must not append")
         store.openSessionCreation()
         precondition(store.canCreateSession && store.selectedFloorPlan?.name == "새 도면")
+        store.createSession()
+        precondition(store.currentSession?.floorPlan == uploadedReference)
+        store.goBack()
         store.openFloorPlanCreation()
         precondition(draft.step == .information && draft.outline.isEmpty && !draft.reviewed)
         draft.setName("취소할 입력")

@@ -16,6 +16,7 @@ struct InstructorStoreChecks {
         store.goBack()
         expect(store.phase == .floorPlanList && store.floorPlanDraft.name.isEmpty, "등록 취소 후 목록 복귀 및 draft 초기화")
         let savedPlanID = store.floorPlans.first!.id
+        let savedPlanReference = store.floorPlans.first!.reference
         store.goBack()
         expect(store.phase == .home, "도면 목록 뒤로 → 홈")
 
@@ -26,6 +27,7 @@ struct InstructorStoreChecks {
         expect(store.phase == .sessionCreation, "공백 훈련명으로 세션 생성 차단")
         store.setTrainingName("테스트 훈련")
         store.createSession()
+        expect(store.currentSession?.floorPlan == savedPlanReference, "선택 도면 참조로 세션 생성")
         store.loadReadinessSample(.empty)
         store.startTraining()
         expect(store.phase == .teamReadiness && !store.canRequestTrainingStart, "준비 완료자 0명 시작 차단")
