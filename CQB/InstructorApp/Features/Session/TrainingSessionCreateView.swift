@@ -17,6 +17,7 @@ struct TrainingSessionCreateView: View {
 
                 HStack(alignment: .top, spacing: 24) {
                     sessionFields
+                        .disabled(store.isCreatingSession)
                         .frame(minWidth: 320, idealWidth: 544, maxWidth: 544, alignment: .topLeading)
 
                     planPreview

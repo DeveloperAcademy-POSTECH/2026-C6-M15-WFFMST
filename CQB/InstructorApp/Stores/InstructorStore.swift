@@ -126,8 +126,12 @@ final class InstructorStore {
               let registration = failedFloorPlanRegistration else { return }
         uploadFloorPlan(registration)
     }
-    func setTrainingName(_ value: String) { trainingName = value }
+    func setTrainingName(_ value: String) {
+        guard !isCreatingSession else { return }
+        trainingName = value
+    }
     func selectFloorPlan(_ id: String?) {
+        guard !isCreatingSession else { return }
         guard id == nil || floorPlans.contains(where: { $0.id == id }) else { return }
         selectedFloorPlanID = id
 #if canImport(UIKit)

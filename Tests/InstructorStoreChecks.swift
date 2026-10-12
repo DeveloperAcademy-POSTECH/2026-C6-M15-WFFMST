@@ -10,12 +10,13 @@ struct InstructorStoreChecks {
         await checkSessionCreationAndMemberObservation()
         await checkPinRetryLimit()
         await checkNonCollisionFailureAndRetry()
+        await checkSessionCreationInputLock()
         await checkReadinessStartGuards()
         await checkEndingGuardsAndFailureRecovery()
         checkTrainingAndAARFlow()
         checkFloorPlanFlow()
         checkFloorPlanGeometry()
-        print("PASS: InstructorStore 세션 생성, 구독 오류·재연결 시작 차단, 종료 경합·실패 복구, 화면 흐름")
+        print("PASS: InstructorStore 세션 생성·입력 잠금, 구독 오류·재연결 시작 차단, 종료 경합·실패 복구, 화면 흐름")
     }
 
     @MainActor
@@ -145,6 +146,68 @@ struct InstructorStoreChecks {
         expect(repository.createdSessions.count == 2 && store.sessionCreationError == nil, "재시도 성공 후 오류 해제")
         store.goBack()
         await waitUntil("검증 세션 종료") { store.phase == .sessionCreation }
+    }
+
+    @MainActor
+    static func checkSessionCreationInputLock() async {
+        for failsFirst in [false, true] {
+            let firstPlan = makePlan()
+            let secondPlan = DemoFloorPlan(
+                id: "second-plan", name: "다른 도면", fileName: "second.png", referenceDistance: 20
+            )
+            let repository = SessionRepositorySpy(creationOutcomes: [], suspendsCreations: true)
+            let stream = MemberStream()
+            let store = InstructorStore(
+                floorPlans: [firstPlan, secondPlan], sessionRepository: repository,
+                memberRepository: MemberRepositorySpy(streams: [stream.stream])
+            )
+            store.openSessionCreation()
+            store.setTrainingName("첫 훈련")
+            store.createSession()
+            await waitUntil("생성 응답 대기") { repository.hasPendingCreation }
+
+            // UI 잠금을 우회하는 늦은 콜백과 직접 호출도 제출한 값을 바꾸지 못해야 한다.
+            store.setTrainingName("다른 훈련")
+            store.selectFloorPlan(secondPlan.id)
+            store.selectFloorPlan(nil)
+            expect(store.trainingName == "첫 훈련", "생성 중 훈련명 변경 차단")
+            expect(store.selectedFloorPlan?.reference == firstPlan.reference, "생성 중 도면 변경·해제 차단")
+            store.createSession()
+            store.goBack()
+            expect(repository.createdSessions.count == 1 && store.phase == .sessionCreation,
+                   "생성 대기 중 중복 요청·뒤로가기 차단 유지")
+
+            if failsFirst {
+                repository.completeCreation(error: CheckError.disconnected)
+                await waitUntil("생성 실패 후 잠금 해제") { !store.isCreatingSession }
+                expect(store.sessionCreationError != nil && store.currentSession == nil,
+                       "생성 실패는 제출 전 화면에서 오류 표시")
+                store.setTrainingName("다른 훈련")
+                store.selectFloorPlan(secondPlan.id)
+                expect(store.trainingName == "다른 훈련" && store.selectedFloorPlan?.reference == secondPlan.reference,
+                       "생성 실패 후 훈련명·도면 수정 허용")
+                store.createSession()
+                await waitUntil("수정한 값으로 재시도") { repository.hasPendingCreation }
+                store.setTrainingName("첫 훈련")
+                store.selectFloorPlan(firstPlan.id)
+                expect(store.trainingName == "다른 훈련" && store.selectedFloorPlan?.reference == secondPlan.reference,
+                       "재시도 중에도 입력 잠금")
+            }
+
+            repository.completeCreation()
+            await waitUntil("입력 잠금 검사 생성 성공") { store.phase == .teamReadiness }
+            let expectedPlan = failsFirst ? secondPlan : firstPlan
+            let expectedName = failsFirst ? "다른 훈련" : "첫 훈련"
+            expect(!store.isCreatingSession && store.sessionCreationError == nil, "성공 후 생성 상태·오류 해제")
+            expect(repository.createdSessions.last?.floorPlan == expectedPlan.reference,
+                   "Repository에 제출한 도면 유지")
+            expect(store.currentSession?.floorPlan == store.selectedFloorPlan?.reference,
+                   "성공한 서버 세션과 화면 선택 도면 일치")
+            expect(store.currentSession?.name == expectedName && store.trainingName == expectedName,
+                   "성공한 서버 세션과 화면 훈련명 일치")
+            store.goBack()
+            await waitUntil("입력 잠금 검사 세션 종료") { store.phase == .sessionCreation }
+        }
     }
 
     @MainActor
@@ -425,12 +488,27 @@ private final class SessionRepositorySpy: SessionRepository, @unchecked Sendable
     private var outcomes: [RepositoryError?]
     private var storedSessions: [Session] = []
     private var storedUpdates: [(UUID, SessionStatus)] = []
+    private let suspendsCreations: Bool
+    private var pendingCreation: CheckedContinuation<Void, Error>?
     private let suspendsStatusUpdates: Bool
     private var pendingStatusUpdate: CheckedContinuation<Void, Error>?
 
-    init(creationOutcomes: [RepositoryError?], suspendsStatusUpdates: Bool = false) {
+    init(creationOutcomes: [RepositoryError?], suspendsCreations: Bool = false, suspendsStatusUpdates: Bool = false) {
         outcomes = creationOutcomes
+        self.suspendsCreations = suspendsCreations
         self.suspendsStatusUpdates = suspendsStatusUpdates
+    }
+
+    var hasPendingCreation: Bool { lock.withLock { pendingCreation != nil } }
+
+    func completeCreation(error: Error? = nil) {
+        let continuation = lock.withLock {
+            let result = pendingCreation
+            pendingCreation = nil
+            return result
+        }
+        if let error { continuation?.resume(throwing: error) }
+        else { continuation?.resume() }
     }
 
     var hasPendingStatusUpdate: Bool { lock.withLock { pendingStatusUpdate != nil } }
@@ -461,6 +539,11 @@ private final class SessionRepositorySpy: SessionRepository, @unchecked Sendable
         let outcome = lock.withLock {
             storedSessions.append(session)
             return outcomes.isEmpty ? nil : outcomes.removeFirst()
+        }
+        if suspendsCreations {
+            try await withCheckedThrowingContinuation { continuation in
+                lock.withLock { pendingCreation = continuation }
+            }
         }
         if let outcome { throw outcome }
     }
