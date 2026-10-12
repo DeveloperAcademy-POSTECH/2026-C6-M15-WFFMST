@@ -13,6 +13,7 @@ struct InstructorStoreChecks {
         await checkSessionCreationInputLock()
         await checkReadinessStartGuards()
         await checkEndingGuardsAndFailureRecovery()
+        await TrainingLifecycleChecks.run()
         checkTrainingAndAARFlow()
         checkFloorPlanFlow()
         checkFloorPlanGeometry()
@@ -249,8 +250,9 @@ struct InstructorStoreChecks {
             await waitUntil("준비 목록 복구") { store.canRequestTrainingStart }
             if allReady { store.startTraining() }
             else { store.startTrainingExcludingUnreadyParticipants() }
-            expect(store.phase == .trainingInProgress, "복구된 현재 스냅샷으로 시작 허용")
+            await waitUntil("복구된 현재 스냅샷으로 서버 시작 성공") { store.phase == .trainingInProgress }
             await waitUntil("시작 후 구독 취소") { recovered.terminationCount == 1 }
+            store.returnHome()
         }
 
         let stream = MemberStream()
@@ -337,17 +339,10 @@ struct InstructorStoreChecks {
         let plan = makePlan()
         var participants = InstructorPreviewFixture.participants
         for index in participants.indices { participants[index].isReady = index < 3 }
-        let store = InstructorPreviewFixture.store(floorPlan: plan, participants: participants)
-
-        store.startTraining()
-        expect(store.phase == .teamReadiness, "미준비자 있을 때 바로 시작 차단")
-        expect(store.requiresUnreadyExclusionConfirmation, "미준비자 제외 확인 필요")
-        store.startTrainingExcludingUnreadyParticipants()
-        expect(store.phase == .trainingInProgress && store.participants.count == 3, "미준비자 제외 후 시작")
-        expect(store.participants.allSatisfy(\.isReady), "훈련 참가자는 모두 준비 완료")
-
-        store.finishTraining()
-        expect(store.phase == .aar && store.selectedParticipants.count == 3, "훈련 종료 후 AAR 전체 선택")
+        let store = InstructorPreviewFixture.store(
+            floorPlan: plan, participants: participants.filter(\.isReady), phase: .aar
+        )
+        expect(store.phase == .aar && store.selectedParticipants.count == 3, "AAR Fixture 전체 선택")
         store.setPlaybackPosition(.nan)
         expect(store.playbackPosition == 331, "유효하지 않은 재생 위치 무시")
         store.changeAARMode(to: .video)
@@ -356,9 +351,7 @@ struct InstructorStoreChecks {
         store.returnHome()
         expect(store.phase == .home && store.participants.isEmpty, "처음으로에서 세션 상태 초기화")
 
-        let aarStore = InstructorPreviewFixture.store(floorPlan: plan)
-        aarStore.startTraining()
-        aarStore.finishTraining()
+        let aarStore = InstructorPreviewFixture.store(floorPlan: plan, phase: .aar)
         expect(aarStore.selectedParticipants.count == 6, "AAR 동선 전체 선택")
         aarStore.setPlaybackPosition(420)
         aarStore.changeAARMode(to: .video)

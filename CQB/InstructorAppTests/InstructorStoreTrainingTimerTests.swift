@@ -1,43 +1,29 @@
+import CQBCore
 import XCTest
 @testable import InstructorApp
 
 @MainActor
 final class InstructorStoreTrainingTimerTests: XCTestCase {
-    func testStartTrainingSetsStartDateAndDoesNotReplaceIt() {
-        let firstStart = Date(timeIntervalSince1970: 1_000)
-        let secondStart = Date(timeIntervalSince1970: 2_000)
-        var dates = [firstStart, secondStart]
-        let store = makeStore(participants: [makeParticipant(id: "ready", isReady: true)]) {
-            dates.removeFirst()
-        }
+    func testTimerWaitsForServerStartDate() {
+        let store = makeStore(startedAt: nil)
 
-        store.startTraining()
-        store.startTraining()
-
-        XCTAssertEqual(store.phase, .trainingInProgress)
-        XCTAssertEqual(store.trainingStartedAt, firstStart)
-        XCTAssertEqual(dates, [secondStart])
+        XCTAssertNil(store.trainingStartedAt)
+        XCTAssertNil(store.trainingElapsed(at: Date(timeIntervalSince1970: 2_000)))
+        XCTAssertEqual(store.formattedTrainingElapsed(at: Date(timeIntervalSince1970: 2_000)), "00:00:00")
     }
 
-    func testStartTrainingExcludingUnreadyParticipantsSetsStartDate() {
+    func testTimerUsesServerStartDate() {
         let start = Date(timeIntervalSince1970: 1_000)
-        let ready = makeParticipant(id: "ready", isReady: true)
-        let unready = makeParticipant(id: "unready", isReady: false)
-        let store = makeStore(participants: [ready, unready], now: { start })
+        let store = makeStore(startedAt: start)
 
-        store.startTrainingExcludingUnreadyParticipants()
-
-        XCTAssertEqual(store.phase, .trainingInProgress)
         XCTAssertEqual(store.trainingStartedAt, start)
-        XCTAssertEqual(store.participants, [ready])
+        XCTAssertEqual(store.trainingElapsed(at: start), "00:00:00")
+        XCTAssertEqual(store.trainingElapsed(at: start.addingTimeInterval(3_723.9)), "01:02:03")
+        XCTAssertEqual(store.trainingElapsed(at: start.addingTimeInterval(-1)), "00:00:00")
     }
 
-    func testReturnHomeClearsStartDate() {
-        let store = makeStore(
-            participants: [makeParticipant(id: "ready", isReady: true)],
-            now: { Date(timeIntervalSince1970: 1_000) }
-        )
-        store.startTraining()
+    func testReturnHomeClearsServerStartDate() {
+        let store = makeStore(startedAt: Date(timeIntervalSince1970: 1_000))
 
         store.returnHome()
 
@@ -45,49 +31,41 @@ final class InstructorStoreTrainingTimerTests: XCTestCase {
         XCTAssertNil(store.trainingStartedAt)
     }
 
-    func testFormattedTrainingElapsedUsesHoursMinutesAndSeconds() {
-        let start = Date(timeIntervalSince1970: 1_000)
-        let store = makeStore(
-            participants: [makeParticipant(id: "ready", isReady: true)],
-            now: { start }
-        )
-        store.startTraining()
-
-        XCTAssertEqual(store.formattedTrainingElapsed(at: start), "00:00:00")
-        XCTAssertEqual(
-            store.formattedTrainingElapsed(at: start.addingTimeInterval(3_723.9)),
-            "01:02:03"
-        )
-        XCTAssertEqual(
-            store.formattedTrainingElapsed(at: start.addingTimeInterval(-1)),
-            "00:00:00"
-        )
+    func testFormatTrainingElapsedUsesHoursMinutesAndSeconds() {
+        XCTAssertEqual(InstructorStore.formatTrainingElapsed(0), "00:00:00")
+        XCTAssertEqual(InstructorStore.formatTrainingElapsed(3_723.9), "01:02:03")
+        XCTAssertEqual(InstructorStore.formatTrainingElapsed(-1), "00:00:00")
     }
 
-    private func makeStore(
-        participants: [InstructorParticipant],
-        now: @escaping () -> Date
-    ) -> InstructorStore {
+    private func makeStore(startedAt: Date?) -> InstructorStore {
         let floorPlan = DemoFloorPlan(
             id: "floor-plan",
             name: "테스트 도면",
             fileName: "floor-plan.png",
             referenceDistance: 10
         )
+        let session = Session(
+            id: UUID(),
+            pin: "123456",
+            name: "타이머 테스트",
+            status: .running,
+            startedAt: startedAt,
+            floorPlan: floorPlan.reference
+        )
         return InstructorStore(
             floorPlans: [floorPlan],
-            now: now,
-            previewSession: InstructorPreviewFixture.session(floorPlan: floorPlan.reference),
-            previewParticipants: participants
+            previewSession: session,
+            previewParticipants: [makeParticipant()],
+            previewPhase: .trainingInProgress
         )
     }
 
-    private func makeParticipant(id: String, isReady: Bool) -> InstructorParticipant {
+    private func makeParticipant() -> InstructorParticipant {
         InstructorParticipant(
-            id: id,
-            number: id == "ready" ? 1 : 2,
-            name: id,
-            isReady: isReady,
+            id: "ready",
+            number: 1,
+            name: "ready",
+            isReady: true,
             x: 0,
             y: 0
         )
