@@ -11,11 +11,15 @@ final class MemberStore {
     @ObservationIgnored private let recordingFileStore = LocalRecordingFileStore()
     @ObservationIgnored private let sessionRepository: any SessionRepository
     @ObservationIgnored private let memberRepository: any MemberRepository
+    @ObservationIgnored private let recordingRepository: any RecordingRepository
+    @ObservationIgnored private let videoChunkRepository: any VideoChunkRepository
+    @ObservationIgnored private let trackResultRepository: any TrackResultRepository
 
     let trainingMap: TrainingMap?
     private(set) var rawTrack: RawTrackDocument?
     private(set) var correction: RouteCorrectionOutput?
     private(set) var recordingFiles: LocalRecordingFiles?
+    private(set) var savedRecordingURLs: [URL] = []
     private(set) var filesSaved = false
     private(set) var isStarting = false
     private(set) var isJoining = false
@@ -39,20 +43,33 @@ final class MemberStore {
     private(set) var startPoint: CGPoint?
     private(set) var directionPoint: CGPoint?
     private(set) var recordingStartedAt: Date?
-    private(set) var savedRecordingURL: URL?
     private(set) var errorMessage: String?
     private(set) var uploadProgress = 0.0
     private(set) var isUploadComplete = false
-
-    @ObservationIgnored private var isSimulatingUpload = false
+    private(set) var uploadStatusMessage = "업로드를 준비하고 있습니다."
+    private(set) var uploadErrorMessage: String?
+    private(set) var isUploading = false
+    private(set) var uploadedVideoChunkCount = 0
+    @ObservationIgnored private var uploadManifest: RecordingUploadManifest?
+    @ObservationIgnored private var videoChunkUploadQueue: VideoChunkUploadQueue?
+    @ObservationIgnored private var enqueuedVideoChunkIndexes: Set<Int> = []
+    @ObservationIgnored private var recordingMetadataStarted = false
+    @ObservationIgnored private var recordingMetadataRetryTask: Task<Void, Never>?
+    @ObservationIgnored private var recordingMarkedFinishing = false
 
     init(
         sessionRepository: any SessionRepository,
         memberRepository: any MemberRepository,
+        recordingRepository: any RecordingRepository,
+        videoChunkRepository: any VideoChunkRepository,
+        trackResultRepository: any TrackResultRepository,
         cameraService: ARRecordingService? = nil
     ) {
         self.sessionRepository = sessionRepository
         self.memberRepository = memberRepository
+        self.recordingRepository = recordingRepository
+        self.videoChunkRepository = videoChunkRepository
+        self.trackResultRepository = trackResultRepository
         self.cameraService = cameraService ?? ARRecordingService()
         self.memberID = Self.loadOrCreateMemberID()
         self.trainingMap = try? BundledTrainingMapLoader.load()
@@ -197,18 +214,36 @@ final class MemberStore {
         do {
             let identity = TrackIdentity(sessionID: sessionID, memberID: memberID, recordingID: UUID())
             let files = try recordingFileStore.makeFiles(recordingID: identity.recordingID)
-            try cameraService.startRecording(to: files.video, start: map.pixel(startPoint), direction: map.pixel(directionPoint))
+            try startVideoChunkUploadQueue(identity: identity, files: files)
+            cameraService.onVideoChunkReady = { [weak self] index, url in
+                Task { @MainActor [weak self] in
+                    await self?.enqueueVideoChunk(index: index, url: url)
+                }
+            }
+            try cameraService.startRecording(to: files.videoChunksDirectory,
+                start: map.pixel(startPoint), direction: map.pixel(directionPoint))
             self.identity = identity
             recordingFiles = files
-            savedRecordingURL = nil
+            savedRecordingURLs = []
             rawTrack = nil
             correction = nil
             filesSaved = false
+            uploadedVideoChunkCount = 0
+            enqueuedVideoChunkIndexes = []
             recordingStartedAt = Date()
             startRequestedBySession = false
             canRetryRecordingStart = false
             phase = .recording
+            recordingMetadataStarted = false
+            recordingMetadataRetryTask?.cancel()
+            recordingMarkedFinishing = false
+            uploadStatusMessage = "첫 영상 조각을 준비하고 있습니다."
+            recordingMetadataRetryTask = Task { @MainActor [weak self] in
+                await self?.startRecordingMetadataWithRetries(identity: identity)
+            }
         } catch {
+            videoChunkUploadQueue = nil
+            cameraService.onVideoChunkReady = nil
             // Keep the session start request pending so the member can retry while the
             // session is running, or tracking recovery can trigger another attempt.
             canRetryRecordingStart = true
@@ -216,6 +251,32 @@ final class MemberStore {
             if !cameraService.isReady {
                 isTrackingReady = false
                 scheduleReadinessReport()
+            }
+        }
+    }
+
+    /// Retries the server timestamp write while local recording continues.
+    private func startRecordingMetadataWithRetries(identity: TrackIdentity) async {
+        for attempt in 1...3 {
+            guard !Task.isCancelled, phase == .recording, self.identity == identity else { return }
+            do {
+                try await recordingRepository.startRecording(
+                    Recording(identity: identity, state: .recording, lastActiveAt: .now)
+                )
+                guard self.identity == identity else { return }
+                recordingMetadataStarted = true
+                uploadErrorMessage = nil
+                return
+            } catch {
+                recordingMetadataStarted = false
+                uploadErrorMessage = error.localizedDescription
+                guard attempt < 3, phase == .recording else {
+                    uploadStatusMessage = "기록 시작 정보를 서버에 저장하지 못했습니다. 업로드 시 다시 시도합니다."
+                    return
+                }
+                uploadStatusMessage = "기록 시작 정보 전송 실패 · 재시도 중 (\(attempt)/2)"
+                do { try await Task.sleep(for: .seconds(attempt)) }
+                catch { return }
             }
         }
     }
@@ -363,9 +424,17 @@ final class MemberStore {
         guard phase == .recording, let map = trainingMap, let identity,
               let startPoint, let directionPoint, let recordingStartedAt else { return }
         phase = .saving
+        recordingMetadataRetryTask?.cancel()
+        recordingMetadataRetryTask = nil
         errorMessage = cameraService.fatalError
         // 영상 마무리 실패와 동선 저장 실패를 독립적으로 처리한다.
-        do { savedRecordingURL = try await cameraService.stopRecording() }
+        do {
+            savedRecordingURLs = try await cameraService.stopRecording()
+            for (index, url) in savedRecordingURLs.enumerated() {
+                await enqueueVideoChunk(index: index, url: url)
+            }
+            try await videoChunkUploadQueue?.setFinalChunkCount(savedRecordingURLs.count)
+        }
         catch { errorMessage = error.localizedDescription }
         rawTrack = RawTrackDocument(identity: identity, floorPlan: map.reference,
             localStartedAt: recordingStartedAt, start: map.pixel(startPoint), direction: map.pixel(directionPoint),
@@ -373,6 +442,7 @@ final class MemberStore {
             samples: cameraService.samples)
         cameraService.stop()
         await saveAndCorrect()
+        if filesSaved { startUploading() }
     }
 
     /// 저장 공간 확보 후 재시도해도 동일한 원본 바이트를 보존한다.
@@ -380,6 +450,7 @@ final class MemberStore {
         guard phase == .saved, !filesSaved else { return }
         errorMessage = nil
         await saveAndCorrect()
+        if filesSaved { startUploading() }
     }
 
     private func saveAndCorrect() async {
@@ -415,47 +486,119 @@ final class MemberStore {
 
     /// 로컬 파일 저장 완료 후 업로드 흐름으로 전환한다.
     func startUploading() {
-        guard phase == .saved, filesSaved, savedRecordingURL != nil else { return }
-        uploadProgress = 0
+        guard phase == .saved, filesSaved, !savedRecordingURLs.isEmpty else { return }
+        uploadProgress = Double(uploadedVideoChunkCount) / Double(savedRecordingURLs.count + 1)
         isUploadComplete = false
+        if uploadErrorMessage == nil { uploadStatusMessage = "남은 조각과 보정 결과를 업로드하고 있습니다." }
         phase = .uploading
     }
 
-    /// 임시 업로드: 약 3초 동안 진행한 뒤 저장 완료를 모사한다.
-    /// 실제 업로드 연동 시 서비스의 진행률·완료 콜백으로 대체한다.
-    func simulateUpload() async {
-        guard phase == .uploading, !isUploadComplete, !isSimulatingUpload else { return }
-        isSimulatingUpload = true
-        defer { isSimulatingUpload = false }
+    /// 종료 후 미전송 조각을 재시도하고 보정 결과를 올린 뒤 기록을 완료한다.
+    func uploadRecording() async {
+        guard phase == .uploading, !isUploading, !isUploadComplete,
+              let identity,
+              let correction, let uploadQueue = videoChunkUploadQueue,
+              !savedRecordingURLs.isEmpty else { return }
 
-        let clock = ContinuousClock()
-        let startedAt = clock.now
-        let initialProgress = uploadProgress
-        while uploadProgress < 1 {
-            do {
-                try await Task.sleep(for: .milliseconds(50))
-            } catch {
-                return
+        isUploading = true
+        defer { isUploading = false }
+
+        do {
+            if !recordingMetadataStarted {
+                try await recordingRepository.startRecording(
+                    Recording(identity: identity, state: .recording, lastActiveAt: .now)
+                )
+                recordingMetadataStarted = true
+                uploadErrorMessage = nil
             }
-            guard !Task.isCancelled, phase == .uploading, !isUploadComplete else { return }
-            let elapsed = startedAt.duration(to: clock.now).components
-            let seconds = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
-            updateUploadProgress(initialProgress + seconds / 3)
+            try await uploadQueue.setFinalChunkCount(savedRecordingURLs.count)
+            if !recordingMarkedFinishing {
+                try await recordingRepository.updateRecording(
+                    Recording(identity: identity, state: .finishing, lastActiveAt: .now,
+                              videoChunkCount: savedRecordingURLs.count)
+                )
+                recordingMarkedFinishing = true
+            }
+
+            await uploadQueue.waitForInitialUploads()
+            if await uploadQueue.failedChunkCount() > 0 {
+                uploadStatusMessage = "실패한 영상 조각을 재시도하고 있습니다."
+                try await uploadQueue.retryFailedChunks()
+            }
+            guard await uploadQueue.failedChunkCount() == 0 else {
+                throw UploadError.videoChunkUploadFailed
+            }
+            uploadManifest = await uploadQueue.currentManifest()
+            let totalItems = savedRecordingURLs.count + 1
+            refreshUploadProgress(completedItems: savedRecordingURLs.count, totalItems: totalItems)
+
+            if uploadManifest?.uploadedTrackResult != true {
+                uploadStatusMessage = "보정 동선 업로드 중"
+                try await trackResultRepository.upload(correction.document)
+                try await uploadQueue.markTrackResultUploaded()
+                uploadManifest = await uploadQueue.currentManifest()
+                refreshUploadProgress(completedItems: totalItems, totalItems: totalItems)
+            }
+
+            uploadStatusMessage = "업로드 완료 확인 중"
+            try await recordingRepository.updateRecording(
+                Recording(identity: identity, state: .done, lastActiveAt: .now,
+                          videoChunkCount: savedRecordingURLs.count)
+            )
+            uploadProgress = 1
+            uploadStatusMessage = "영상과 보정 동선 업로드 완료"
+            uploadErrorMessage = nil
+            isUploadComplete = true
+        } catch {
+            uploadErrorMessage = error.localizedDescription
+            uploadStatusMessage = "업로드에 실패했습니다. 실패한 항목부터 다시 시도할 수 있습니다."
         }
-        guard !Task.isCancelled, phase == .uploading else { return }
-        completeUpload()
     }
 
-    func updateUploadProgress(_ progress: Double) {
-        guard phase == .uploading, !isUploadComplete, progress.isFinite else { return }
-        uploadProgress = min(max(progress, 0), 1)
+    private func startVideoChunkUploadQueue(identity: TrackIdentity, files: LocalRecordingFiles) throws {
+        let manifest = RecordingUploadManifest(identity: identity)
+        try recordingFileStore.saveUploadManifest(manifest, to: files.uploadManifest)
+        uploadManifest = manifest
+        videoChunkUploadQueue = VideoChunkUploadQueue(
+            repository: videoChunkRepository,
+            fileStore: recordingFileStore,
+            manifestURL: files.uploadManifest,
+            identity: identity,
+            manifest: manifest
+        ) { [weak self] status in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.uploadedVideoChunkCount = status.uploadedCount
+                self.uploadErrorMessage = status.latestError
+                if status.failedCount > 0 {
+                    self.uploadStatusMessage = "영상 조각 \(status.failedCount)개 전송 실패 · 종료 후 재시도합니다."
+                } else if let index = status.activeIndex {
+                    self.uploadStatusMessage = "영상 조각 \(index + 1) 업로드 중"
+                } else {
+                    self.uploadStatusMessage = "영상 조각 \(status.uploadedCount)개 업로드 완료"
+                }
+                let count = self.savedRecordingURLs.count
+                if count > 0 {
+                    let completed = status.uploadedCount + (self.uploadManifest?.uploadedTrackResult == true ? 1 : 0)
+                    self.refreshUploadProgress(completedItems: completed, totalItems: count + 1)
+                }
+            }
+        }
     }
 
-    // 전송률 100%와 서버 저장 완료 확인은 별개의 이벤트다.
-    func completeUpload() {
-        guard phase == .uploading else { return }
-        uploadProgress = 1
-        isUploadComplete = true
+    private func enqueueVideoChunk(index: Int, url: URL) async {
+        guard enqueuedVideoChunkIndexes.insert(index).inserted,
+              let videoChunkUploadQueue else { return }
+        await videoChunkUploadQueue.enqueue(LocalVideoChunk(index: index, url: url))
+    }
+
+    private func refreshUploadProgress(completedItems: Int, totalItems: Int) {
+        guard totalItems > 0 else { uploadProgress = 1; return }
+        uploadProgress = min(max(Double(completedItems) / Double(totalItems), 0), 1)
+    }
+
+    func retryUploading() async {
+        await uploadRecording()
     }
 
     func clearRecordingError() {
@@ -470,6 +613,8 @@ final class MemberStore {
         readinessHeartbeatTask = nil
         readinessReportTask?.cancel()
         readinessReportTask = nil
+        recordingMetadataRetryTask?.cancel()
+        recordingMetadataRetryTask = nil
         shouldReportReadiness = false
         startRequestedBySession = false
         canRetryRecordingStart = false
@@ -480,12 +625,14 @@ final class MemberStore {
         #endif
         hasShownSessionStreamError = false
         hasShownReadinessError = false
+        cameraService.onVideoChunkReady = nil
         cameraService.discardFinishedCapture()
         identity = nil
         rawTrack = nil
         correction = nil
         recordingFiles = nil
-        savedRecordingURL = nil
+        uploadManifest = nil
+        savedRecordingURLs = []
         filesSaved = false
         sessionID = nil
         pin = ""
@@ -495,6 +642,24 @@ final class MemberStore {
         recordingStartedAt = nil
         uploadProgress = 0
         isUploadComplete = false
+        uploadedVideoChunkCount = 0
+        enqueuedVideoChunkIndexes = []
+        videoChunkUploadQueue = nil
+        uploadStatusMessage = "업로드를 준비하고 있습니다."
+        uploadErrorMessage = nil
+        recordingMetadataStarted = false
+        recordingMarkedFinishing = false
         phase = .join
+    }
+
+    private enum UploadError: LocalizedError {
+        case videoChunkUploadFailed
+
+        var errorDescription: String? {
+            switch self {
+            case .videoChunkUploadFailed:
+                return "일부 영상 조각 업로드에 실패했습니다. 연결을 확인하고 다시 시도해주세요."
+            }
+        }
     }
 }

@@ -28,6 +28,17 @@ nonisolated struct LocalRecordingFileStore: Sendable {
         try encode(value).write(to: url, options: .atomic)
     }
 
+    func loadUploadManifest(from url: URL) throws -> RecordingUploadManifest? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(RecordingUploadManifest.self, from: Data(contentsOf: url))
+    }
+
+    func saveUploadManifest(_ manifest: RecordingUploadManifest, to url: URL) throws {
+        try save(manifest, to: url)
+    }
+
     private func encode<T: Encodable>(_ value: T) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .prettyPrinted]

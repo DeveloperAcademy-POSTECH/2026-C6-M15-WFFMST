@@ -44,23 +44,27 @@ struct TrainingInProgressView: View {
     }
 
     private var trainingTimer: some View {
-        HStack(spacing: 24) {
-            Circle()
-                .fill(InstructorColor.teamOne)
-                .frame(width: 12, height: 12)
-                .accessibilityHidden(true)
+        TimelineView(.periodic(from: store.trainingStartedAt ?? .now, by: 1)) { context in
+            let elapsed = store.formattedTrainingElapsed(at: context.date)
 
-            Text(store.sampleTrainingElapsed)
-                .font(displayFont)
-                .tracking(2.4)
-                .foregroundStyle(InstructorColor.textPrimary)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
+            HStack(spacing: 24) {
+                Circle()
+                    .fill(InstructorColor.teamOne)
+                    .frame(width: 12, height: 12)
+                    .accessibilityHidden(true)
+
+                Text(elapsed)
+                    .font(displayFont)
+                    .tracking(2.4)
+                    .foregroundStyle(InstructorColor.textPrimary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            .frame(minWidth: 254, minHeight: 72)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("훈련 경과 시간 \(elapsed)")
         }
-        .frame(minWidth: 254, minHeight: 72)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("훈련 경과 시간 \(store.sampleTrainingElapsed)")
     }
 
     private var displayFont: Font {
