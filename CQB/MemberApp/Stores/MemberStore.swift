@@ -11,6 +11,10 @@ final class MemberStore {
     @ObservationIgnored private let recordingFileStore = LocalRecordingFileStore()
     @ObservationIgnored private let sessionRepository: any SessionRepository
     @ObservationIgnored private let memberRepository: any MemberRepository
+    @ObservationIgnored private let recordingRepository: any RecordingRepository
+    @ObservationIgnored private let videoChunkRepository: any VideoChunkRepository
+    @ObservationIgnored private let trackResultRepository: any TrackResultRepository
+    @ObservationIgnored private let videoChunkExportService = VideoChunkExportService()
 
     let trainingMap: TrainingMap?
     private(set) var rawTrack: RawTrackDocument?
@@ -43,16 +47,25 @@ final class MemberStore {
     private(set) var errorMessage: String?
     private(set) var uploadProgress = 0.0
     private(set) var isUploadComplete = false
-
-    @ObservationIgnored private var isSimulatingUpload = false
+    private(set) var uploadStatusMessage = "업로드를 준비하고 있습니다."
+    private(set) var uploadErrorMessage: String?
+    private(set) var isUploading = false
+    @ObservationIgnored private var uploadManifest: RecordingUploadManifest?
+    @ObservationIgnored private var recordingMetadataStarted = false
 
     init(
         sessionRepository: any SessionRepository,
         memberRepository: any MemberRepository,
+        recordingRepository: any RecordingRepository,
+        videoChunkRepository: any VideoChunkRepository,
+        trackResultRepository: any TrackResultRepository,
         cameraService: ARRecordingService? = nil
     ) {
         self.sessionRepository = sessionRepository
         self.memberRepository = memberRepository
+        self.recordingRepository = recordingRepository
+        self.videoChunkRepository = videoChunkRepository
+        self.trackResultRepository = trackResultRepository
         self.cameraService = cameraService ?? ARRecordingService()
         self.memberID = Self.loadOrCreateMemberID()
         self.trainingMap = try? BundledTrainingMapLoader.load()
@@ -180,6 +193,15 @@ final class MemberStore {
             startRequestedBySession = false
             canRetryRecordingStart = false
             phase = .recording
+            do {
+                try await recordingRepository.startRecording(
+                    Recording(identity: identity, state: .recording, lastActiveAt: .now)
+                )
+                recordingMetadataStarted = true
+            } catch {
+                // Do not interrupt local capture when Firestore is temporarily unavailable.
+                recordingMetadataStarted = false
+            }
         } catch {
             // Keep the session start request pending so the member can retry while the
             // session is running, or tracking recovery can trigger another attempt.
@@ -387,44 +409,110 @@ final class MemberStore {
         guard phase == .saved, filesSaved, savedRecordingURL != nil else { return }
         uploadProgress = 0
         isUploadComplete = false
+        uploadErrorMessage = nil
+        uploadStatusMessage = "업로드를 준비하고 있습니다."
         phase = .uploading
     }
 
-    /// 임시 업로드: 약 3초 동안 진행한 뒤 저장 완료를 모사한다.
-    /// 실제 업로드 연동 시 서비스의 진행률·완료 콜백으로 대체한다.
-    func simulateUpload() async {
-        guard phase == .uploading, !isUploadComplete, !isSimulatingUpload else { return }
-        isSimulatingUpload = true
-        defer { isSimulatingUpload = false }
+    /// 결과 확인 화면에서 사용자가 업로드를 누를 때만 실제 Firebase 업로드를 시작한다.
+    func uploadRecording() async {
+        guard phase == .uploading, !isUploading, !isUploadComplete,
+              let identity, let files = recordingFiles,
+              let correction else { return }
 
-        let clock = ContinuousClock()
-        let startedAt = clock.now
-        let initialProgress = uploadProgress
-        while uploadProgress < 1 {
-            do {
-                try await Task.sleep(for: .milliseconds(50))
-            } catch {
-                return
+        isUploading = true
+        uploadErrorMessage = nil
+        defer { isUploading = false }
+
+        do {
+            let chunkURLs = try await existingOrExportedChunks(for: files)
+            let manifest = try loadOrCreateManifest(identity: identity, chunkCount: chunkURLs.count, files: files)
+            uploadManifest = manifest
+
+            if !recordingMetadataStarted {
+                try await recordingRepository.startRecording(
+                    Recording(identity: identity, state: .recording, lastActiveAt: .now)
+                )
+                recordingMetadataStarted = true
             }
-            guard !Task.isCancelled, phase == .uploading, !isUploadComplete else { return }
-            let elapsed = startedAt.duration(to: clock.now).components
-            let seconds = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
-            updateUploadProgress(initialProgress + seconds / 3)
+            let allFilesAlreadyUploaded = manifest.uploadedVideoChunkIndexes.count == manifest.videoChunkCount
+                && manifest.uploadedTrackResult
+            if !allFilesAlreadyUploaded {
+                try await recordingRepository.updateRecording(
+                    Recording(identity: identity, state: .finishing, lastActiveAt: .now,
+                              videoChunkCount: manifest.videoChunkCount)
+                )
+            }
+
+            let totalItems = manifest.videoChunkCount + 1
+            for index in 0..<manifest.videoChunkCount where !manifest.uploadedVideoChunkIndexes.contains(index) {
+                guard index < chunkURLs.count else { throw UploadError.missingVideoChunk(index) }
+                uploadStatusMessage = "영상 조각 업로드 중 · \(index + 1)/\(manifest.videoChunkCount)"
+                try await videoChunkRepository.upload(fileURL: chunkURLs[index], identity: identity, index: index)
+                uploadManifest?.uploadedVideoChunkIndexes.insert(index)
+                try persistUploadManifest(files: files)
+                refreshUploadProgress(completedItems: (uploadManifest?.uploadedVideoChunkIndexes.count ?? 0)
+                                      + ((uploadManifest?.uploadedTrackResult == true) ? 1 : 0),
+                                      totalItems: totalItems)
+            }
+
+            if uploadManifest?.uploadedTrackResult != true {
+                uploadStatusMessage = "보정 동선 업로드 중"
+                try await trackResultRepository.upload(correction.document)
+                uploadManifest?.uploadedTrackResult = true
+                try persistUploadManifest(files: files)
+                refreshUploadProgress(completedItems: totalItems, totalItems: totalItems)
+            }
+
+            uploadStatusMessage = "업로드 완료 확인 중"
+            try await recordingRepository.updateRecording(
+                Recording(identity: identity, state: .done, lastActiveAt: .now,
+                          videoChunkCount: manifest.videoChunkCount)
+            )
+            uploadProgress = 1
+            uploadStatusMessage = "영상과 보정 동선 업로드 완료"
+            isUploadComplete = true
+        } catch {
+            uploadErrorMessage = error.localizedDescription
+            uploadStatusMessage = "업로드에 실패했습니다. 실패한 항목부터 다시 시도할 수 있습니다."
         }
-        guard !Task.isCancelled, phase == .uploading else { return }
-        completeUpload()
     }
 
-    func updateUploadProgress(_ progress: Double) {
-        guard phase == .uploading, !isUploadComplete, progress.isFinite else { return }
-        uploadProgress = min(max(progress, 0), 1)
+    private func existingOrExportedChunks(for files: LocalRecordingFiles) async throws -> [URL] {
+        if let manifest = try uploadManifest ?? recordingFileStore.loadUploadManifest(from: files.uploadManifest) {
+            let urls = (0..<manifest.videoChunkCount).map(files.videoChunk(index:))
+            if urls.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) { return urls }
+        }
+        guard let savedRecordingURL else { throw UploadError.missingRecordingVideo }
+        uploadStatusMessage = "영상 조각을 준비하고 있습니다."
+        return try await videoChunkExportService.exportChunks(from: savedRecordingURL, to: files.videoChunksDirectory)
     }
 
-    // 전송률 100%와 서버 저장 완료 확인은 별개의 이벤트다.
-    func completeUpload() {
-        guard phase == .uploading else { return }
-        uploadProgress = 1
-        isUploadComplete = true
+    private func loadOrCreateManifest(identity: TrackIdentity, chunkCount: Int,
+                                      files: LocalRecordingFiles) throws -> RecordingUploadManifest {
+        if let manifest = try uploadManifest ?? recordingFileStore.loadUploadManifest(from: files.uploadManifest) {
+            guard manifest.identity == identity, manifest.videoChunkCount == chunkCount else {
+                throw UploadError.uploadManifestMismatch
+            }
+            return manifest
+        }
+        let manifest = RecordingUploadManifest(identity: identity, videoChunkCount: chunkCount)
+        try recordingFileStore.saveUploadManifest(manifest, to: files.uploadManifest)
+        return manifest
+    }
+
+    private func persistUploadManifest(files: LocalRecordingFiles) throws {
+        guard let uploadManifest else { throw UploadError.uploadManifestUnavailable }
+        try recordingFileStore.saveUploadManifest(uploadManifest, to: files.uploadManifest)
+    }
+
+    private func refreshUploadProgress(completedItems: Int, totalItems: Int) {
+        guard totalItems > 0 else { uploadProgress = 1; return }
+        uploadProgress = min(max(Double(completedItems) / Double(totalItems), 0), 1)
+    }
+
+    func retryUploading() async {
+        await uploadRecording()
     }
 
     func clearRecordingError() {
@@ -451,6 +539,7 @@ final class MemberStore {
         rawTrack = nil
         correction = nil
         recordingFiles = nil
+        uploadManifest = nil
         savedRecordingURL = nil
         filesSaved = false
         sessionID = nil
@@ -461,6 +550,29 @@ final class MemberStore {
         recordingStartedAt = nil
         uploadProgress = 0
         isUploadComplete = false
+        uploadStatusMessage = "업로드를 준비하고 있습니다."
+        uploadErrorMessage = nil
+        recordingMetadataStarted = false
         phase = .join
+    }
+
+    private enum UploadError: LocalizedError {
+        case missingRecordingVideo
+        case missingVideoChunk(Int)
+        case uploadManifestMismatch
+        case uploadManifestUnavailable
+
+        var errorDescription: String? {
+            switch self {
+            case .missingRecordingVideo:
+                return "업로드할 녹화 영상 파일을 찾을 수 없습니다."
+            case .missingVideoChunk(let index):
+                return "업로드할 영상 조각 \(index + 1)을 찾을 수 없습니다."
+            case .uploadManifestMismatch:
+                return "저장된 업로드 정보가 현재 기록과 일치하지 않습니다."
+            case .uploadManifestUnavailable:
+                return "업로드 진행 정보를 저장할 수 없습니다."
+            }
+        }
     }
 }

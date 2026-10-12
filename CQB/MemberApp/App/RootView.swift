@@ -53,9 +53,13 @@ struct RootView: View {
                 RecordingUploadView(
                     progress: store.uploadProgress,
                     isComplete: store.isUploadComplete,
+                    statusMessage: store.uploadStatusMessage,
+                    errorMessage: store.uploadErrorMessage,
+                    isUploading: store.isUploading,
+                    onRetry: { await store.retryUploading() },
                     onHome: { store.returnToJoin() }
                 )
-                .task { await store.simulateUpload() }
+                .task { await store.uploadRecording() }
             }
         }
         .alert(

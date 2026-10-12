@@ -3,7 +3,7 @@ import SwiftUI
 import CQBCore
 import CQBDesignSystem
 
-/// 로컬 기록 확인 화면. 업로드는 기존 시뮬레이션을 유지한다.
+/// 로컬 기록 확인 화면. 사용자가 버튼을 누르면 영상과 보정 결과 업로드를 시작한다.
 struct RecordingSaveTestView: View {
     let recordingURL: URL?
     var raw: RawTrackDocument? = nil
@@ -69,7 +69,7 @@ struct RecordingSaveTestView: View {
                         ActionButton("동선 파일 저장 재시도", action: onRetry)
                     }
                 }
-                Text("파일은 이 iPhone에 저장됩니다. 업로드 버튼은 현재 시뮬레이션입니다.")
+                Text("업로드 버튼을 누르면 영상과 보정 동선을 서버로 보냅니다.")
                     .font(.caption)
                 ActionButton("업로드", action: switchView)
                     .disabled(!filesSaved || recordingURL == nil)
