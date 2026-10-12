@@ -11,6 +11,7 @@ struct TrainingRecordingView: View {
     var allowsManualStop = false
     var canRetryRecordingStart = false
     var isStartingRecording = false
+    var uploadStatusMessage = "영상 조각 업로드 준비 중"
     var onRetryRecordingStart: () -> Void = {}
     var onCameraReadinessChange: (Bool) -> Void = { _ in }
     var cameraService = ARRecordingService()
@@ -124,7 +125,7 @@ struct TrainingRecordingView: View {
             Text("영상 녹화 중")
                 .font(DSTypography.h3)
                 .frame(minHeight: 24)
-            Text("영상은 이 iPhone에 저장됩니다.")
+            Text(uploadStatusMessage)
                 .font(DSTypography.bodySmall)
                 .foregroundStyle(DSColor.darkGreen)
                 .frame(minHeight: 21)

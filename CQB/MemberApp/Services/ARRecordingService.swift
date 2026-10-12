@@ -14,8 +14,10 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate {
     private(set) var fatalError: String?
     private(set) var isRecording = false
     private(set) var samples: [RawTrackSample] = []
+    private(set) var videoChunkURLs: [URL] = []
     private(set) var rotationDegrees = 0.0
     @ObservationIgnored private let writer = ARFrameVideoWriter()
+    @ObservationIgnored var onVideoChunkReady: (@MainActor @Sendable (Int, URL) -> Void)?
     @ObservationIgnored private var origin = SIMD3<Float>(repeating: 0)
     @ObservationIgnored private var firstTimestamp = 0.0
     @ObservationIgnored private var lastSampleTime = -Double.infinity
@@ -79,9 +81,11 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate {
     func discardFinishedCapture() {
         guard !isRecording else { return }
         samples = []
+        videoChunkURLs = []
+        writer.discardFinishedCapture()
     }
 
-    func startRecording(to url: URL, start: MapPoint, direction: MapPoint) throws {
+    func startRecording(to directory: URL, start: MapPoint, direction: MapPoint) throws {
         guard !isRecording, isReady, let frame = session.currentFrame,
               case .normal = frame.camera.trackingState,
               let heading = RouteHeading.stableCameraDirection(headings.map(\.1)),
@@ -91,7 +95,13 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate {
         let orientation = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first(where: { $0.activationState == .foregroundActive })?.interfaceOrientation ?? .landscapeRight
         try writer.start(firstFrame: frame.capturedImage, timestamp: frame.timestamp,
-                         outputURL: url, orientation: orientation)
+                         outputDirectory: directory, orientation: orientation) { [weak self] index, url in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if !self.videoChunkURLs.contains(url) { self.videoChunkURLs.append(url) }
+                self.onVideoChunkReady?(index, url)
+            }
+        }
         let position = frame.camera.transform.columns.3
         origin = SIMD3(position.x, position.y, position.z)
         firstTimestamp = frame.timestamp
@@ -107,15 +117,17 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate {
         recordSample(frame)
     }
 
-    func stopRecording() async throws -> URL {
+    func stopRecording() async throws -> [URL] {
         guard isRecording else { throw CaptureError.notRecording }
         if let frame = session.currentFrame, frame.timestamp > firstTimestamp + lastSampleTime {
             recordSample(frame, force: true)
         }
         isRecording = false
-        return try await withCheckedThrowingContinuation { continuation in
+        let chunks = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[URL], Error>) in
             writer.finish { continuation.resume(with: $0) }
         }
+        videoChunkURLs = chunks
+        return chunks
     }
 
     func session(_ session: ARSession, didUpdate frame: ARFrame) {

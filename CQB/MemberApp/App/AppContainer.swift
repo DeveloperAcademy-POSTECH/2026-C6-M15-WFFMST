@@ -5,7 +5,10 @@ import CQBFirebase
 struct AppContainer: View {
     @State private var store = MemberStore(
         sessionRepository: FirestoreSessionRepository(),
-        memberRepository: FirestoreMemberRepository()
+        memberRepository: FirestoreMemberRepository(),
+        recordingRepository: FirestoreRecordingRepository(),
+        videoChunkRepository: StorageVideoChunkRepository(),
+        trackResultRepository: StorageTrackResultRepository()
     )
 
     var body: some View {

@@ -5,6 +5,10 @@ struct RecordingUploadView: View {
     /// 0...1 전송 진행률. 완료 여부는 서버 저장 확인 이후 별도로 전달한다.
     let progress: Double
     let isComplete: Bool
+    let statusMessage: String
+    let errorMessage: String?
+    let isUploading: Bool
+    var onRetry: () async -> Void
     var onHome: () -> Void
 
     private var normalizedProgress: Double {
@@ -32,9 +36,18 @@ struct RecordingUploadView: View {
                                 .font(DSTypography.body)
                                 .monospacedDigit()
                         }
-                        Text("완료 전까지 앱을 종료하지 않고 대기해주세요.")
+                        Text(statusMessage)
                             .font(DSTypography.bodySmall)
                             .foregroundStyle(DSColor.darkGreen)
+                        if let errorMessage {
+                            Text(errorMessage)
+                                .font(DSTypography.bodySmall)
+                                .foregroundStyle(.red)
+                            ActionButton("실패한 항목 다시 보내기") {
+                                Task { await onRetry() }
+                            }
+                            .disabled(isUploading)
+                        }
                     }
                     Spacer(minLength: 100)
                     VStack(spacing: 24) {
@@ -57,9 +70,11 @@ struct RecordingUploadView: View {
 }
 
 #Preview("업로드 중") {
-    RecordingUploadView(progress: 0.8, isComplete: false) { print("Preview 홈 이동") }
+    RecordingUploadView(progress: 0.8, isComplete: false, statusMessage: "영상 조각 업로드 중 · 3/5",
+                        errorMessage: nil, isUploading: true, onRetry: {}) { print("Preview 홈 이동") }
 }
 
 #Preview("업로드 완료") {
-    RecordingUploadView(progress: 1, isComplete: true) { print("Preview 홈 이동") }
+    RecordingUploadView(progress: 1, isComplete: true, statusMessage: "영상과 보정 동선 업로드 완료",
+                        errorMessage: nil, isUploading: false, onRetry: {}) { print("Preview 홈 이동") }
 }
