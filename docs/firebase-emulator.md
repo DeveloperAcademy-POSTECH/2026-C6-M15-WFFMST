@@ -139,6 +139,31 @@ InstructorApp에서 도면을 등록하고 세션을 생성하면 팀 준비 화
 
 이 스위치는 서버 보고만 대체하며 실제 AR 준비 상태나 녹화 시작 조건을 우회하지 않는다. 따라서 MemberApp의 카메라 영역에는 여전히 AR 미지원 안내가 표시된다. 실기기, 운영 Firebase 연결, Release 빌드에는 테스트 스위치가 없으며 기존 준비 판정을 그대로 사용한다. 이 검증에서는 교관 앱의 훈련 시작 버튼을 누르지 않는다. 실제 녹화 검증은 실기기에서 진행한다.
 
+## 사용량 측정
+
+기기마다 Storage를 몇 번·몇 MB 올리고 받고 지우는지, Firestore·Auth가 얼마나 주고받는지 기록한다. 운영에 쓰기 전에 영상 다운로드 요금을 가늠할 때 쓴다.
+
+```bash
+scripts/measure-firebase.sh            # 맥 IP는 와이파이(en0)에서 찾는다
+scripts/measure-firebase.sh 192.168.0.12
+```
+
+```
+기기 ──맥 IP:9099·8080·9199──▶ 중계기 ──127.0.0.1──▶ 에뮬레이터
+                                  └▶ ~/Documents/cqb-traffic/<날짜_시각>_firebase-usage.md
+```
+
+- 에뮬레이터를 맥 안(`127.0.0.1`)에서만 켜고, 맥 IP의 같은 포트에 중계기(`scripts/firebase-usage/relay.py`)를 붙인다. 평소처럼 켠 에뮬레이터가 있으면 먼저 끈다.
+- md는 3초마다 새로 쓰고, `Ctrl + C`로 끌 때 한 번 더 쓴다. md 폴더는 `CQB_USAGE_DIR`로 바꿀 수 있다. 요청별 원본 기록은 임시 폴더에 두었다가 끌 때 지운다.
+- **시뮬레이터도 맥 IP로 붙여야 기록된다.** `localhost`로 붙으면 중계기를 거치지 않는다. 시뮬레이터용 개인 스킴을 만들거나(실기기 개인 스킴과 같은 방법) 아래처럼 실행한다. 이렇게 띄운 앱은 홈 화면에서 다시 열면 운영에 붙는다.
+
+  ```bash
+  SIMCTL_CHILD_FIREBASE_EMULATOR_HOST=<맥 IP> xcrun simctl launch --terminate-running-process booted com.wffmst.cqb.instructor
+  ```
+
+- Storage 올리기 한 번은 보통 요청 2개(시작 + 전송)로 보인다.
+- Firestore는 gRPC라 주고받은 바이트만 센다. 요금 기준인 문서 읽기·쓰기 수는 세지 않는다.
+
 ## 주의
 
 - 로그인 정보는 키체인에 있어 앱을 지워도 남는다. 운영과 에뮬레이터를 오가면 앱이 시작할 때 자동으로 로그아웃하고 새로 익명 로그인한다. 콘솔에 `Firebase 연결 대상이 바뀌어 로그아웃`이 찍힌다.
