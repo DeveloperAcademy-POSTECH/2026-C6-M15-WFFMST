@@ -1,35 +1,56 @@
+import CQBDesignSystem
 import SwiftUI
 
 struct AARVideoView: View {
     @Environment(InstructorStore.self) private var store
 
+    private let tileSpacing: CGFloat = 12
+
     var body: some View {
-        let selectedParticipants = store.selectedParticipants
+        let selectedParticipants = Array(store.selectedParticipants.prefix(store.maximumVideoCount))
 
         GeometryReader { geometry in
+            let halfWidth = max(0, (geometry.size.width - tileSpacing) / 2)
+            let halfHeight = max(0, (geometry.size.height - tileSpacing) / 2)
+
             Group {
                 switch selectedParticipants.count {
                 case 0:
-                    ContentUnavailableView("표시할 대원을 선택하세요", systemImage: "video.slash",
-                                           description: Text("오른쪽 표시 대상 메뉴에서 대원을 선택할 수 있습니다."))
+                    emptySelection
                 case 1:
-                    videoRow(selectedParticipants)
+                    CameraPlaceholderTile(participant: selectedParticipants[0])
+                        .frame(width: geometry.size.width, height: geometry.size.height)
                 case 2:
-                    VStack(spacing: 12) {
+                    VStack(spacing: tileSpacing) {
                         ForEach(selectedParticipants) { participant in
-                            videoPlaceholder(participant)
+                            CameraPlaceholderTile(participant: participant)
+                                .frame(width: geometry.size.width, height: halfHeight)
                         }
                     }
                 case 3:
-                    VStack(spacing: 12) {
-                        videoRow(Array(selectedParticipants.prefix(2)))
-                        videoRow(Array(selectedParticipants.suffix(1)))
-                            .frame(width: max(0, (geometry.size.width - 12) / 2))
+                    VStack(spacing: tileSpacing) {
+                        HStack(spacing: tileSpacing) {
+                            ForEach(selectedParticipants.prefix(2)) { participant in
+                                CameraPlaceholderTile(participant: participant)
+                                    .frame(width: halfWidth, height: halfHeight)
+                            }
+                        }
+
+                        CameraPlaceholderTile(participant: selectedParticipants[2])
+                            .frame(width: halfWidth, height: halfHeight)
                     }
+                    .frame(maxWidth: .infinity)
                 default:
-                    VStack(spacing: 12) {
-                        videoRow(Array(selectedParticipants.prefix(2)))
-                        videoRow(Array(selectedParticipants.dropFirst(2)))
+                    VStack(spacing: tileSpacing) {
+                        ForEach(0..<2, id: \.self) { row in
+                            HStack(spacing: tileSpacing) {
+                                ForEach(0..<2, id: \.self) { column in
+                                    let participant = selectedParticipants[row * 2 + column]
+                                    CameraPlaceholderTile(participant: participant)
+                                        .frame(width: halfWidth, height: halfHeight)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -37,46 +58,123 @@ struct AARVideoView: View {
         }
     }
 
-    private func videoRow(_ participants: [DemoParticipant]) -> some View {
-        HStack(spacing: 12) {
-            ForEach(participants) { participant in
-                videoPlaceholder(participant)
-            }
-        }
+    private var emptySelection: some View {
+        ContentUnavailableView(
+            "표시할 대원을 선택하세요",
+            systemImage: "video.slash",
+            description: Text("오른쪽 표시 대상 메뉴에서 대원을 선택할 수 있습니다.")
+        )
+        .foregroundStyle(InstructorColor.textSecondary)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(InstructorColor.surfaceBase)
+        .clipShape(.rect(cornerRadius: 4))
     }
 
-    private func videoPlaceholder(_ participant: DemoParticipant) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("CAM \(participant.number) · \(participant.displayName)").font(.headline)
-            Spacer(minLength: 0)
-            VStack(spacing: 8) {
-                Image(systemName: "video.slash").font(.largeTitle)
-                Text("영상 표시 영역").font(.headline)
-                Text("샘플 화면 · 영상 재생 미구현")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+}
+
+private struct CameraPlaceholderTile: View {
+    let participant: DemoParticipant
+
+    private let cameraAspectRatio: CGFloat = 1_672 / 941
+
+    var body: some View {
+        GeometryReader { geometry in
+            let videoSize = fittedVideoSize(in: geometry.size)
+
+            ZStack {
+                InstructorColor.canvas
+
+                Image("InstructorCameraPlaceholder")
+                    .resizable()
+                    // AAR에서는 화면 가장자리의 정보도 필요하므로 원본 프레임 전체를 보존한다.
+                    .scaledToFit()
+                    .frame(width: videoSize.width, height: videoSize.height)
+                    .overlay(alignment: .topLeading) {
+                        cameraLabel
+                            .padding(12)
+                    }
             }
-            .frame(maxWidth: .infinity)
-            Spacer(minLength: 0)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
+        .clipShape(.rect(cornerRadius: 4))
         .accessibilityElement(children: .combine)
+        .accessibilityLabel("CAM \(participant.number), 샘플 영상 자리표시자")
         .accessibilityIdentifier("aar.video.\(participant.id)")
+    }
+
+    private var cameraLabel: some View {
+        HStack(spacing: 4) {
+            Text("CAM \(participant.number)")
+                .font(DSTypography.label)
+                .foregroundStyle(InstructorColor.textPrimary)
+
+            Circle()
+                .fill(InstructorColor.teamOne)
+                .frame(width: 8, height: 8)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 28)
+        .background(InstructorColor.surfaceBase.opacity(0.94))
+        .clipShape(.rect(cornerRadius: 4))
+    }
+
+    private func fittedVideoSize(in container: CGSize) -> CGSize {
+        guard container.width > 0, container.height > 0 else { return .zero }
+
+        if container.width / container.height > cameraAspectRatio {
+            return CGSize(
+                width: container.height * cameraAspectRatio,
+                height: container.height
+            )
+        }
+
+        return CGSize(
+            width: container.width,
+            height: container.width / cameraAspectRatio
+        )
     }
 }
 
-#Preview("3명 영상 배치") {
-    let store = InstructorStore()
+#if DEBUG
+@MainActor
+private func aarVideoPreview(selectedCount: Int) -> some View {
+    let store = InstructorStore(floorPlans: [
+        DemoFloorPlan(
+            id: "preview-plan",
+            name: "훈련장 A 도면",
+            fileName: "훈련장 A 도면.png",
+            referenceDistance: 15
+        )
+    ])
     store.openSessionCreation()
     store.createSession()
     store.startTraining()
     store.finishTraining()
-    store.toggleParticipantSelection("member-5")
-    store.toggleParticipantSelection("member-6")
+    for participant in store.participants.dropFirst(selectedCount) {
+        store.toggleParticipantSelection(participant.id)
+    }
     store.changeAARMode(to: .video)
-    store.toggleParticipantSelection("member-4")
-    return AARVideoView().environment(store)
+
+    return AARVideoView()
+        .environment(store)
+        .frame(width: 1_008, height: 896)
+        .preferredColorScheme(.dark)
 }
+
+#Preview("AAR 영상 · 1명") {
+    aarVideoPreview(selectedCount: 1)
+}
+
+#Preview("AAR 영상 · 2명") {
+    aarVideoPreview(selectedCount: 2)
+}
+
+#Preview("AAR 영상 · 3명") {
+    aarVideoPreview(selectedCount: 3)
+}
+
+#Preview("AAR 영상 · 4명") {
+    aarVideoPreview(selectedCount: 4)
+}
+#endif
