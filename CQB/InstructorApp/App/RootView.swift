@@ -17,7 +17,7 @@ struct RootView: View {
                 }
                 .safeAreaInset(edge: .top, spacing: 0) {
                     if !usesHiFiChrome {
-                        Text("로컬 데모 · 등록 도면은 앱 종료 시 사라집니다 · 서버 저장 및 훈련 명령 전송 없음")
+                        Text("로컬 데모 · 등록 도면 파일만 Storage 저장 · 도면 목록과 훈련 진행은 앱 종료 시 사라집니다")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity)
