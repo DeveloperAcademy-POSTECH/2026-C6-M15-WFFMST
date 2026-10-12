@@ -65,7 +65,8 @@ struct FloorPlanCreateView: View {
             case .reviewing: reviewControls
             }
         }
-        .disabled(importer.isPreparing || importer.isPresented || store.isImporting)
+        .disabled(importer.isPreparing || importer.isPresented || store.isImporting
+            || app.isUploadingFloorPlan || app.floorPlanUploadError != nil)
     }
 
     private var editingControls: some View {
@@ -151,7 +152,8 @@ struct FloorPlanCreateView: View {
                 importPresentation: importer,
                 layers: layers,
                 onStroke: store.appendStroke, onPoint: store.placePoint, onEditingChanged: store.setDrawing)
-                .allowsHitTesting(!store.isProcessing).accessibilityIdentifier("floorPlan.canvas")
+                .allowsHitTesting(!store.isProcessing && !app.isUploadingFloorPlan && app.floorPlanUploadError == nil)
+                .accessibilityIdentifier("floorPlan.canvas")
         } else {
             ContentUnavailableView("도면 파일을 선택하세요", systemImage: "map",
                 description: Text("선택한 이미지와 장애물을 여기에서 확인합니다."))
@@ -160,8 +162,16 @@ struct FloorPlanCreateView: View {
 
     // An overlay never reduces canvas height or changes the image's fit zoom during replay.
     @ViewBuilder private var statusOverlay: some View {
-        if (store.isProcessing && !store.isReplayingEdits) || importer.isPreparing || store.errorMessage != nil || importer.message != nil {
+        if (store.isProcessing && !store.isReplayingEdits) || importer.isPreparing || store.errorMessage != nil
+            || importer.message != nil || app.isUploadingFloorPlan || app.floorPlanUploadError != nil {
             VStack(alignment: .leading, spacing: 8) {
+                if app.isUploadingFloorPlan {
+                    HStack {
+                        ProgressView()
+                        Text("도면 파일 3개를 Storage에 업로드하는 중")
+                    }
+                    .accessibilityIdentifier("floorPlan.uploading")
+                }
                 if store.isProcessing && !store.isReplayingEdits {
                     HStack {
                         ProgressView()
@@ -186,6 +196,13 @@ struct FloorPlanCreateView: View {
                 if let message = importer.message {
                     Text(message).foregroundStyle(InstructorColor.validationError)
                 }
+                if let error = app.floorPlanUploadError {
+                    Text(error)
+                        .foregroundStyle(InstructorColor.validationError)
+                        .accessibilityIdentifier("floorPlan.upload.error")
+                    ActionButton("업로드 다시 시도", action: app.retryFloorPlanUpload)
+                        .accessibilityIdentifier("floorPlan.upload.retry")
+                }
             }
             .font(.callout).padding(10)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
@@ -194,7 +211,9 @@ struct FloorPlanCreateView: View {
 
     private var footer: some View {
         HStack {
-            Text("임시 등록 · 앱 종료 시 사라집니다").font(.caption).foregroundStyle(.secondary)
+            Text("도면 파일은 Storage에 저장 · 등록 목록은 앱 종료 시 사라집니다")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             Spacer()
             switch store.step {
             case .information: EmptyView()
@@ -205,7 +224,8 @@ struct FloorPlanCreateView: View {
                 ActionButton("최종 확인", action: store.showReview).disabled(!store.canReview)
                     .accessibilityIdentifier("floorPlan.next.review")
             case .reviewing:
-                ActionButton("도면 등록", action: app.registerFloorPlan).disabled(!store.canRegister)
+                ActionButton(app.isUploadingFloorPlan ? "업로드 중" : "도면 등록", action: app.registerFloorPlan)
+                    .disabled(!store.canRegister || app.isUploadingFloorPlan || app.floorPlanUploadError != nil)
                     .accessibilityIdentifier("floorPlan.save")
             }
         }

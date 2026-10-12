@@ -1,3 +1,4 @@
+import CQBCore
 import Foundation
 import Observation
 #if canImport(UIKit)
@@ -8,6 +9,8 @@ import UIKit
 @Observable
 final class InstructorStore {
     let floorPlanDraft: FloorPlanDraftStore
+    @ObservationIgnored private let floorPlanFileRepository: any FloorPlanFileRepository
+    @ObservationIgnored private var floorPlanUploadTask: Task<Void, Never>?
 #if canImport(UIKit)
     private(set) var selectedPlanImage: UIImage?
 #endif
@@ -21,14 +24,23 @@ final class InstructorStore {
     private(set) var selectedParticipantIDs: Set<String> = []
     private(set) var playbackPosition = 331.0
     private(set) var aarNotice: String?
+    private(set) var isUploadingFloorPlan = false
+    private(set) var floorPlanUploadError: String?
+    private(set) var currentSession: Session?
+    private var failedFloorPlanRegistration: LocalRegisteredFloorPlan?
 
     let invitationCode = "123456"
     let sampleTrainingElapsed = "00:12:34"
     let playbackDuration = 2172.0
     let maximumVideoCount = 4
 
-    init(floorPlans: [DemoFloorPlan]? = nil, floorPlanDraft: FloorPlanDraftStore? = nil) {
+    init(
+        floorPlans: [DemoFloorPlan]? = nil,
+        floorPlanDraft: FloorPlanDraftStore? = nil,
+        floorPlanFileRepository: any FloorPlanFileRepository = DemoFloorPlanFileRepository()
+    ) {
         self.floorPlanDraft = floorPlanDraft ?? FloorPlanDraftStore()
+        self.floorPlanFileRepository = floorPlanFileRepository
         let plans = floorPlans ?? InstructorMockData.floorPlans
         self.floorPlans = plans
         selectedFloorPlanID = plans.first?.id
@@ -43,6 +55,7 @@ final class InstructorStore {
     var requiresUnreadyExclusionConfirmation: Bool { canRequestTrainingStart && unreadyCount > 0 }
     var canGoBack: Bool {
         [.floorPlanList, .floorPlanCreation, .sessionCreation, .teamReadiness].contains(phase)
+            && !isUploadingFloorPlan
     }
     var selectedParticipants: [DemoParticipant] { participants.filter { selectedParticipantIDs.contains($0.id) } }
     var selectionSummary: String {
@@ -58,14 +71,14 @@ final class InstructorStore {
     }
     func openSessionCreation() { phase = .sessionCreation }
     func registerFloorPlan() {
-        guard phase == .floorPlanCreation, let registered = floorPlanDraft.registration() else { return }
-        let plan = DemoFloorPlan(id: registered.id.uuidString, name: registered.name,
-            fileName: registered.image.fileName, referenceDistance: registered.scale.meters,
-            registeredPlan: registered)
-        floorPlans.append(plan)
-        selectFloorPlan(plan.id)
-        floorPlanDraft.reset()
-        phase = .floorPlanList
+        guard phase == .floorPlanCreation, !isUploadingFloorPlan,
+              let registration = floorPlanDraft.registration() else { return }
+        uploadFloorPlan(registration)
+    }
+    func retryFloorPlanUpload() {
+        guard phase == .floorPlanCreation, !isUploadingFloorPlan,
+              let registration = failedFloorPlanRegistration else { return }
+        uploadFloorPlan(registration)
     }
     func setTrainingName(_ value: String) { trainingName = value }
     func selectFloorPlan(_ id: String?) {
@@ -76,7 +89,14 @@ final class InstructorStore {
 #endif
     }
     func createSession() {
-        guard phase == .sessionCreation, canCreateSession else { return }
+        guard phase == .sessionCreation, canCreateSession, let floorPlan = selectedFloorPlan else { return }
+        currentSession = Session(
+            id: UUID(),
+            pin: invitationCode,
+            name: trainingName.trimmingCharacters(in: .whitespacesAndNewlines),
+            status: .preparing,
+            floorPlan: floorPlan.reference
+        )
         loadReadinessSample(.ready)
         phase = .teamReadiness
     }
@@ -150,6 +170,7 @@ final class InstructorStore {
         readinessSample = .ready
         aarMode = .movement
         aarNotice = nil
+        currentSession = nil
         playbackPosition = 331
         phase = .home
     }
@@ -157,12 +178,76 @@ final class InstructorStore {
         switch phase {
         case .floorPlanList, .sessionCreation: phase = .home
         case .floorPlanCreation:
+            clearFloorPlanUpload()
             floorPlanDraft.reset()
             phase = .floorPlanList
         case .teamReadiness:
             participants = []
+            currentSession = nil
             phase = .sessionCreation
         default: break
+        }
+    }
+
+    private func uploadFloorPlan(_ registration: LocalRegisteredFloorPlan) {
+        isUploadingFloorPlan = true
+        floorPlanUploadError = nil
+        failedFloorPlanRegistration = registration
+        let repository = floorPlanFileRepository
+        let preparation = Task.detached(priority: .userInitiated) {
+            try LocalFloorPlanFileBuilder.build(from: registration)
+        }
+        floorPlanUploadTask = Task { [weak self] in
+            do {
+                let upload = try await withTaskCancellationHandler {
+                    try await preparation.value
+                } onCancel: {
+                    preparation.cancel()
+                }
+                try Task.checkCancellation()
+                try await repository.upload(upload.files, for: upload.reference)
+                try Task.checkCancellation()
+                guard let self, self.phase == .floorPlanCreation else { return }
+                let plan = DemoFloorPlan(
+                    id: upload.registration.id.uuidString,
+                    name: upload.registration.name,
+                    fileName: upload.registration.image.fileName,
+                    referenceDistance: upload.registration.scale.meters,
+                    reference: upload.reference,
+                    registeredPlan: upload.registration
+                )
+                self.floorPlans.append(plan)
+                self.selectFloorPlan(plan.id)
+                self.clearFloorPlanUpload()
+                self.floorPlanDraft.reset()
+                self.phase = .floorPlanList
+            } catch {
+                guard let self, !(error is CancellationError) else { return }
+                self.isUploadingFloorPlan = false
+                self.floorPlanUploadTask = nil
+                self.floorPlanUploadError = Self.floorPlanUploadMessage(for: error)
+            }
+        }
+    }
+
+    private func clearFloorPlanUpload() {
+        floorPlanUploadTask?.cancel()
+        floorPlanUploadTask = nil
+        isUploadingFloorPlan = false
+        floorPlanUploadError = nil
+        failedFloorPlanRegistration = nil
+    }
+
+    private static func floorPlanUploadMessage(for error: Error) -> String {
+        switch error as? RepositoryError {
+        case .fileTooLarge:
+            "도면 파일이 업로드 제한인 20MB를 초과했습니다."
+        case .integrityMismatch:
+            "도면 파일의 무결성을 확인하지 못했습니다. 다시 시도해주세요."
+        case .none:
+            "도면을 업로드하지 못했습니다. 네트워크 연결을 확인한 뒤 다시 시도해주세요."
+        default:
+            "도면을 업로드하지 못했습니다. 잠시 후 다시 시도해주세요."
         }
     }
 }

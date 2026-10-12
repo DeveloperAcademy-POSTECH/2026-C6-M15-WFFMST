@@ -42,7 +42,7 @@ struct FloorPlanListView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(floorPlan.name)
                         .font(.title3.bold())
-                    Text(floorPlan.registeredPlan == nil ? "샘플 도면" : "로컬 등록 · 앱 실행 중 유지")
+                    Text(floorPlan.registeredPlan == nil ? "샘플 도면" : "Storage 업로드 완료 · 목록은 앱 실행 중 유지")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

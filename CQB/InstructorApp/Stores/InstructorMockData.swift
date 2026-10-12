@@ -1,3 +1,4 @@
+import CQBCore
 import Foundation
 
 // InstructorApp 화면 연결 전용 데이터. 공통 모델·서버 계약이 아니다.
@@ -6,6 +7,7 @@ struct DemoFloorPlan: Identifiable, Equatable {
     let name: String
     let fileName: String
     let referenceDistance: Double
+    let reference: FloorPlanReference
     var registeredPlan: LocalRegisteredFloorPlan? = nil
 }
 
@@ -33,8 +35,20 @@ enum ReadinessSample: String, CaseIterable, Identifiable {
 
 enum InstructorMockData {
     static let floorPlans = [
-        DemoFloorPlan(id: "plan-a", name: "훈련장 A", fileName: "훈련장 A 도면.png", referenceDistance: 15),
-        DemoFloorPlan(id: "plan-b", name: "훈련장 B", fileName: "B동 1층.png", referenceDistance: 12)
+        DemoFloorPlan(
+            id: "plan-a", name: "훈련장 A", fileName: "훈련장 A 도면.png", referenceDistance: 15,
+            reference: FloorPlanReference(
+                floorPlanID: UUID(uuidString: "00000000-0000-0000-0000-00000000000A")!,
+                navigationSHA256: "sample-plan-a"
+            )
+        ),
+        DemoFloorPlan(
+            id: "plan-b", name: "훈련장 B", fileName: "B동 1층.png", referenceDistance: 12,
+            reference: FloorPlanReference(
+                floorPlanID: UUID(uuidString: "00000000-0000-0000-0000-00000000000B")!,
+                navigationSHA256: "sample-plan-b"
+            )
+        )
     ]
     static let participants = ["유키", "매버릭", "도넛", "새미", "엘리", "노을"]
         .enumerated().map { index, name in
@@ -42,4 +56,13 @@ enum InstructorMockData {
                             isReady: true, x: 0.22 + Double(index % 4) * 0.17,
                             y: index < 4 ? 0.5 : 0.68)
         }
+}
+
+/// Preview와 로컬 Store 검사에서 서버 없이 등록 완료 흐름을 실행한다.
+struct DemoFloorPlanFileRepository: FloorPlanFileRepository {
+    func upload(_ files: FloorPlanFiles, for reference: FloorPlanReference) async throws {}
+
+    func download(_ reference: FloorPlanReference) async throws -> FloorPlanFiles {
+        throw RepositoryError.notFound
+    }
 }
