@@ -26,7 +26,6 @@ nonisolated struct RawTrackSample: Codable, Sendable {
 
 nonisolated struct LocalRecordingFiles: Sendable {
     let directory: URL
-    var video: URL { directory.appendingPathComponent("video.mov") }
     var videoChunksDirectory: URL { directory.appendingPathComponent("video-chunks", isDirectory: true) }
     var uploadManifest: URL { directory.appendingPathComponent("upload-manifest.json") }
     var raw: URL { directory.appendingPathComponent("raw-track.json") }

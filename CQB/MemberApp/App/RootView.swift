@@ -36,13 +36,14 @@ struct RootView: View {
                     allowsManualStop: true,
                     canRetryRecordingStart: store.canRetryRecordingStart,
                     isStartingRecording: store.isStarting,
+                    uploadStatusMessage: store.uploadStatusMessage,
                     onRetryRecordingStart: { Task { await store.retryStartingRecording() } },
                     onCameraReadinessChange: { store.updateTrackingReadiness($0) },
                     cameraService: store.cameraService,
                     onStopRecording: { await store.finishRecording() }
                 )
             case .saved:
-                RecordingSaveTestView(recordingURL: store.savedRecordingURL,
+                RecordingSaveTestView(recordingURLs: store.savedRecordingURLs,
                     raw: store.rawTrack, correction: store.correction, mapImage: floorPlan,
                     files: store.recordingFiles, filesSaved: store.filesSaved,
                     onHome: { store.returnToJoin() },

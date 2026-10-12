@@ -3,9 +3,9 @@ import SwiftUI
 import CQBCore
 import CQBDesignSystem
 
-/// 로컬 기록 확인 화면. 사용자가 버튼을 누르면 영상과 보정 결과 업로드를 시작한다.
+/// 로컬 기록과 보정 결과 확인 화면. 영상은 녹화 중 조각 단위로 전송한다.
 struct RecordingSaveTestView: View {
-    let recordingURL: URL?
+    let recordingURLs: [URL]
     var raw: RawTrackDocument? = nil
     var correction: RouteCorrectionOutput? = nil
     var mapImage: UIImage? = nil
@@ -14,18 +14,22 @@ struct RecordingSaveTestView: View {
     var onHome: () -> Void = {}
     var onRetry: () -> Void = {}
     var switchView: () -> Void
-    @State private var player: AVPlayer?
+    @State private var player: AVQueuePlayer?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 Text("훈련 종료").font(DSTypography.h2)
-                if let recordingURL {
+                if !recordingURLs.isEmpty {
                     VideoPlayer(player: player)
                         .aspectRatio(16.0 / 9.0, contentMode: .fit)
-                        .onAppear { player = AVPlayer(url: recordingURL) }
+                        .onAppear {
+                            player = AVQueuePlayer(items: recordingURLs.map { AVPlayerItem(url: $0) })
+                        }
                         .onDisappear { player?.pause() }
-                    ShareLink("영상 내보내기", item: recordingURL)
+                    ForEach(Array(recordingURLs.enumerated()), id: \.offset) { index, url in
+                        ShareLink("영상 조각 \(index + 1) 내보내기", item: url)
+                    }
                 } else {
                     Text("영상 저장에 실패했습니다. 남아 있는 동선은 별도로 보존합니다.")
                 }
@@ -69,10 +73,10 @@ struct RecordingSaveTestView: View {
                         ActionButton("동선 파일 저장 재시도", action: onRetry)
                     }
                 }
-                Text("업로드 버튼을 누르면 영상과 보정 동선을 서버로 보냅니다.")
+                Text("영상 조각은 녹화 중 전송하고, 종료 후 보정 동선을 전송합니다.")
                     .font(.caption)
-                ActionButton("업로드", action: switchView)
-                    .disabled(!filesSaved || recordingURL == nil)
+                ActionButton("업로드 상태 확인", action: switchView)
+                    .disabled(!filesSaved || recordingURLs.isEmpty)
                 if filesSaved { Button("처음으로", action: onHome) }
             }
             .padding(24)
