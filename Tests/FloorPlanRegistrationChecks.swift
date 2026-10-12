@@ -1,5 +1,8 @@
 import CQBCore
+import CoreGraphics
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 
 private actor ControlledImporter: FloorPlanImporting {
     private var pending: [String: CheckedContinuation<LocalExtractionResult, Error>] = [:]
@@ -53,6 +56,8 @@ private actor ControlledFloorPlanFileRepository: FloorPlanFileRepository {
     func uploads() -> [(FloorPlanReference, FloorPlanFiles)] {
         Array(zip(references, uploadedFiles))
     }
+
+    func failNextUpload() { failuresRemaining = 1 }
 }
 
 @main
@@ -69,38 +74,7 @@ enum FloorPlanRegistrationChecks {
         )
 
         store.openFloorPlanCreation()
-        draft.setName("  새 도면  ")
-        draft.importImage(from: URL(fileURLWithPath: "/virtual/original.png"))
-        try await wait { await importer.has("original.png") }
-        await importer.succeed("original.png")
-        try await wait { !draft.isProcessing }
-
-        for point in [
-            LocalPlanPoint(x: 0.1, y: 0.1),
-            LocalPlanPoint(x: 0.9, y: 0.1),
-            LocalPlanPoint(x: 0.9, y: 0.9),
-            LocalPlanPoint(x: 0.1, y: 0.9)
-        ] {
-            draft.placePoint(point)
-        }
-        draft.confirmOutline()
-        try await wait { !draft.isProcessing }
-
-        let stroke = LocalEditStroke(
-            mode: .block,
-            points: [LocalPlanPoint(x: 0.3, y: 0.3), LocalPlanPoint(x: 0.6, y: 0.3)],
-            normalizedDiameter: 0.03
-        )
-        draft.setEditorMode(.brush)
-        draft.stageBrushStroke(stroke)
-        draft.applyPendingBrush(.block)
-        try await wait { !draft.isProcessing }
-
-        draft.continueToScale()
-        draft.placePoint(LocalPlanPoint(x: 0.2, y: 0.2))
-        draft.placePoint(LocalPlanPoint(x: 0.8, y: 0.2))
-        draft.setDistance("10")
-        precondition(draft.canRegister)
+        let stroke = try await prepareDraft(draft, importer: importer)
 
         let snapshot = try require(draft.registration(), "등록 가능한 도면 스냅샷 필요")
         precondition(snapshot.name == "새 도면")
@@ -122,6 +96,9 @@ enum FloorPlanRegistrationChecks {
 
         store.registerFloorPlan()
         precondition(store.isUploadingFloorPlan && !store.canGoBack)
+        store.goBack()
+        precondition(store.phase == .floorPlanCreation && draft.step == .scaling,
+                     "back must not discard a running upload")
         try await wait { !store.isUploadingFloorPlan }
         precondition(store.phase == .floorPlanCreation && store.floorPlans.isEmpty)
         precondition(store.floorPlanUploadError != nil && draft.canRegister)
@@ -151,7 +128,110 @@ enum FloorPlanRegistrationChecks {
         store.createSession()
         precondition(store.currentSession?.floorPlan == uploadedReference)
 
-        print("PASS: FloorPlanFiles 생성, SHA-256 참조, 업로드 실패 재시도, 세션 참조")
+        await repository.failNextUpload()
+        store.openFloorPlanCreation()
+        _ = try await prepareDraft(draft, importer: importer)
+        store.registerFloorPlan()
+        try await wait { !store.isUploadingFloorPlan }
+        precondition(store.floorPlanUploadError != nil && store.canGoBack)
+        store.goBack()
+        precondition(store.phase == .floorPlanCreation && draft.step == .editing && draft.image != nil,
+                     "first back preserves the draft for editing")
+        precondition(store.floorPlanUploadError == nil && !store.isUploadingFloorPlan)
+        store.retryFloorPlanUpload()
+        precondition(!store.isUploadingFloorPlan, "back must discard the failed upload snapshot")
+        store.goBack()
+        precondition(store.phase == .floorPlanList && draft.image == nil && draft.name.isEmpty)
+        precondition(store.floorPlans.count == 1, "a failed upload must not add a plan")
+        store.openFloorPlanCreation()
+        precondition(store.floorPlanUploadError == nil && draft.step == .information)
+        store.retryFloorPlanUpload()
+        precondition(!store.isUploadingFloorPlan, "reopening must not retry the previous registration")
+        let finalUploads = await repository.uploads()
+        precondition(finalUploads.count == 3)
+
+        try await checkOddImageUpload()
+        print("PASS: FloorPlanFiles 생성, 홀수 이미지 계약, SHA-256 참조, 업로드 실패 재시도·이탈, 세션 참조")
+    }
+
+    private static func prepareDraft(_ draft: FloorPlanDraftStore, importer: ControlledImporter) async throws -> LocalEditStroke {
+        draft.setName("  새 도면  ")
+        draft.importImage(from: URL(fileURLWithPath: "/virtual/original.png"))
+        try await wait { await importer.has("original.png") }
+        await importer.succeed("original.png")
+        try await wait { !draft.isProcessing }
+        for point in outline { draft.placePoint(point) }
+        draft.confirmOutline()
+        try await wait { !draft.isProcessing }
+        let stroke = LocalEditStroke(
+            mode: .block,
+            points: [LocalPlanPoint(x: 0.3, y: 0.3), LocalPlanPoint(x: 0.6, y: 0.3)],
+            normalizedDiameter: 0.03
+        )
+        draft.setEditorMode(.brush)
+        draft.stageBrushStroke(stroke)
+        draft.applyPendingBrush(.block)
+        try await wait { !draft.isProcessing }
+        draft.continueToScale()
+        draft.placePoint(LocalPlanPoint(x: 0.2, y: 0.2))
+        draft.placePoint(LocalPlanPoint(x: 0.8, y: 0.2))
+        draft.setDistance("10")
+        precondition(draft.canRegister)
+        return stroke
+    }
+
+    private static let outline = [
+        LocalPlanPoint(x: 0.1, y: 0.1),
+        LocalPlanPoint(x: 0.9, y: 0.1),
+        LocalPlanPoint(x: 0.9, y: 0.9),
+        LocalPlanPoint(x: 0.1, y: 0.9)
+    ]
+
+    private static func checkOddImageUpload() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("odd-floorplan-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let context = CGContext(data: nil, width: 101, height: 81, bitsPerComponent: 8,
+            bytesPerRow: 101 * 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 101, height: 81))
+        let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, context.makeImage()!, nil)
+        precondition(CGImageDestinationFinalize(destination))
+
+        let imported = try await LocalFloorPlanImportService().process(url: url)
+        let image = imported.image
+        let resolved = try LocalFloorPlanGeometry.resolve(base: imported.baseGrid,
+            width: image.width, height: image.height, edits: [], outline: outline)
+        let scale = LocalPlanScale(a: .init(x: 0.2, y: 0.2), b: .init(x: 0.8, y: 0.2), meters: 10)
+        let registration = LocalRegisteredFloorPlan(id: UUID(), name: "홀수 도면", image: image,
+            baseGrid: imported.baseGrid, edits: [], outline: outline, scale: scale, resolvedGrid: resolved)
+        let upload = try LocalFloorPlanFileBuilder.build(from: registration)
+        let manifest = try JSONDecoder().decode(FloorPlanManifest.self, from: upload.files.navigationMapJSON)
+        let grid = manifest.navigationGrid
+        let png = CGImageSourceCreateWithData(upload.files.imagePNG as CFData, nil)!
+        let output = CGImageSourceCreateImageAtIndex(png, 0, nil)!
+        precondition(output.width == 102 && output.height == 82)
+        precondition(manifest.imageWidth == output.width && manifest.imageHeight == output.height)
+        precondition(manifest.imageWidth == grid.columns * grid.cellSizePixels)
+        precondition(manifest.imageHeight == grid.rows * grid.cellSizePixels)
+        precondition(upload.files.resolvedMask.count == grid.columns * grid.rows)
+        precondition(manifest.scale.a.x == scale.a.x * Double(output.width))
+        precondition(manifest.scale.b.y == scale.b.y * Double(output.height))
+        precondition(manifest.imageSHA256 == LocalFloorPlanFileBuilder.sha256(upload.files.imagePNG))
+        precondition(grid.maskSHA256 == LocalFloorPlanFileBuilder.sha256(upload.files.resolvedMask))
+        precondition(upload.reference.navigationSHA256 == LocalFloorPlanFileBuilder.sha256(upload.files.navigationMapJSON))
+
+        var unalignedImage = image
+        unalignedImage.width = 101
+        unalignedImage.height = 81
+        let unaligned = LocalRegisteredFloorPlan(id: registration.id, name: registration.name,
+            image: unalignedImage, baseGrid: imported.baseGrid, edits: [], outline: outline,
+            scale: scale, resolvedGrid: resolved)
+        do {
+            _ = try LocalFloorPlanFileBuilder.build(from: unaligned)
+            fatalError("an unaligned image must be rejected before upload")
+        } catch is LocalFloorPlanError {}
     }
 
     private static func wait(_ condition: () async -> Bool) async throws {

@@ -50,6 +50,8 @@ struct FloorPlanCreateView: View {
     private var header: some View {
         HStack(spacing: 16) {
             InstructorBackButton(action: app.goBack)
+                .disabled(importer.isPreparing || importer.isPresented || store.isImporting
+                    || !app.canGoBack)
 
             Text(store.image?.fileName ?? "도면 설정")
                 .font(DSTypography.h2)
@@ -64,11 +66,10 @@ struct FloorPlanCreateView: View {
             ) {
                 importer.request { focusedField = nil }
             }
-            .disabled(store.isProcessing || store.isDrawing)
+            .disabled(importer.isPreparing || importer.isPresented || store.isProcessing || store.isDrawing
+                || app.isUploadingFloorPlan || app.floorPlanUploadError != nil)
             .accessibilityIdentifier("floorPlan.import")
         }
-        .disabled(importer.isPreparing || importer.isPresented || store.isImporting
-            || app.isUploadingFloorPlan || app.floorPlanUploadError != nil)
         .padding(.horizontal, 24)
         .padding(.vertical, 22)
     }

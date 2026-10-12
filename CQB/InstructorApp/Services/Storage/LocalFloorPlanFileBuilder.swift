@@ -22,8 +22,8 @@ nonisolated enum LocalFloorPlanFileBuilder {
         try LocalFloorPlanGeometry.validateOutline(registration.outline)
 
         guard !image.pngData.isEmpty,
-              grid.columns == (image.width + grid.cellSizePixels - 1) / grid.cellSizePixels,
-              grid.rows == (image.height + grid.cellSizePixels - 1) / grid.cellSizePixels else {
+              image.width == grid.columns * grid.cellSizePixels,
+              image.height == grid.rows * grid.cellSizePixels else {
             throw LocalFloorPlanError.invalid("도면 이미지와 최종 장애물 격자의 크기가 맞지 않습니다.")
         }
 
