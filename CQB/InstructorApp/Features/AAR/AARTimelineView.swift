@@ -2,33 +2,32 @@ import CQBDesignSystem
 import SwiftUI
 
 struct AARTimelineView: View {
-    @Environment(InstructorStore.self) private var store
+    @Environment(AARStore.self) private var aarStore
 
     var body: some View {
         HStack(spacing: 12) {
-            Button(action: {}) {
-                Text("▶")
+            Button(action: aarStore.togglePlayback) {
+                Text(aarStore.isPlaying ? "❚❚" : "▶")
                     .font(playbackFont)
                     .foregroundStyle(InstructorColor.playerPlay)
                     .frame(width: 44, height: 44)
                     .contentShape(.rect)
             }
             .buttonStyle(.plain)
-            .disabled(true)
-            .accessibilityLabel("재생")
-            .accessibilityHint("영상 재생은 아직 구현되지 않았습니다")
+            .disabled(!aarStore.canPlay)
+            .accessibilityLabel(aarStore.isPlaying ? "일시정지" : "재생")
 
-            Text(timeLabel(store.playbackPosition))
+            Text(timeLabel(aarStore.playbackPosition))
                 .frame(minWidth: 53)
 
             AARPlaybackTrack(
-                value: store.playbackPosition,
-                range: 0...store.playbackDuration,
-                onChange: store.setPlaybackPosition
+                value: aarStore.playbackPosition,
+                range: 0...aarStore.playbackDuration,
+                onChange: aarStore.setPlaybackPosition
             )
             .accessibilityIdentifier("aar.timeline")
 
-            Text(timeLabel(store.playbackDuration))
+            Text(timeLabel(aarStore.playbackDuration))
                 .frame(width: 54)
         }
         .font(playbackFont)
@@ -108,7 +107,7 @@ private struct AARPlaybackTrack: View {
 
 #Preview("AAR 재생바") {
     AARTimelineView()
-        .environment(InstructorStore())
+        .environment(AARStore())
         .frame(width: 1_318, height: 48)
         .preferredColorScheme(.dark)
 }

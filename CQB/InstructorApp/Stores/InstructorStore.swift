@@ -430,6 +430,23 @@ final class InstructorStore {
             }
     }
 
+#if DEBUG
+    /// 에뮬레이터 시험 데이터(`scripts/seed-aar-emulator.py`)의 세션으로 AAR을 바로 연다.
+    /// 훈련 시작·종료 흐름 없이 AAR 화면을 확인하기 위한 디버그 전용 진입점이다.
+    func openAARForDebug(session: Session, members: [Member]) {
+        cancelSessionWork()
+        currentSession = session
+        participants = Self.displayParticipants(from: members)
+        if let plan = floorPlans.first(where: { $0.reference == session.floorPlan }) {
+            selectFloorPlan(plan.id)
+        }
+        aarMode = .movement
+        selectedParticipantIDs = Set(participants.map(\.id))
+        aarNotice = nil
+        phase = .aar
+    }
+#endif
+
     private static func sessionCreationMessage(for error: Error) -> String {
         if error as? RepositoryError == .pinTaken {
             return "사용 가능한 PIN을 만들지 못했습니다. 다시 시도해주세요."

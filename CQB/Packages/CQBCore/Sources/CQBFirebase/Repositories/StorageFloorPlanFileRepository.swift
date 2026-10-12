@@ -30,12 +30,16 @@ public struct StorageFloorPlanFileRepository: FloorPlanFileRepository {
     }
 
     public func download(_ reference: FloorPlanReference) async throws -> FloorPlanFiles {
-        let navigationMap = try await StorageTransfer.download(StoragePaths.floorPlanNavigationMap(reference))
-        try verify(navigationMap, against: reference)
+        // 세 파일을 함께 받는다. 지도 정보의 지문이 맞지 않으면 나머지 다운로드는 취소된다.
+        async let navigationMap = StorageTransfer.download(StoragePaths.floorPlanNavigationMap(reference))
+        async let image = StorageTransfer.download(StoragePaths.floorPlanImage(reference))
+        async let mask = StorageTransfer.download(StoragePaths.floorPlanMask(reference))
+        let navigationMapData = try await navigationMap
+        try verify(navigationMapData, against: reference)
         return FloorPlanFiles(
-            imagePNG: try await StorageTransfer.download(StoragePaths.floorPlanImage(reference)),
-            navigationMapJSON: navigationMap,
-            resolvedMask: try await StorageTransfer.download(StoragePaths.floorPlanMask(reference))
+            imagePNG: try await image,
+            navigationMapJSON: navigationMapData,
+            resolvedMask: try await mask
         )
     }
 
