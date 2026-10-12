@@ -13,16 +13,24 @@ uid는 교관 앱을 (Emulator) 스킴으로 실행한 뒤 http://localhost:4000
 `--floor-plan-id`를 주지 않으면 시험용 도면(격자 그림, 장애물 격자, navigation-map.json)도 만들어 올린다.
 
 만드는 대원
-- 대원 1: 정상 보정(done). 사각형을 한 바퀴 돈다
-- 대원 2: 일부 보정(partial). 중간에 구간이 끊기고 추적이 끊긴 구간이 있다
-- 대원 3: 보정 실패(failed)
-- 대원 4: 기록은 끝났지만 result.json이 없다
+- 대원 1: 정상 보정(done). 사각형을 한 바퀴 돈다. 영상 조각 2개
+- 대원 2: 일부 보정(partial). 중간에 구간이 끊기고 추적이 끊긴 구간이 있다. 영상 조각 2개
+- 대원 3: 보정 실패(failed). 영상 조각 1개
+- 대원 4: 기록은 끝났지만 result.json과 영상이 없다
+
+영상 조각은 ffmpeg로 만든다. 화면에 대원 이름과 영상 시각이 보여 타임라인과 맞는지 눈으로 확인할 수 있다.
+글자를 그릴 수 없는 ffmpeg(drawtext 없음)면 조각마다 0초부터 세는 시계만 보인다.
+ffmpeg가 없거나 `--no-video`를 주면 영상 없이 넣는다.
 """
 
 import argparse
 import hashlib
 import json
+import shutil
 import struct
+import subprocess
+import sys
+import tempfile
 import zlib
 import urllib.error
 import urllib.parse
@@ -73,6 +81,24 @@ def write_document(host, path, fields):
 def upload_file(host, path, data, content_type="application/json"):
     name = urllib.parse.quote(path, safe="")
     request("POST", f"http://{host}:9199/v0/b/{BUCKET}/o?uploadType=media&name={name}", data, content_type)
+
+
+def make_chunks(ffmpeg, directory, name, durations):
+    """대원 이름과 영상 시각(초)이 보이는 mp4 조각을 만든다."""
+    files, elapsed = [], 0.0
+    for index, seconds in enumerate(durations):
+        path = f"{directory}/{name.replace(' ', '')}_{index}.mp4"
+        label = f"drawtext=text='{name.replace(' ', '')}  %{{eif\\:t+{elapsed}\\:d}}s':fontsize=48:fontcolor=white:x=40:y=40"
+        command = [ffmpeg, "-loglevel", "error", "-y", "-f", "lavfi", "-i", f"testsrc2=s=640x360:r=15:d={seconds}",
+                   "-vf", label, "-c:v", "libx264", "-pix_fmt", "yuv420p", path]
+        if subprocess.run(command, stderr=subprocess.DEVNULL).returncode != 0:
+            # 글자를 그릴 수 없는 ffmpeg(drawtext 없음)면 조각마다 0초부터 세는 시계가 있는 기본 화면으로 만든다.
+            command[command.index("-vf"):command.index("-vf") + 2] = []
+            command[command.index("-i") + 1] = f"testsrc=s=640x360:r=15:d={seconds}"
+            subprocess.run(command, check=True)
+        files.append(path)
+        elapsed += seconds
+    return files
 
 
 def png(width, height, pixel):
@@ -168,7 +194,12 @@ def main():
     parser.add_argument("--navigation-sha256", help="--floor-plan-id 도면의 navigationSHA256")
     parser.add_argument("--width", type=int, default=1000, help="도면 이미지 가로 픽셀")
     parser.add_argument("--height", type=int, default=800, help="도면 이미지 세로 픽셀")
+    parser.add_argument("--no-video", action="store_true", help="영상 조각을 넣지 않는다")
     args = parser.parse_args()
+
+    ffmpeg = None if args.no_video else shutil.which("ffmpeg")
+    if not args.no_video and ffmpeg is None:
+        print("ffmpeg가 없어 영상 없이 넣습니다. (brew install ffmpeg)", file=sys.stderr)
 
     session_id = str(uuid.uuid4()).upper()
     pin = f"{uuid.uuid4().int % 900000 + 100000}"
@@ -186,31 +217,42 @@ def main():
     })
 
     broken, unresolved = broken_path(args.width, args.height)
+    # (이름, 기록 시작 오프셋, 보정 결과, 꼭짓점, 끊긴 구간, 영상 조각 길이)
     members = [
-        ("대원 1", 2.0, "done", square_path(args.width, args.height, 40), []),
-        ("대원 2", 3.5, "partial", broken, unresolved),
-        ("대원 3", 5.0, "failed", [], []),
-        ("대원 4", 1.0, None, None, []),
+        ("대원 1", 2.0, "done", square_path(args.width, args.height, 40), [], [20, 20]),
+        ("대원 2", 3.5, "partial", broken, unresolved, [15, 15]),
+        ("대원 3", 5.0, "failed", [], [], [10]),
+        ("대원 4", 1.0, None, None, [], []),
     ]
     summary = {"sessionID": session_id, "pin": pin, "floorPlan": floor_plan, "members": []}
 
-    for name, offset, status, vertices, gaps in members:
-        member_id, recording_id = str(uuid.uuid4()).upper(), str(uuid.uuid4()).upper()
-        identity = {"sessionID": session_id, "memberID": member_id, "recordingID": recording_id}
-        write_document(args.host, f"sessions/{session_id}/members/{member_id}", {
-            "id": member_id, "sessionID": session_id, "name": name, "isReady": True,
-            "lastActiveAt": started_at, "uid": f"seed-{member_id}", "pin": pin,
-        })
-        write_document(args.host, f"sessions/{session_id}/recordings/{recording_id}", {
-            "identity": identity, "state": "done", "startedAt": started_at + timedelta(seconds=offset),
-            "lastActiveAt": started_at + timedelta(seconds=60), "videoChunkCount": 0,
-        })
-        if status is not None:
-            document = track_result(identity, floor_plan, status, vertices, gaps)
-            upload_file(args.host, f"sessions/{session_id}/recordings/{recording_id}/result.json",
-                        json.dumps(document, ensure_ascii=False, sort_keys=True).encode())
-        summary["members"].append({"name": name, "result": status or "없음", "recordingOffset": offset, **identity})
-
+    # 중간에 실패해도 만든 영상 조각을 지운다.
+    video_dir = tempfile.mkdtemp(prefix="cqb-aar-seed-")
+    try:
+        for name, offset, status, vertices, gaps, chunk_seconds in members:
+            member_id, recording_id = str(uuid.uuid4()).upper(), str(uuid.uuid4()).upper()
+            identity = {"sessionID": session_id, "memberID": member_id, "recordingID": recording_id}
+            write_document(args.host, f"sessions/{session_id}/members/{member_id}", {
+                "id": member_id, "sessionID": session_id, "name": name, "isReady": True,
+                "lastActiveAt": started_at, "uid": f"seed-{member_id}", "pin": pin,
+            })
+            chunks = make_chunks(ffmpeg, video_dir, name, chunk_seconds) if ffmpeg and chunk_seconds else []
+            for index, chunk in enumerate(chunks):
+                with open(chunk, "rb") as file:
+                    upload_file(args.host, f"sessions/{session_id}/recordings/{recording_id}/video/chunk_{index:04d}.mp4",
+                                file.read(), "video/mp4")
+            write_document(args.host, f"sessions/{session_id}/recordings/{recording_id}", {
+                "identity": identity, "state": "done", "startedAt": started_at + timedelta(seconds=offset),
+                "lastActiveAt": started_at + timedelta(seconds=60), "videoChunkCount": len(chunks),
+            })
+            if status is not None:
+                document = track_result(identity, floor_plan, status, vertices, gaps)
+                upload_file(args.host, f"sessions/{session_id}/recordings/{recording_id}/result.json",
+                            json.dumps(document, ensure_ascii=False, sort_keys=True).encode(), "application/json")
+            summary["members"].append({"name": name, "result": status or "없음", "videoChunks": len(chunks),
+                                       "recordingOffset": offset, **identity})
+    finally:
+        shutil.rmtree(video_dir, ignore_errors=True)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
 
