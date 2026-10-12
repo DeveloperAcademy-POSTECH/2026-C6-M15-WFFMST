@@ -5,7 +5,13 @@ import Foundation
 struct InstructorStoreChecks {
     @MainActor
     static func main() {
-        let store = InstructorStore()
+        let seedPlan = DemoFloorPlan(
+            id: "seed-plan",
+            name: "테스트 도면",
+            fileName: "test-floor-plan.png",
+            referenceDistance: 15
+        )
+        let store = InstructorStore(floorPlans: [seedPlan])
         expect(store.phase == .home, "홈에서 시작")
         store.startTraining()
         expect(store.phase == .home, "준비 화면을 건너뛴 훈련 시작 차단")
@@ -98,8 +104,56 @@ struct InstructorStoreChecks {
         let emptyStore = InstructorStore(floorPlans: [])
         emptyStore.openSessionCreation()
         emptyStore.createSession()
-        expect(!emptyStore.canCreateSession && emptyStore.phase == .sessionCreation, "도면 없음 세션 생성 차단")
+        expect(!emptyStore.canCreateSession && emptyStore.phase == .home, "도면 없음 세션 생성 진입 차단")
+
+        checkFloorPlanGeometry()
         print("PASS: InstructorStore 화면 흐름, 입력 검증, 선택 제한, 초기화")
+    }
+
+    static func checkFloorPlanGeometry() {
+        let base = LocalObstacleGrid(
+            columns: 10,
+            rows: 10,
+            cellSizePixels: 10,
+            blocked: [UInt8](repeating: 0, count: 100)
+        )
+        let selection = [
+            LocalPlanPoint(x: 0.2, y: 0.2),
+            LocalPlanPoint(x: 0.8, y: 0.2),
+            LocalPlanPoint(x: 0.8, y: 0.8),
+            LocalPlanPoint(x: 0.2, y: 0.8)
+        ]
+        let innerOpen = [
+            LocalPlanPoint(x: 0.4, y: 0.4),
+            LocalPlanPoint(x: 0.6, y: 0.4),
+            LocalPlanPoint(x: 0.6, y: 0.6),
+            LocalPlanPoint(x: 0.4, y: 0.6)
+        ]
+        let outline = [
+            LocalPlanPoint(x: 0.1, y: 0.1),
+            LocalPlanPoint(x: 0.9, y: 0.1),
+            LocalPlanPoint(x: 0.9, y: 0.9),
+            LocalPlanPoint(x: 0.1, y: 0.9)
+        ]
+
+        do {
+            let resolved = try LocalFloorPlanGeometry.resolve(
+                base: base,
+                width: 100,
+                height: 100,
+                edits: [
+                    .region(LocalEditRegion(mode: .block, points: selection)),
+                    .region(LocalEditRegion(mode: .open, points: innerOpen))
+                ],
+                outline: outline
+            )
+            expect(resolved.blocked[3 * 10 + 3] == 1, "다각형 추가 영역은 장애물로 반영")
+            expect(resolved.blocked[5 * 10 + 5] == 0, "나중에 적용한 다각형 삭제 영역은 통과 가능")
+            expect(resolved.blocked[0] == 1, "외곽 밖은 편집 결과와 무관하게 장애물 처리")
+            expect(resolved.blocked[1 * 10 + 1] == 0, "외곽 안의 편집하지 않은 영역은 유지")
+        } catch {
+            preconditionFailure("도면 편집 격자 검증 실패: \(error)")
+        }
     }
 
     static func expect(_ condition: Bool, _ message: String) {

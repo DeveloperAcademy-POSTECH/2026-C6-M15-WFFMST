@@ -4,6 +4,11 @@ import Observation
 import UIKit
 #endif
 
+private enum LocalFloorPlanHistoryEntry: Sendable {
+    case edit(LocalEditAction)
+    case outline(previous: [LocalPlanPoint], next: [LocalPlanPoint])
+}
+
 @MainActor
 @Observable
 final class FloorPlanDraftStore {
@@ -12,20 +17,21 @@ final class FloorPlanDraftStore {
     private(set) var image: LocalImportedImage?
     private(set) var baseGrid: LocalObstacleGrid?
     private(set) var resolvedGrid: LocalObstacleGrid?
-    private(set) var strokes: [LocalEditStroke] = []
+    private(set) var edits: [LocalEditAction] = []
     private(set) var outline: [LocalPlanPoint] = []
-    private(set) var outlineConfirmed = false
+    private(set) var selection: [LocalPlanPoint] = []
+    private(set) var pendingBrushStrokes: [LocalEditStroke] = []
     private(set) var scaleA: LocalPlanPoint?
     private(set) var scaleB: LocalPlanPoint?
     private(set) var distanceText = ""
     private(set) var tool: LocalCanvasTool = .move
+    private(set) var editorMode: LocalFloorPlanEditorMode = .pen
     private(set) var normalizedDiameter = 0.006
     private(set) var isProcessing = false
     private(set) var isImporting = false
     private(set) var isDrawing = false
     private(set) var activity = ""
     private(set) var errorMessage: String?
-    private(set) var reviewed = false
     private(set) var maskPNGData: Data?
 #if canImport(UIKit)
     private(set) var previewImage: UIImage?
@@ -35,6 +41,8 @@ final class FloorPlanDraftStore {
     @ObservationIgnored private var work: Task<Void, Never>?
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var replayCache: LocalFloorPlanReplayCache?
+    private var history: [LocalFloorPlanHistoryEntry] = []
+    private var redoHistory: [LocalFloorPlanHistoryEntry] = []
 
     init(importer: any FloorPlanImporting = LocalFloorPlanImportService()) {
         self.importer = importer
@@ -43,9 +51,24 @@ final class FloorPlanDraftStore {
     deinit { work?.cancel() }
 
     var hasName: Bool { !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var editPointCount: Int {
+        edits.reduce(into: 0) { count, edit in
+            switch edit {
+            case .stroke(let stroke): count += stroke.points.count
+            case .region(let region): count += region.points.count
+            }
+        }
+    }
+    var canUndo: Bool { !selection.isEmpty || !pendingBrushStrokes.isEmpty || !history.isEmpty }
+    var canRedo: Bool { !redoHistory.isEmpty }
+    var canApplySelection: Bool { selection.count >= 3 && !isProcessing }
+    var canApplyBrush: Bool { !pendingBrushStrokes.isEmpty && !isProcessing && !isDrawing }
     // Only same-image edit replay retains a preview; import/outline/retry work stays visible.
     var isReplayingEdits: Bool { isProcessing && !isImporting && maskPNGData != nil }
-    var canContinueEditing: Bool { hasName && image != nil && resolvedGrid != nil && outlineConfirmed && !isProcessing && !isDrawing }
+    var canContinueEditing: Bool {
+        image != nil && resolvedGrid != nil && !outline.isEmpty && !isProcessing && !isDrawing
+            && selection.isEmpty && pendingBrushStrokes.isEmpty
+    }
     var scale: LocalPlanScale? {
         guard let scaleA, let scaleB,
               let meters = Double(distanceText.replacingOccurrences(of: ",", with: ".")) else { return nil }
@@ -55,8 +78,8 @@ final class FloorPlanDraftStore {
         guard let scale, let image else { return nil }
         return try? LocalFloorPlanGeometry.validateScale(scale, width: image.width, height: image.height)
     }
-    var canReview: Bool { canContinueEditing && pixelsPerMeter != nil }
-    var canRegister: Bool { step == .reviewing && canReview && reviewed }
+    var hasValidScale: Bool { canContinueEditing && pixelsPerMeter != nil }
+    var canRegister: Bool { step == .scaling && hasValidScale && hasName }
 
     func begin() { reset() }
     func reset() {
@@ -65,13 +88,18 @@ final class FloorPlanDraftStore {
         clearImageState()
         errorMessage = nil
     }
-    func setName(_ value: String) { name = value; reviewed = false }
-    func setDistance(_ value: String) { distanceText = value; reviewed = false }
-    func setReviewed(_ value: Bool) { reviewed = value }
+    func setName(_ value: String) { name = value }
+    func setDistance(_ value: String) { distanceText = value }
     func setDrawing(_ value: Bool) { isDrawing = value }
     func setTool(_ value: LocalCanvasTool) {
         guard !isDrawing, !isProcessing else { return }
         tool = value
+    }
+    func setEditorMode(_ value: LocalFloorPlanEditorMode) {
+        guard !isDrawing, !isProcessing else { return }
+        editorMode = value
+        tool = value == .pen ? .pen : .brush
+        errorMessage = nil
     }
     func setBrushDiameter(_ value: Double) {
         guard !isDrawing, value.isFinite else { return }
@@ -99,7 +127,7 @@ final class FloorPlanDraftStore {
             try Task.checkCancellation()
             var cache = try LocalFloorPlanReplayCache(base: result.baseGrid,
                 width: result.image.width, height: result.image.height)
-            let grid = try cache.resolve(strokes: [], outline: [])
+            let grid = try cache.resolve(edits: [], outline: [])
             let png = try LocalFloorPlanMaskRenderer.pngData(grid: grid)
             return (result, cache, grid, png)
         }
@@ -121,7 +149,8 @@ final class FloorPlanDraftStore {
                 self.maskImage = UIImage(data: png, scale: 1 / CGFloat(grid.cellSizePixels))
 #endif
                 self.step = .editing
-                self.tool = .move
+                self.editorMode = .pen
+                self.tool = .pen
                 self.isProcessing = false
                 self.isImporting = false
                 self.work = nil
@@ -141,88 +170,163 @@ final class FloorPlanDraftStore {
         errorMessage = "처리를 취소했습니다. 파일을 다시 선택하거나 미리보기를 다시 계산할 수 있습니다."
     }
 
-    func appendStroke(_ stroke: LocalEditStroke) {
+    func stageBrushStroke(_ stroke: LocalEditStroke) {
         guard !isImporting else { return }
         guard step == .editing, image != nil, stroke.normalizedDiameter.isFinite,
               stroke.normalizedDiameter > 0, stroke.normalizedDiameter <= 0.1,
               !stroke.points.isEmpty, stroke.points.allSatisfy(\.isValid),
-              strokes.count < 20_000,
-              strokes.reduce(stroke.points.count, { $0 + $1.points.count }) <= 250_000 else {
+              edits.count + pendingBrushStrokes.count < 20_000,
+              editPointCount + pendingBrushStrokes.reduce(stroke.points.count, { $0 + $1.points.count }) <= 250_000 else {
             errorMessage = "편집 입력이 유효하지 않거나 편집 한도를 초과했습니다."
             return
         }
-        strokes.append(stroke)
-        reviewed = false
-        recomputeMask(preservingPreview: true)
+        pendingBrushStrokes.append(stroke)
+        errorMessage = nil
     }
-    func undoStroke() {
-        guard !isDrawing, !strokes.isEmpty else { return }
-        strokes.removeLast()
-        reviewed = false
-        recomputeMask(preservingPreview: true)
-    }
-    func resetEdits() {
-        guard !isDrawing else { return }
-        strokes = []
-        reviewed = false
-        recomputeMask(preservingPreview: true)
-    }
-    func placePoint(_ point: LocalPlanPoint) {
-        guard point.isValid, !isProcessing else { return }
-        switch tool {
-        case .outline:
-            guard outline.count < 512 else { errorMessage = "외곽 꼭짓점은 최대 512개입니다."; return }
-            let hadConfirmedOutline = outlineConfirmed
-            outline.append(point)
-            outlineConfirmed = false
-            if hadConfirmedOutline { refreshMask() }
-        case .scaleA: scaleA = point; tool = .scaleB
-        case .scaleB: scaleB = point
-        default: return
+
+    func applyPendingBrush(_ mode: LocalEditMode) {
+        guard canApplyBrush else { return }
+        let committed = pendingBrushStrokes.map {
+            LocalEditAction.stroke(LocalEditStroke(mode: mode, points: $0.points,
+                                                   normalizedDiameter: $0.normalizedDiameter))
         }
-        reviewed = false
+        pendingBrushStrokes = []
+        for edit in committed {
+            edits.append(edit)
+            history.append(.edit(edit))
+        }
+        redoHistory = []
+        recomputeMask(preservingPreview: true)
     }
-    func resetOutline() {
-        outline = []
-        outlineConfirmed = false
-        reviewed = false
-        tool = .outline
-        refreshMask()
-    }
-    func undoOutlinePoint() {
-        guard !outline.isEmpty else { return }
-        outline.removeLast()
-        outlineConfirmed = false
-        refreshMask()
-    }
-    func confirmOutline() {
+
+    func applySelection(_ mode: LocalEditMode) {
+        guard canApplySelection else { return }
         do {
-            try LocalFloorPlanGeometry.validateOutline(outline)
-            outlineConfirmed = true
-            tool = .move
+            try LocalFloorPlanGeometry.validateRegion(selection)
+            let edit = LocalEditAction.region(LocalEditRegion(mode: mode, points: selection))
+            edits.append(edit)
+            history.append(.edit(edit))
+            redoHistory = []
+            selection = []
+            recomputeMask(preservingPreview: true)
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func applyOutlineSelection() {
+        guard canApplySelection else { return }
+        do {
+            try LocalFloorPlanGeometry.validateOutline(selection)
+            let previous = outline
+            let next = selection
+            outline = next
+            selection = []
+            history.append(.outline(previous: previous, next: next))
+            redoHistory = []
             refreshMask()
         } catch { errorMessage = error.localizedDescription }
     }
+
+    func undo() {
+        guard !isDrawing, !isProcessing else { return }
+        if !selection.isEmpty {
+            selection.removeLast()
+            return
+        }
+        if !pendingBrushStrokes.isEmpty {
+            pendingBrushStrokes.removeLast()
+            return
+        }
+        guard let entry = history.popLast() else { return }
+        redoHistory.append(entry)
+        switch entry {
+        case .edit:
+            _ = edits.popLast()
+        case .outline(let previous, _):
+            outline = previous
+        }
+        recomputeMask(preservingPreview: true)
+    }
+
+    func redo() {
+        guard !isDrawing, !isProcessing, selection.isEmpty, pendingBrushStrokes.isEmpty,
+              let entry = redoHistory.popLast() else { return }
+        history.append(entry)
+        switch entry {
+        case .edit(let edit):
+            edits.append(edit)
+        case .outline(_, let next):
+            outline = next
+        }
+        recomputeMask(preservingPreview: true)
+    }
+
+    func resetEdits() {
+        guard !isDrawing else { return }
+        edits = []
+        pendingBrushStrokes = []
+        selection = []
+        history.removeAll { entry in
+            if case .edit = entry { return true }
+            return false
+        }
+        redoHistory = []
+        recomputeMask(preservingPreview: true)
+    }
+
+    func placePoint(_ point: LocalPlanPoint) {
+        guard point.isValid, !isProcessing else { return }
+        switch tool {
+        case .pen:
+            guard selection.count < 512 else { errorMessage = "선택 영역의 꼭짓점은 최대 512개입니다."; return }
+            selection.append(point)
+        case .scaleA: scaleA = point; tool = .scaleB
+        case .scaleB:
+            if scaleB == nil { scaleB = point }
+        default: return
+        }
+    }
+
+    func moveScaleMarker(_ marker: LocalScaleMarker, to point: LocalPlanPoint) {
+        guard step == .scaling, point.isValid, !isProcessing else { return }
+        switch marker {
+        case .a: scaleA = point
+        case .b: scaleB = point
+        }
+    }
+
+    func resetOutline() {
+        guard !outline.isEmpty else { return }
+        let previous = outline
+        outline = []
+        history.append(.outline(previous: previous, next: []))
+        redoHistory = []
+        refreshMask()
+    }
+
+    func undoOutlinePoint() {
+        guard !selection.isEmpty else { return }
+        selection.removeLast()
+    }
+
+    func confirmOutline() {
+        applyOutlineSelection()
+    }
+
     func continueToScale() {
         guard canContinueEditing else { return }
         step = .scaling
         tool = .scaleA
         errorMessage = nil
     }
-    func showReview() {
-        guard canReview else { errorMessage = "서로 10px 이상 떨어진 두 점과 0 초과 1000m 이하의 거리를 입력해주세요."; return }
-        step = .reviewing
-        tool = .move
-        reviewed = false
-        errorMessage = nil
+    func returnToEditing() {
+        step = image == nil ? .information : .editing
+        tool = editorMode == .pen ? .pen : .brush
     }
-    func returnToEditing() { step = .editing; tool = .move; reviewed = false }
-    func returnToScale() { step = .scaling; tool = .scaleA; reviewed = false }
 
     func registration() -> LocalRegisteredFloorPlan? {
         guard canRegister, let image, let baseGrid, let resolvedGrid, let scale else { return nil }
         return LocalRegisteredFloorPlan(id: UUID(), name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-            image: image, baseGrid: baseGrid, strokes: strokes, outline: outline, scale: scale, resolvedGrid: resolvedGrid)
+            image: image, baseGrid: baseGrid, edits: edits, outline: outline, scale: scale, resolvedGrid: resolvedGrid)
     }
 
     // Outline/image changes must not display a previously confirmed boundary.
@@ -246,12 +350,12 @@ final class FloorPlanDraftStore {
         activity = "편집 결과 계산 중"
         errorMessage = nil
         let token = generation
-        let edits = strokes
-        let polygon = outlineConfirmed ? outline : []
+        let currentEdits = edits
+        let polygon = outline
         let previousCache = replayCache
         let processing = Task.detached(priority: .userInitiated) {
             var cache = try previousCache ?? LocalFloorPlanReplayCache(base: baseGrid, width: image.width, height: image.height)
-            let grid = try cache.resolve(strokes: edits, outline: polygon)
+            let grid = try cache.resolve(edits: currentEdits, outline: polygon)
             try Task.checkCancellation()
             let png = try LocalFloorPlanMaskRenderer.pngData(grid: grid)
             return (grid, png, cache)
@@ -293,15 +397,18 @@ final class FloorPlanDraftStore {
         image = nil
         baseGrid = nil
         resolvedGrid = nil
-        strokes = []
+        edits = []
         outline = []
-        outlineConfirmed = false
+        selection = []
+        pendingBrushStrokes = []
+        history = []
+        redoHistory = []
         scaleA = nil
         scaleB = nil
         distanceText = ""
         maskPNGData = nil
-        reviewed = false
         tool = .move
+        editorMode = .pen
         isDrawing = false
 #if canImport(UIKit)
         previewImage = nil

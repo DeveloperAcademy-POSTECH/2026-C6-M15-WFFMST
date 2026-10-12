@@ -35,18 +35,18 @@ final class InstructorStore {
     let maximumVideoCount = 4
 
     init(
-        floorPlans: [DemoFloorPlan]? = nil,
+        floorPlans: [DemoFloorPlan] = [],
         floorPlanDraft: FloorPlanDraftStore? = nil,
         floorPlanFileRepository: any FloorPlanFileRepository = DemoFloorPlanFileRepository()
     ) {
         self.floorPlanDraft = floorPlanDraft ?? FloorPlanDraftStore()
         self.floorPlanFileRepository = floorPlanFileRepository
-        let plans = floorPlans ?? InstructorMockData.floorPlans
-        self.floorPlans = plans
-        selectedFloorPlanID = plans.first?.id
+        self.floorPlans = floorPlans
+        selectedFloorPlanID = floorPlans.first?.id
     }
 
     var selectedFloorPlan: DemoFloorPlan? { floorPlans.first { $0.id == selectedFloorPlanID } }
+    var canOpenSessionCreation: Bool { !floorPlans.isEmpty }
     var canCreateSession: Bool { !trainingName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedFloorPlan != nil }
     var readyCount: Int { participants.filter(\.isReady).count }
     var unreadyCount: Int { participants.count - readyCount }
@@ -69,7 +69,10 @@ final class InstructorStore {
         floorPlanDraft.begin()
         phase = .floorPlanCreation
     }
-    func openSessionCreation() { phase = .sessionCreation }
+    func openSessionCreation() {
+        guard canOpenSessionCreation else { return }
+        phase = .sessionCreation
+    }
     func registerFloorPlan() {
         guard phase == .floorPlanCreation, !isUploadingFloorPlan,
               let registration = floorPlanDraft.registration() else { return }
@@ -175,12 +178,17 @@ final class InstructorStore {
         phase = .home
     }
     func goBack() {
+        guard !isUploadingFloorPlan else { return }
         switch phase {
         case .floorPlanList, .sessionCreation: phase = .home
         case .floorPlanCreation:
             clearFloorPlanUpload()
-            floorPlanDraft.reset()
-            phase = .floorPlanList
+            if floorPlanDraft.step == .scaling {
+                floorPlanDraft.returnToEditing()
+            } else {
+                floorPlanDraft.reset()
+                phase = .floorPlanList
+            }
         case .teamReadiness:
             participants = []
             currentSession = nil

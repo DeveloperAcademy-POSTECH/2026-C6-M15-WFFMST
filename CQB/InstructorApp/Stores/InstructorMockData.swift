@@ -9,6 +9,25 @@ struct DemoFloorPlan: Identifiable, Equatable {
     let referenceDistance: Double
     let reference: FloorPlanReference
     var registeredPlan: LocalRegisteredFloorPlan? = nil
+
+    init(
+        id: String,
+        name: String,
+        fileName: String,
+        referenceDistance: Double,
+        reference: FloorPlanReference = FloorPlanReference(
+            floorPlanID: UUID(),
+            navigationSHA256: "local-demo"
+        ),
+        registeredPlan: LocalRegisteredFloorPlan? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.fileName = fileName
+        self.referenceDistance = referenceDistance
+        self.reference = reference
+        self.registeredPlan = registeredPlan
+    }
 }
 
 struct DemoParticipant: Identifiable, Equatable {
@@ -34,22 +53,6 @@ enum ReadinessSample: String, CaseIterable, Identifiable {
 }
 
 enum InstructorMockData {
-    static let floorPlans = [
-        DemoFloorPlan(
-            id: "plan-a", name: "훈련장 A", fileName: "훈련장 A 도면.png", referenceDistance: 15,
-            reference: FloorPlanReference(
-                floorPlanID: UUID(uuidString: "00000000-0000-0000-0000-00000000000A")!,
-                navigationSHA256: "sample-plan-a"
-            )
-        ),
-        DemoFloorPlan(
-            id: "plan-b", name: "훈련장 B", fileName: "B동 1층.png", referenceDistance: 12,
-            reference: FloorPlanReference(
-                floorPlanID: UUID(uuidString: "00000000-0000-0000-0000-00000000000B")!,
-                navigationSHA256: "sample-plan-b"
-            )
-        )
-    ]
     static let participants = ["유키", "매버릭", "도넛", "새미", "엘리", "노을"]
         .enumerated().map { index, name in
             DemoParticipant(id: "member-\(index + 1)", number: index + 1, name: name,

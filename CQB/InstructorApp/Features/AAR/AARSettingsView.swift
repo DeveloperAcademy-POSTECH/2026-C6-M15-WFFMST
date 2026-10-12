@@ -1,64 +1,147 @@
+import CQBDesignSystem
 import SwiftUI
 
 struct AARSettingsView: View {
     @Environment(InstructorStore.self) private var store
 
     var body: some View {
-        DropdownHost {
-            VStack(alignment: .leading, spacing: 20) {
-                ScrollView(.vertical, showsIndicators: true) {
-                    VStack(alignment: .leading, spacing: 20) {
-                        Text("설정값").font(.title2.bold())
-                        Divider()
-                        Text("표시 대상").font(.headline)
-                        Label("팀 1 (MVP)", systemImage: "person.3")
+        VStack(alignment: .leading, spacing: 24) {
+            Text("설정값")
+                .font(DSTypography.h2)
+                .foregroundStyle(InstructorColor.textPrimary)
 
-                        MultiSelectionPicker(
-                            title: store.selectionSummary,
-                            options: store.participants,
-                            selectedIDs: store.selectedParticipantIDs,
-                            optionTitle: \.displayName,
-                            canToggle: store.canToggleParticipant,
-                            onToggle: store.toggleParticipantSelection,
-                            onSelectAll: selectAllAction
-                        )
-                        .accessibilityIdentifier("aar.participants")
+            rule
 
-                        Text("선택된 대원: \(store.selectedParticipantIDs.count)명")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+            Text("표시 대상")
+                .font(DSTypography.h3)
+                .foregroundStyle(InstructorColor.textSecondary)
 
-                        Divider()
+            MultiSelectionPicker(
+                title: "대원 선택",
+                options: store.participants,
+                selectedIDs: store.selectedParticipantIDs,
+                optionTitle: \.displayName,
+                canToggle: store.canToggleParticipant,
+                onToggle: store.toggleParticipantSelection,
+                selectedSummary: store.selectionSummary,
+                fieldBackground: InstructorColor.surfaceRaised,
+                menuFillsFieldWidth: true,
+                onSelectAll: selectAllAction
+            )
+            .frame(maxWidth: .infinity)
+            .accessibilityIdentifier("aar.participants")
 
-                        Toggle("대원 바디캠", isOn: Binding(
-                            get: { store.aarMode == .video },
-                            set: { store.changeAARMode(to: $0 ? .video : .movement) }
-                        ))
-                        .accessibilityIdentifier("aar.bodycam")
+            rule
 
-                        Text(store.aarMode == .video ? "영상 모드 · 최대 \(store.maximumVideoCount)명" : "동선 모드")
-                            .font(.subheadline)
+            HStack {
+                Text("대원 바디캠")
+                    .font(DSTypography.h3)
+                    .foregroundStyle(InstructorColor.textPrimary)
 
-                        Text("동선과 영상은 같은 표시 대상을 유지합니다. 영상 전환은 최대 \(store.maximumVideoCount)명까지 가능합니다.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                Spacer()
 
-                        if let notice = store.aarNotice {
-                            Text(notice).font(.caption)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                ActionButton("AAR 종료", action: store.finishAAR)
-                    .frame(maxWidth: .infinity)
-                    .accessibilityIdentifier("aar.finish")
+                Toggle(
+                    "대원 바디캠",
+                    isOn: Binding(
+                        get: { store.aarMode == .video },
+                        set: { store.changeAARMode(to: $0 ? .video : .movement) }
+                    )
+                )
+                .labelsHidden()
+                .toggleStyle(InstructorCompactToggleStyle())
+                .accessibilityIdentifier("aar.bodycam")
             }
+            .frame(height: 26)
+
+            Text(store.aarMode == .video ? "ON" : "OFF")
+                .font(DSTypography.caption)
+                .foregroundStyle(InstructorColor.actionPrimary)
+
+            if let notice = store.aarNotice {
+                Text(notice)
+                    .font(DSTypography.caption)
+                    .foregroundStyle(InstructorColor.actionPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            rule
+
+            Spacer(minLength: 0)
+
+            ActionButton(
+                "AAR 종료",
+                tone: .secondary,
+                density: .compact,
+                fillsWidth: true,
+                action: store.finishAAR
+            )
+            .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44)
+            .accessibilityIdentifier("aar.finish")
         }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(InstructorColor.surfaceBase)
+        .clipShape(.rect(cornerRadius: 4))
+        .overlay {
+            RoundedRectangle(cornerRadius: 4)
+                .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
+        }
+    }
+
+    private var rule: some View {
+        Rectangle()
+            .fill(InstructorColor.borderDefault)
+            .frame(height: 1)
+            .accessibilityHidden(true)
     }
 
     private var selectAllAction: (() -> Void)? {
         guard store.canSelectAllParticipants else { return nil }
         return { store.selectAllParticipants() }
     }
+}
+
+private struct InstructorCompactToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Button {
+            configuration.isOn.toggle()
+        } label: {
+            Capsule()
+                .fill(InstructorColor.borderDefault)
+                .frame(width: 51, height: 26)
+                .overlay {
+                    Circle()
+                        .fill(InstructorColor.actionPrimary)
+                        .frame(width: 19, height: 19)
+                        .offset(x: configuration.isOn ? 11 : -11)
+                }
+                .contentShape(.capsule)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+#Preview("AAR 설정 · 동선") {
+    let store = InstructorStore(floorPlans: [
+        DemoFloorPlan(
+            id: "preview-plan",
+            name: "훈련장 A 도면",
+            fileName: "훈련장 A 도면.png",
+            referenceDistance: 15
+        )
+    ])
+    store.openSessionCreation()
+    store.createSession()
+    store.startTraining()
+    store.finishTraining()
+
+    return DropdownHost {
+        AARSettingsView()
+            .environment(store)
+            .frame(width: 298, height: 896)
+    }
+    .padding(24)
+    .background(InstructorColor.canvas)
+    .preferredColorScheme(.dark)
 }

@@ -7,6 +7,8 @@ struct SingleSelectionMenu<Option: Identifiable>: View {
     let selection: Option.ID?
     let optionTitle: (Option) -> String
     let optionColor: (Option) -> Color?
+    let fieldBackground: Color
+    let menuFillsFieldWidth: Bool
     let onSelect: (Option.ID?) -> Void
 
     init(
@@ -15,6 +17,8 @@ struct SingleSelectionMenu<Option: Identifiable>: View {
         selection: Option.ID?,
         optionTitle: @escaping (Option) -> String,
         optionColor: @escaping (Option) -> Color? = { _ in nil },
+        fieldBackground: Color = InstructorColor.surfaceBase,
+        menuFillsFieldWidth: Bool = false,
         onSelect: @escaping (Option.ID?) -> Void
     ) {
         self.title = title
@@ -22,6 +26,8 @@ struct SingleSelectionMenu<Option: Identifiable>: View {
         self.selection = selection
         self.optionTitle = optionTitle
         self.optionColor = optionColor
+        self.fieldBackground = fieldBackground
+        self.menuFillsFieldWidth = menuFillsFieldWidth
         self.onSelect = onSelect
     }
 
@@ -33,7 +39,8 @@ struct SingleSelectionMenu<Option: Identifiable>: View {
                 text: selectedTitle,
                 color: selectedOption.flatMap(optionColor),
                 isPlaceholder: selection == nil,
-                isExpanded: isExpanded
+                isExpanded: isExpanded,
+                backgroundColor: fieldBackground
             )
         } content: { dismissImmediately in
             SelectionMenuList(
@@ -45,7 +52,8 @@ struct SingleSelectionMenu<Option: Identifiable>: View {
                 onSelect: { id in
                     dismissImmediately()
                     onSelect(id)
-                }
+                },
+                fillsAvailableWidth: menuFillsFieldWidth
             )
         }
         .accessibilityLabel(title)

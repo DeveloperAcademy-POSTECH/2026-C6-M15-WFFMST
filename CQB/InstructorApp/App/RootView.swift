@@ -9,22 +9,36 @@ struct RootView: View {
                 .navigationTitle(store.phase.title)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    if store.canGoBack {
+                    if store.canGoBack && !usesHiFiChrome {
                         ToolbarItem(placement: .topBarLeading) {
-                            ActionButton("뒤로", systemImage: "chevron.left", action: store.goBack)
-                                .accessibilityIdentifier("navigation.back")
+                            InstructorBackButton(action: store.goBack)
                         }
                     }
                 }
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    Text("로컬 데모 · 등록 도면 파일만 Storage 저장 · 도면 목록과 훈련 진행은 앱 종료 시 사라집니다")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                        .background(.thinMaterial)
+                    if !usesHiFiChrome {
+                        Text("로컬 데모 · 등록 도면 파일만 Storage 저장 · 도면 목록과 훈련 진행은 앱 종료 시 사라집니다")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                            .background(.thinMaterial)
+                    }
                 }
         }
+    }
+
+    private var usesHiFiChrome: Bool {
+        [
+            .home,
+            .floorPlanList,
+            .floorPlanCreation,
+            .sessionCreation,
+            .teamReadiness,
+            .trainingInProgress,
+            .aar,
+            .aarCompleted
+        ].contains(store.phase)
     }
 
     @ViewBuilder

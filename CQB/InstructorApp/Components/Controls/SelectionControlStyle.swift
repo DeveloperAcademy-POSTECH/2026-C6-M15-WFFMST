@@ -6,6 +6,7 @@ struct SelectionFieldLabel: View {
     var color: Color?
     var isPlaceholder = false
     var isExpanded = false
+    var backgroundColor = InstructorColor.surfaceBase
 
     var body: some View {
         HStack(spacing: 8) {
@@ -32,7 +33,7 @@ struct SelectionFieldLabel: View {
         .font(DSTypography.body)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(InstructorColor.surfaceBase)
+        .background(backgroundColor)
         .clipShape(.rect(cornerRadius: 4))
         .overlay {
             RoundedRectangle(cornerRadius: 4)
@@ -157,6 +158,7 @@ struct SelectionMenuList<Option: Identifiable>: View {
     let onSelect: (Option.ID) -> Void
     var footerTitle: String?
     var onFooterSelect: (() -> Void)?
+    var fillsAvailableWidth = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -178,7 +180,8 @@ struct SelectionMenuList<Option: Identifiable>: View {
             }
         }
         .padding(12)
-        .frame(width: 240, alignment: .topLeading)
+        .frame(width: fillsAvailableWidth ? nil : 240, alignment: .topLeading)
+        .frame(maxWidth: fillsAvailableWidth ? .infinity : nil, alignment: .topLeading)
         .background(InstructorColor.menuSurface)
         .clipShape(.rect(cornerRadius: 4))
         .overlay {
