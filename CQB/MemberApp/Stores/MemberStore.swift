@@ -54,6 +54,7 @@ final class MemberStore {
     @ObservationIgnored private var videoChunkUploadQueue: VideoChunkUploadQueue?
     @ObservationIgnored private var enqueuedVideoChunkIndexes: Set<Int> = []
     @ObservationIgnored private var recordingMetadataStarted = false
+    @ObservationIgnored private var recordingMetadataRetryTask: Task<Void, Never>?
     @ObservationIgnored private var recordingMarkedFinishing = false
 
     init(
@@ -205,16 +206,12 @@ final class MemberStore {
             startRequestedBySession = false
             canRetryRecordingStart = false
             phase = .recording
+            recordingMetadataStarted = false
+            recordingMetadataRetryTask?.cancel()
             recordingMarkedFinishing = false
             uploadStatusMessage = "첫 영상 조각을 준비하고 있습니다."
-            do {
-                try await recordingRepository.startRecording(
-                    Recording(identity: identity, state: .recording, lastActiveAt: .now)
-                )
-                recordingMetadataStarted = true
-            } catch {
-                // Do not interrupt local capture when Firestore is temporarily unavailable.
-                recordingMetadataStarted = false
+            recordingMetadataRetryTask = Task { @MainActor [weak self] in
+                await self?.startRecordingMetadataWithRetries(identity: identity)
             }
         } catch {
             videoChunkUploadQueue = nil
@@ -226,6 +223,32 @@ final class MemberStore {
             if !cameraService.isReady {
                 isTrackingReady = false
                 scheduleReadinessReport()
+            }
+        }
+    }
+
+    /// Retries the server timestamp write while local recording continues.
+    private func startRecordingMetadataWithRetries(identity: TrackIdentity) async {
+        for attempt in 1...3 {
+            guard !Task.isCancelled, phase == .recording, self.identity == identity else { return }
+            do {
+                try await recordingRepository.startRecording(
+                    Recording(identity: identity, state: .recording, lastActiveAt: .now)
+                )
+                guard self.identity == identity else { return }
+                recordingMetadataStarted = true
+                uploadErrorMessage = nil
+                return
+            } catch {
+                recordingMetadataStarted = false
+                uploadErrorMessage = error.localizedDescription
+                guard attempt < 3, phase == .recording else {
+                    uploadStatusMessage = "기록 시작 정보를 서버에 저장하지 못했습니다. 업로드 시 다시 시도합니다."
+                    return
+                }
+                uploadStatusMessage = "기록 시작 정보 전송 실패 · 재시도 중 (\(attempt)/2)"
+                do { try await Task.sleep(for: .seconds(attempt)) }
+                catch { return }
             }
         }
     }
@@ -370,6 +393,8 @@ final class MemberStore {
         guard phase == .recording, let map = trainingMap, let identity,
               let startPoint, let directionPoint, let recordingStartedAt else { return }
         phase = .saving
+        recordingMetadataRetryTask?.cancel()
+        recordingMetadataRetryTask = nil
         errorMessage = cameraService.fatalError
         // 영상 마무리 실패와 동선 저장 실패를 독립적으로 처리한다.
         do {
@@ -453,6 +478,7 @@ final class MemberStore {
                     Recording(identity: identity, state: .recording, lastActiveAt: .now)
                 )
                 recordingMetadataStarted = true
+                uploadErrorMessage = nil
             }
             try await uploadQueue.setFinalChunkCount(savedRecordingURLs.count)
             if !recordingMarkedFinishing {
@@ -556,6 +582,8 @@ final class MemberStore {
         readinessHeartbeatTask = nil
         readinessReportTask?.cancel()
         readinessReportTask = nil
+        recordingMetadataRetryTask?.cancel()
+        recordingMetadataRetryTask = nil
         shouldReportReadiness = false
         startRequestedBySession = false
         canRetryRecordingStart = false
