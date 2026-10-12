@@ -6,12 +6,17 @@ struct TrainingRecordingView: View {
     let phase: MemberPhase
     let startedAt: Date?
     let onFinish: () -> Void
-    var onStart: (() -> Void)? = nil
     var onReset: (() -> Void)? = nil
-    var showsMockControls = true
+    var allowsPositionReset = false
+    var allowsManualStop = false
+    var canRetryRecordingStart = false
+    var isStartingRecording = false
+    var onRetryRecordingStart: () -> Void = {}
+    var onCameraReadinessChange: (Bool) -> Void = { _ in }
     var cameraService = ARRecordingService()
     var onStopRecording: () async -> Void = {}
     @State private var isCameraReady = false
+    @State private var isShowingManualStopConfirmation = false
 
     private var isWaiting: Bool { phase == .waiting }
 
@@ -23,7 +28,10 @@ struct TrainingRecordingView: View {
                     isRecording: phase == .recording,
                     isWaiting: isWaiting,
                     onStopRecording: onStopRecording,
-                    onAvailabilityChange: { isCameraReady = $0 }
+                    onAvailabilityChange: {
+                        isCameraReady = $0
+                        onCameraReadinessChange($0)
+                    }
                 )
 
                 VStack(alignment: .leading, spacing: 0) {
@@ -63,28 +71,38 @@ struct TrainingRecordingView: View {
                         .frame(maxWidth: min(650, max(0, geometry.size.width - 48)))
                 }
 
-                // Figma에 없는 목업 조작은 별도 메뉴로 구분한다.
-                // 실제 신호/카메라 연동 시 showsMockControls를 false로 전달한다.
-                if showsMockControls && (isWaiting || phase == .recording) {
+                if allowsManualStop && phase == .recording {
                     VStack {
                         Spacer()
                         HStack {
                             Spacer()
-                            Menu {
-                                if isWaiting, let onStart {
-                                    Button("시작 신호 보내기", action: onStart)
-                                        .disabled(!isCameraReady)
-                                    if let onReset { Button("위치 다시 지정", action: onReset) }
-                                } else if phase == .recording {
-                                    Button("훈련 종료", action: onFinish)
-                                }
-                            } label: {
-                                Text("목업 제어")
-                                    .font(DSTypography.caption)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 8)
-                                    .background(DSColor.area1.opacity(0.94), in: RoundedRectangle(cornerRadius: 4))
+                            Button("직접 종료") {
+                                isShowingManualStopConfirmation = true
                             }
+                            .font(DSTypography.caption)
+                        }
+                    }
+                    .padding(24)
+                }
+
+                if canRetryRecordingStart, isWaiting {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            Button("녹화 재시도", action: onRetryRecordingStart)
+                                .font(DSTypography.caption)
+                                .disabled(!isCameraReady || isStartingRecording)
+                        }
+                    }
+                    .padding(24)
+                } else if allowsPositionReset, isWaiting, let onReset {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            Button("위치 다시 지정", action: onReset)
+                                .font(DSTypography.caption)
                         }
                     }
                     .padding(24)
@@ -93,6 +111,12 @@ struct TrainingRecordingView: View {
             .foregroundStyle(DSColor.white)
         }
         .background(DSColor.background.ignoresSafeArea())
+        .confirmationDialog("종료 신호를 받지 못했나요?", isPresented: $isShowingManualStopConfirmation) {
+            Button("훈련 직접 종료", role: .destructive, action: onFinish)
+            Button("취소", role: .cancel) {}
+        } message: {
+            Text("교관의 종료 신호를 받을 수 없을 때만 사용해주세요.")
+        }
     }
 
     private var recordingStatus: some View {
@@ -133,9 +157,9 @@ struct TrainingRecordingView: View {
 }
 
 #Preview("iPhone 05 · 시작 대기", traits: .landscapeLeft) {
-    TrainingRecordingView(phase: .waiting, startedAt: nil, onFinish: {}, showsMockControls: false)
+    TrainingRecordingView(phase: .waiting, startedAt: nil, onFinish: {})
 }
 
 #Preview("iPhone 06 · 기록", traits: .landscapeLeft) {
-    TrainingRecordingView(phase: .recording, startedAt: Date().addingTimeInterval(-12), onFinish: {}, showsMockControls: false)
+    TrainingRecordingView(phase: .recording, startedAt: Date().addingTimeInterval(-12), onFinish: {})
 }

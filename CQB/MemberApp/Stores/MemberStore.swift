@@ -19,9 +19,19 @@ final class MemberStore {
     private(set) var filesSaved = false
     private(set) var isStarting = false
     private(set) var isJoining = false
+    private(set) var isTrackingReady = false
+    private(set) var canRetryRecordingStart = false
     @ObservationIgnored private var identity: TrackIdentity?
     @ObservationIgnored private var sessionID: UUID?
     @ObservationIgnored private let memberID: UUID
+    @ObservationIgnored private var sessionObservationTask: Task<Void, Never>?
+    @ObservationIgnored private var readinessHeartbeatTask: Task<Void, Never>?
+    @ObservationIgnored private var readinessReportTask: Task<Void, Never>?
+    @ObservationIgnored private var shouldReportReadiness = false
+    @ObservationIgnored private var lastSessionStatus: SessionStatus?
+    @ObservationIgnored private var startRequestedBySession = false
+    @ObservationIgnored private var hasShownSessionStreamError = false
+    @ObservationIgnored private var hasShownReadinessError = false
 
     private(set) var phase: MemberPhase = .join
     private(set) var pin = ""
@@ -48,7 +58,8 @@ final class MemberStore {
         self.trainingMap = try? BundledTrainingMapLoader.load()
     }
 
-    var isReady: Bool { startPoint != nil && directionPoint != nil }
+    var isReady: Bool { startPoint != nil && directionPoint != nil && isTrackingReady }
+    var canResetPosition: Bool { phase == .waiting && !startRequestedBySession }
 
     /// PIN으로 세션을 조회하고 대원 등록이 성공한 뒤에만 setup으로 전환한다.
     func join(pin: String, memberName: String) {
@@ -74,7 +85,10 @@ final class MemberStore {
                 sessionID = session.id
                 self.pin = pin
                 self.memberName = name
+                lastSessionStatus = session.status
                 phase = .setup
+                observeSession(id: session.id)
+                startReadinessHeartbeat()
             } catch let error as RepositoryError {
                 switch error {
                 case .notFound:
@@ -119,21 +133,38 @@ final class MemberStore {
         startPoint = start
         directionPoint = direction
         phase = .waiting
+        scheduleReadinessReport()
     }
 
     func resetPosition() {
-        guard phase == .waiting else { return }
+        guard phase == .waiting, !startRequestedBySession else { return }
         startPoint = nil
         directionPoint = nil
+        isTrackingReady = false
         phase = .setup
+        scheduleReadinessReport()
     }
 
-    /// 참가가 확인된 세션 ID와 기기에 저장한 대원 ID를 기록에 연결한다.
-    func startRecording() async {
+    /// AR 화면에서 전달하는 준비 상태를 서버 보고와 시작 신호 처리에 반영한다.
+    func updateTrackingReadiness(_ isReady: Bool) {
+        guard isTrackingReady != isReady else { return }
+        isTrackingReady = isReady
+
+        if phase == .setup || phase == .waiting {
+            scheduleReadinessReport()
+        }
+        if isReady, startRequestedBySession {
+            Task { await startRecordingFromSessionSignal() }
+        }
+    }
+
+    private func startRecordingFromSessionSignal() async {
         guard phase == .waiting, !isStarting, let map = trainingMap,
+              isReady, startRequestedBySession,
               let sessionID, let startPoint, let directionPoint else { return }
         isStarting = true
         defer { isStarting = false }
+        canRetryRecordingStart = false
         errorMessage = nil
         do {
             let identity = TrackIdentity(sessionID: sessionID, memberID: memberID, recordingID: UUID())
@@ -146,8 +177,155 @@ final class MemberStore {
             correction = nil
             filesSaved = false
             recordingStartedAt = Date()
+            startRequestedBySession = false
+            canRetryRecordingStart = false
             phase = .recording
-        } catch { errorMessage = error.localizedDescription }
+        } catch {
+            // Keep the session start request pending so the member can retry while the
+            // session is running, or tracking recovery can trigger another attempt.
+            canRetryRecordingStart = true
+            errorMessage = "녹화 시작에 실패했습니다. 준비 상태를 확인하고 다시 시도해주세요.\n\(error.localizedDescription)"
+            if !cameraService.isReady {
+                isTrackingReady = false
+                scheduleReadinessReport()
+            }
+        }
+    }
+
+    /// 녹화 시작 실패 후, running 세션의 시작 요청을 사용해 다시 시도한다.
+    func retryStartingRecording() async {
+        guard canRetryRecordingStart, startRequestedBySession,
+              phase == .waiting, isReady, !isStarting else { return }
+        await startRecordingFromSessionSignal()
+    }
+
+    private func observeSession(id: UUID) {
+        sessionObservationTask?.cancel()
+        sessionObservationTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                let updates = self.sessionRepository.observeSession(id: id)
+                do {
+                    for try await session in updates {
+                        guard !Task.isCancelled else { return }
+                        await self.receiveSessionStatus(session.status)
+                    }
+                } catch {
+                    if !self.hasShownSessionStreamError {
+                        self.errorMessage = "세션 연결이 끊겼습니다. 네트워크 연결을 확인해주세요."
+                        self.hasShownSessionStreamError = true
+                    }
+                }
+
+                guard !Task.isCancelled else { return }
+                do { try await Task.sleep(for: .seconds(5)) }
+                catch { return }
+            }
+        }
+    }
+
+    private func receiveSessionStatus(_ status: SessionStatus) async {
+        if hasShownSessionStreamError {
+            hasShownSessionStreamError = false
+            if errorMessage == "세션 연결이 끊겼습니다. 네트워크 연결을 확인해주세요." {
+                errorMessage = nil
+            }
+        }
+        guard status != lastSessionStatus else { return }
+        lastSessionStatus = status
+
+        switch status {
+        case .preparing, .waiting:
+            break
+        case .running:
+            readinessHeartbeatTask?.cancel()
+            readinessHeartbeatTask = nil
+            guard phase == .waiting, startPoint != nil, directionPoint != nil else {
+                leaveSessionWithoutRecording(message: "훈련 시작 전에 준비를 마치지 못해 이 세션에 참가할 수 없습니다.")
+                return
+            }
+            startRequestedBySession = true
+            if isReady { await startRecordingFromSessionSignal() }
+        case .ended:
+            readinessHeartbeatTask?.cancel()
+            readinessHeartbeatTask = nil
+            sessionObservationTask?.cancel()
+            sessionObservationTask = nil
+            startRequestedBySession = false
+            if phase == .recording {
+                await finishRecording()
+            } else if phase == .setup || phase == .waiting {
+                leaveSessionWithoutRecording(message: "훈련이 시작되기 전에 세션이 종료되었습니다.")
+            }
+        }
+    }
+
+    private func startReadinessHeartbeat() {
+        readinessHeartbeatTask?.cancel()
+        scheduleReadinessReport()
+        readinessHeartbeatTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(5)) }
+                catch { return }
+                guard let self, self.phase == .setup || self.phase == .waiting else { return }
+                self.scheduleReadinessReport()
+            }
+        }
+    }
+
+    /// Coalesces readiness changes so an older network write cannot overwrite a newer state.
+    private func scheduleReadinessReport() {
+        shouldReportReadiness = true
+        guard readinessReportTask == nil else { return }
+        readinessReportTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            while self.shouldReportReadiness, !Task.isCancelled {
+                self.shouldReportReadiness = false
+                guard let sessionID = self.sessionID else { break }
+                let member = Member(
+                    id: self.memberID,
+                    sessionID: sessionID,
+                    name: self.memberName,
+                    isReady: self.isReady,
+                    lastActiveAt: .now
+                )
+                do {
+                    try await self.memberRepository.updateReadiness(of: member)
+                    self.hasShownReadinessError = false
+                    if self.errorMessage == "준비 상태를 서버에 전달하지 못했습니다. 연결을 확인해주세요." {
+                        self.errorMessage = nil
+                    }
+                } catch {
+                    if !self.hasShownReadinessError {
+                        self.errorMessage = "준비 상태를 서버에 전달하지 못했습니다. 연결을 확인해주세요."
+                        self.hasShownReadinessError = true
+                    }
+                }
+            }
+            self.readinessReportTask = nil
+        }
+    }
+
+    private func leaveSessionWithoutRecording(message: String) {
+        sessionObservationTask?.cancel()
+        sessionObservationTask = nil
+        readinessHeartbeatTask?.cancel()
+        readinessHeartbeatTask = nil
+        readinessReportTask?.cancel()
+        readinessReportTask = nil
+        shouldReportReadiness = false
+        cameraService.stop()
+        sessionID = nil
+        pin = ""
+        memberName = ""
+        startPoint = nil
+        directionPoint = nil
+        isTrackingReady = false
+        lastSessionStatus = nil
+        startRequestedBySession = false
+        canRetryRecordingStart = false
+        phase = .join
+        errorMessage = message
     }
 
     func finishRecording() async {
@@ -255,6 +433,19 @@ final class MemberStore {
 
     func returnToJoin() {
         guard (phase == .saved && filesSaved) || (phase == .uploading && isUploadComplete) else { return }
+        sessionObservationTask?.cancel()
+        sessionObservationTask = nil
+        readinessHeartbeatTask?.cancel()
+        readinessHeartbeatTask = nil
+        readinessReportTask?.cancel()
+        readinessReportTask = nil
+        shouldReportReadiness = false
+        startRequestedBySession = false
+        canRetryRecordingStart = false
+        lastSessionStatus = nil
+        isTrackingReady = false
+        hasShownSessionStreamError = false
+        hasShownReadinessError = false
         cameraService.discardFinishedCapture()
         identity = nil
         rawTrack = nil
