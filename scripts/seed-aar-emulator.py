@@ -8,6 +8,9 @@
 
 교관 앱이 세션을 읽으려면 `--instructor-uid`에 교관 앱의 익명 로그인 uid를 넣는다.
 uid는 교관 앱을 (Emulator) 스킴으로 실행한 뒤 http://localhost:4000/auth 에서 확인한다.
+출력된 sessionID를 교관 앱 스킴 환경 변수 `CQB_AAR_SESSION_ID`에 넣으면 앱이 그 세션의 AAR을 바로 연다.
+
+`--floor-plan-id`를 주지 않으면 시험용 도면(격자 그림, 장애물 격자, navigation-map.json)도 만들어 올린다.
 
 만드는 대원
 - 대원 1: 정상 보정(done). 사각형을 한 바퀴 돈다
@@ -17,7 +20,10 @@ uid는 교관 앱을 (Emulator) 스킴으로 실행한 뒤 http://localhost:4000
 """
 
 import argparse
+import hashlib
 import json
+import struct
+import zlib
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -64,9 +70,54 @@ def write_document(host, path, fields):
     request("PATCH", url, {"fields": {k: value(v) for k, v in fields.items()}})
 
 
-def upload_file(host, path, data):
+def upload_file(host, path, data, content_type="application/json"):
     name = urllib.parse.quote(path, safe="")
-    request("POST", f"http://{host}:9199/v0/b/{BUCKET}/o?uploadType=media&name={name}", data)
+    request("POST", f"http://{host}:9199/v0/b/{BUCKET}/o?uploadType=media&name={name}", data, content_type)
+
+
+def png(width, height, pixel):
+    """pixel(x, y) -> (r, g, b)로 RGB PNG를 만든다."""
+    rows = b"".join(b"\x00" + bytes(c for x in range(width) for c in pixel(x, y)) for y in range(height))
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(rows, 9)) + chunk(b"IEND", b"")
+
+
+def seed_floor_plan(host, width, height):
+    """바깥 벽과 50px 격자가 있는 시험 도면 파일 3개를 올리고 FloorPlanReference를 돌려준다."""
+    floor_plan_id = str(uuid.uuid4()).upper()
+    wall = 12
+
+    def pixel(x, y):
+        if x < wall or y < wall or x >= width - wall or y >= height - wall:
+            return (200, 200, 200)
+        if x % 50 == 0 or y % 50 == 0:
+            return (90, 90, 90)
+        return (30, 30, 30)
+
+    image = png(width, height, pixel)
+    cell = 10
+    columns, rows = (width + cell - 1) // cell, (height + cell - 1) // cell
+    mask = bytes(1 if c == 0 or r == 0 or c == columns - 1 or r == rows - 1 else 0
+                 for r in range(rows) for c in range(columns))
+    manifest = {
+        "schemaVersion": 1, "floorPlanID": floor_plan_id, "coordinateSystem": "image-pixel-top-left",
+        "imageWidth": width, "imageHeight": height, "imageSHA256": hashlib.sha256(image).hexdigest(),
+        "scale": {"a": {"x": wall, "y": wall}, "b": {"x": width - wall, "y": wall}, "meters": 20.0},
+        "indoorOutline": [{"x": 0.0, "y": 0.0}, {"x": 1.0, "y": 0.0}, {"x": 1.0, "y": 1.0}, {"x": 0.0, "y": 1.0}],
+        "navigationGrid": {"columns": columns, "rows": rows, "cellSizePixels": cell, "encoding": "uint8-row-major",
+                           "freeValue": 0, "blockedValue": 1, "outsideIsBlocked": True,
+                           "maskSHA256": hashlib.sha256(mask).hexdigest()},
+        "extractionAlgorithmVersion": "seed", "rasterizationVersion": 2, "manuallyReviewed": True,
+    }
+    navigation = json.dumps(manifest, sort_keys=True).encode()
+    upload_file(host, f"floorPlans/{floor_plan_id}/original.png", image, "image/png")
+    upload_file(host, f"floorPlans/{floor_plan_id}/resolved-mask.bin", mask, "application/octet-stream")
+    upload_file(host, f"floorPlans/{floor_plan_id}/navigation-map.json", navigation, "application/json")
+    return {"floorPlanID": floor_plan_id, "navigationSHA256": hashlib.sha256(navigation).hexdigest()}
 
 
 def vertex(t, x, y, part, index):
@@ -113,15 +164,20 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--host", default="localhost", help="에뮬레이터 주소 (기본 localhost)")
     parser.add_argument("--instructor-uid", default="seed-instructor", help="세션의 instructorUid. 교관 앱 uid를 넣는다")
-    parser.add_argument("--floor-plan-id", default=str(uuid.uuid4()).upper(), help="세션 도면 ID (등록한 도면과 맞출 때)")
-    parser.add_argument("--navigation-sha256", default="seed-navigation", help="세션 도면의 navigationSHA256")
-    parser.add_argument("--width", type=float, default=1000, help="도면 이미지 가로 픽셀")
-    parser.add_argument("--height", type=float, default=800, help="도면 이미지 세로 픽셀")
+    parser.add_argument("--floor-plan-id", help="이미 등록한 도면 ID. 없으면 시험 도면을 만들어 올린다")
+    parser.add_argument("--navigation-sha256", help="--floor-plan-id 도면의 navigationSHA256")
+    parser.add_argument("--width", type=int, default=1000, help="도면 이미지 가로 픽셀")
+    parser.add_argument("--height", type=int, default=800, help="도면 이미지 세로 픽셀")
     args = parser.parse_args()
 
     session_id = str(uuid.uuid4()).upper()
     pin = f"{uuid.uuid4().int % 900000 + 100000}"
-    floor_plan = {"floorPlanID": args.floor_plan_id.upper(), "navigationSHA256": args.navigation_sha256}
+    if args.floor_plan_id:
+        if not args.navigation_sha256:
+            raise SystemExit("--floor-plan-id에는 --navigation-sha256도 함께 넣어야 합니다.")
+        floor_plan = {"floorPlanID": args.floor_plan_id.upper(), "navigationSHA256": args.navigation_sha256}
+    else:
+        floor_plan = seed_floor_plan(args.host, args.width, args.height)
     started_at = datetime.now(timezone.utc) - timedelta(minutes=2)
 
     write_document(args.host, f"sessions/{session_id}", {
