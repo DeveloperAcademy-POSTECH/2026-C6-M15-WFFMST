@@ -110,6 +110,10 @@ Xcode 위쪽에서 스킴을 고르고 실행한다.
 2. `http://localhost:4000/auth`에 콘솔의 `익명 로그인 완료 uid: …`와 같은 uid가 있다.
 3. 앱에서 만든 데이터가 `http://localhost:4000/firestore`, `/storage`에 보이고, 운영 콘솔에는 없다.
 
+세션 생성 검증에는 Auth·Firestore·Storage가 모두 필요하다. `--only auth,storage`로 실행하면 Firestore가 빠지므로 전체를 실행하거나 `--only auth,firestore,storage`를 사용한다. 관리 화면에서 세 서비스가 모두 `On`인지 확인한다.
+
+InstructorApp에서 도면을 등록하고 세션을 생성하면 팀 준비 화면에 6자리 PIN이 표시된다. Firestore 관리 화면에서 `sessions/{세션ID}`의 `status`가 `waiting`이고 `pin`이 화면과 같은지, `pins/{PIN}`의 `sessionID`가 해당 세션을 가리키는지 확인한다. 준비 화면에서 뒤로 가면 세션이 종료되고 PIN 문서가 삭제된다. REST 요청만 사용하는 테스트는 앱의 Firebase SDK 초기화·연결 경로를 검증하지 않으므로 이 시뮬레이터 확인을 대체하지 않는다.
+
 ## 주의
 
 - 로그인 정보는 키체인에 있어 앱을 지워도 남는다. 운영과 에뮬레이터를 오가면 앱이 시작할 때 자동으로 로그아웃하고 새로 익명 로그인한다. 콘솔에 `Firebase 연결 대상이 바뀌어 로그아웃`이 찍힌다.

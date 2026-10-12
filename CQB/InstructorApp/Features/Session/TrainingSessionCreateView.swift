@@ -8,6 +8,7 @@ struct TrainingSessionCreateView: View {
         DropdownHost {
             VStack(alignment: .leading, spacing: 0) {
                 InstructorBackButton(action: store.goBack)
+                    .disabled(store.isCreatingSession)
 
                 Text("새 훈련 세션")
                     .font(DSTypography.h1)
@@ -25,8 +26,22 @@ struct TrainingSessionCreateView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
                 HStack {
+                    if store.isCreatingSession {
+                        ProgressView()
+                            .tint(InstructorColor.actionPrimary)
+                            .accessibilityLabel("세션 생성 중")
+                    }
+
+                    if let error = store.sessionCreationError {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .font(DSTypography.bodySmall)
+                            .foregroundStyle(InstructorColor.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("session.creationError")
+                    }
+
                     Spacer()
-                    ActionButton("세션 생성", action: store.createSession)
+                    ActionButton(store.isCreatingSession ? "세션 생성 중…" : "세션 생성", action: store.createSession)
                         .frame(width: 354, height: 52)
                         .disabled(!store.canCreateSession)
                         .accessibilityIdentifier("session.create")
