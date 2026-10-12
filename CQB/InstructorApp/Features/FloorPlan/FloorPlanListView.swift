@@ -99,7 +99,9 @@ struct FloorPlanListView: View {
                     .foregroundStyle(InstructorColor.textPrimary)
                     .frame(height: 24, alignment: .leading)
 
-                Text("축척 설정 완료 · 기준 거리 \(floorPlan.referenceDistance, format: .number) m")
+                Text(floorPlan.registeredPlan == nil
+                    ? "축척 설정 완료 · 기준 거리 \(floorPlan.referenceDistance, format: .number) m"
+                    : "Storage 업로드 완료 · 기준 거리 \(floorPlan.referenceDistance, format: .number) m")
                     .font(DSTypography.bodySmall)
                     .foregroundStyle(InstructorColor.actionPrimary)
                     .frame(height: 21, alignment: .leading)

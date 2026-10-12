@@ -23,6 +23,7 @@ struct FloorPlanCreateView: View {
 
             sidePanel
                 .containerRelativeFrame(.horizontal, count: 10, span: 3, spacing: 0)
+                .disabled(app.isUploadingFloorPlan || app.floorPlanUploadError != nil)
         }
         .background(InstructorColor.canvas.ignoresSafeArea())
         .ignoresSafeArea(.keyboard, edges: .bottom)
@@ -49,6 +50,8 @@ struct FloorPlanCreateView: View {
     private var header: some View {
         HStack(spacing: 16) {
             InstructorBackButton(action: app.goBack)
+                .disabled(importer.isPreparing || importer.isPresented || store.isImporting
+                    || !app.canGoBack)
 
             Text(store.image?.fileName ?? "도면 설정")
                 .font(DSTypography.h2)
@@ -63,7 +66,8 @@ struct FloorPlanCreateView: View {
             ) {
                 importer.request { focusedField = nil }
             }
-            .disabled(store.isProcessing || store.isDrawing)
+            .disabled(importer.isPreparing || importer.isPresented || store.isProcessing || store.isDrawing
+                || app.isUploadingFloorPlan || app.floorPlanUploadError != nil)
             .accessibilityIdentifier("floorPlan.import")
         }
         .padding(.horizontal, 24)
@@ -167,7 +171,8 @@ struct FloorPlanCreateView: View {
                 onScaleMarkerMoved: store.moveScaleMarker,
                 onEditingChanged: store.setDrawing
             )
-            .allowsHitTesting(!store.isProcessing)
+            .allowsHitTesting(!store.isProcessing && !app.isUploadingFloorPlan
+                && app.floorPlanUploadError == nil)
             .accessibilityIdentifier("floorPlan.canvas")
         } else {
             Text("이미지가 업로드 되지 않았습니다.")
@@ -280,7 +285,8 @@ struct FloorPlanCreateView: View {
             RoundedRectangle(cornerRadius: 4)
                 .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
         }
-        .disabled(store.image == nil || store.isProcessing || importer.isPresented)
+        .disabled(store.image == nil || store.isProcessing || importer.isPresented
+            || app.isUploadingFloorPlan || app.floorPlanUploadError != nil)
     }
 
     private var editorTabs: some View {
@@ -455,9 +461,11 @@ struct FloorPlanCreateView: View {
                 .padding(.bottom, 20)
             }
 
-            ActionButton("저장", fillsWidth: true, action: app.registerFloorPlan)
+            ActionButton(app.isUploadingFloorPlan ? "업로드 중" : "저장",
+                         fillsWidth: true, action: app.registerFloorPlan)
                 .frame(height: 52)
-                .disabled(!store.canRegister)
+                .disabled(!store.canRegister || importer.isPreparing || importer.isPresented
+                    || app.isUploadingFloorPlan || app.floorPlanUploadError != nil)
                 .accessibilityIdentifier("floorPlan.save")
                 .padding(.horizontal, 24)
                 .padding(.top, 12)
@@ -468,8 +476,16 @@ struct FloorPlanCreateView: View {
     @ViewBuilder
     private var statusOverlay: some View {
         if (store.isProcessing && !store.isReplayingEdits)
-            || store.errorMessage != nil || importer.message != nil {
+            || importer.isPreparing || store.errorMessage != nil || importer.message != nil
+            || app.isUploadingFloorPlan || app.floorPlanUploadError != nil {
             VStack(alignment: .leading, spacing: 8) {
+                if app.isUploadingFloorPlan {
+                    HStack {
+                        ProgressView()
+                        Text("도면 파일 3개를 Storage에 업로드하는 중")
+                    }
+                    .accessibilityIdentifier("floorPlan.uploading")
+                }
                 if store.isProcessing && !store.isReplayingEdits {
                     HStack {
                         ProgressView()
@@ -484,6 +500,13 @@ struct FloorPlanCreateView: View {
                 }
                 if let message = importer.message {
                     Text(message).foregroundStyle(InstructorColor.validationError)
+                }
+                if let error = app.floorPlanUploadError {
+                    Text(error)
+                        .foregroundStyle(InstructorColor.validationError)
+                        .accessibilityIdentifier("floorPlan.upload.error")
+                    ActionButton("업로드 다시 시도", action: app.retryFloorPlanUpload)
+                        .accessibilityIdentifier("floorPlan.upload.retry")
                 }
             }
             .font(DSTypography.bodySmall)
