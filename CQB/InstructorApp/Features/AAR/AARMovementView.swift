@@ -1,8 +1,13 @@
+import CQBCore
 import CQBDesignSystem
 import SwiftUI
 
 struct AARMovementView: View {
     @Environment(InstructorStore.self) private var store
+    @Environment(AARStore.self) private var aarStore
+
+    // Figma(노드 762:3230 map canvas): 도면은 여백 없이 영역에 비율을 유지해 맞춘다.
+    private let floorPlanPadding: CGFloat = 0
 
     var body: some View {
         GeometryReader { geometry in
@@ -12,12 +17,19 @@ struct AARMovementView: View {
 
                 floorPlan
 
-                ForEach(store.selectedParticipants) { participant in
-                    participantMarker(participant)
-                        .position(
-                            x: geometry.size.width * participant.x,
-                            y: geometry.size.height * participant.y
-                        )
+                if let imageSize = aarStore.floorPlanImageSize {
+                    let layout = AARFloorPlanLayout(
+                        imageSize: imageSize,
+                        container: geometry.size,
+                        padding: floorPlanPadding
+                    )
+                    ForEach(store.selectedParticipants) { participant in
+                        if let position = aarStore.position(for: participant.id) {
+                            participantMarker(participant)
+                                .opacity(position.presence == .tracked ? 1 : 0.35)
+                                .position(layout.viewPoint(for: position.point))
+                        }
+                    }
                 }
             }
             .clipShape(.rect(cornerRadius: 4))
@@ -31,13 +43,16 @@ struct AARMovementView: View {
 
     @ViewBuilder
     private var floorPlan: some View {
-        if let image = store.selectedPlanImage {
+        if let image = aarStore.floorPlanImage ?? store.selectedPlanImage {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFit()
                 .opacity(0.5)
-                .padding(20)
+                .padding(floorPlanPadding)
                 .accessibilityLabel("선택한 훈련 도면")
+        } else if aarStore.isLoading {
+            ProgressView("도면과 동선을 불러오는 중")
+                .foregroundStyle(InstructorColor.textSecondary)
         } else {
             ContentUnavailableView(
                 "도면 미리보기 없음",
@@ -76,6 +91,7 @@ struct AARMovementView: View {
 
     return AARMovementView()
         .environment(store)
+        .environment(AARStore())
         .frame(width: 1_008, height: 896)
         .preferredColorScheme(.dark)
 }
