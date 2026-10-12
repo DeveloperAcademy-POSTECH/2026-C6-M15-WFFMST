@@ -72,6 +72,7 @@ Xcode 위쪽에서 스킴을 고르고 실행한다.
 실행하면 Xcode 콘솔에 `Firebase 에뮬레이터 사용: localhost`가 찍힌다.
 
 - (Emulator) 스킴은 스킴의 환경 변수 `FIREBASE_EMULATOR_HOST`로 연결 대상을 바꾼다. 앱 코드는 `CQBFirebaseModule.configure()`에서 이 값을 읽는다.
+- 로컬 Firestore는 TLS를 사용하지 않는다. 현재 Firebase SDK 12.19.2의 `useEmulator`는 주소만 바꾸므로, 에뮬레이터 분기에서 `settings.isSSLEnabled = false`를 명시한다. 운영 연결에는 적용하지 않는다.
 - 에뮬레이터가 꺼져 있으면 운영으로 넘어가지 않고 요청이 실패한다. 먼저 에뮬레이터를 켠다.
 - 디버그 빌드에서 Xcode로 실행할 때만 적용된다. 홈 화면에서 앱을 열거나 릴리스 빌드(TestFlight, App Store)는 항상 운영 Firebase에 붙는다.
 - 공유 스킴(`InstructorApp`, `MemberApp`)에는 이 환경 변수를 넣지 않는다.
@@ -108,6 +109,21 @@ Xcode 위쪽에서 스킴을 고르고 실행한다.
 1. Xcode 콘솔에 `Firebase 에뮬레이터 사용: …`이 찍힌다. 없으면 운영에 붙은 것이므로 스킴을 확인한다.
 2. `http://localhost:4000/auth`에 콘솔의 `익명 로그인 완료 uid: …`와 같은 uid가 있다.
 3. 앱에서 만든 데이터가 `http://localhost:4000/firestore`, `/storage`에 보이고, 운영 콘솔에는 없다.
+
+세션 생성 검증에는 Auth·Firestore·Storage가 모두 필요하다. `--only auth,storage`로 실행하면 Firestore가 빠지므로 전체를 실행하거나 `--only auth,firestore,storage`를 사용한다. 관리 화면에서 세 서비스가 모두 `On`인지 확인한다.
+
+InstructorApp에서 도면을 등록하고 세션을 생성하면 팀 준비 화면에 6자리 PIN이 표시된다. Firestore 관리 화면에서 `sessions/{세션ID}`의 `status`가 `waiting`이고 `pin`이 화면과 같은지, `pins/{PIN}`의 `sessionID`가 해당 세션을 가리키는지 확인한다. 준비 화면에서 뒤로 가면 세션이 종료되고 PIN 문서가 삭제된다. REST 요청만 사용하는 테스트는 앱의 Firebase SDK 초기화·연결 경로를 검증하지 않으므로 이 시뮬레이터 확인을 대체하지 않는다.
+
+### 시뮬레이터에서 준비 상태 실시간 반영 확인
+
+시뮬레이터는 AR 추적을 지원하지 않으므로 실제 준비 조건을 충족할 수 없다. **Debug + iOS 시뮬레이터 + `FIREBASE_EMULATOR_HOST` 설정**을 모두 만족할 때만 MemberApp 대기 화면에 `준비 완료 전송 (테스트)` 스위치가 표시된다.
+
+1. 두 앱을 `(Emulator)` 스킴으로 실행하고, MemberApp에서 교관 화면의 PIN으로 참가한다.
+2. 출발 위치와 방향을 선택하고 `좌표 고정`을 누른다.
+3. 테스트 스위치를 켜면 기존 Firebase SDK/Repository 경로로 `sessions/{세션ID}/members/{대원ID}.isReady`가 `true`로 저장된다. 교관 화면의 해당 대원이 준비 완료로 바뀌고 준비 인원이 증가하는지 확인한다.
+4. 스위치를 끄면 `false`와 설정 중으로 되돌아간다. 위치를 다시 지정해도 테스트 상태는 해제된다. 5초 간격의 활동 보고는 선택한 테스트 상태를 유지한다.
+
+이 스위치는 서버 보고만 대체하며 실제 AR 준비 상태나 녹화 시작 조건을 우회하지 않는다. 따라서 MemberApp의 카메라 영역에는 여전히 AR 미지원 안내가 표시된다. 실기기, 운영 Firebase 연결, Release 빌드에는 테스트 스위치가 없으며 기존 준비 판정을 그대로 사용한다. 이 검증에서는 교관 앱의 훈련 시작 버튼을 누르지 않는다. 실제 녹화 검증은 실기기에서 진행한다.
 
 ## 주의
 

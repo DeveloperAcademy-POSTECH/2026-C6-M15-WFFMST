@@ -41,6 +41,28 @@ struct RootView: View {
                     cameraService: store.cameraService,
                     onStopRecording: { await store.finishRecording() }
                 )
+                #if DEBUG && targetEnvironment(simulator)
+                .safeAreaInset(edge: .bottom) {
+                    if store.phase == .waiting, store.isReadinessTestAvailable {
+                        Toggle(isOn: Binding(
+                            get: { store.isSimulatedReady },
+                            set: { store.setSimulatedReadiness($0) }
+                        )) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("준비 완료 전송 (테스트)").font(.headline)
+                                Text("에뮬레이터 전용 · 서버 준비 상태만 변경하며 AR·녹화는 지원하지 않습니다.")
+                                    .font(.caption)
+                            }
+                        }
+                        .accessibilityIdentifier("emulator-readiness-toggle")
+                        .disabled(!store.canResetPosition)
+                        .tint(DSColor.main)
+                        .foregroundStyle(DSColor.white)
+                        .padding()
+                        .background(DSColor.area1)
+                    }
+                }
+                #endif
             case .saved:
                 RecordingSaveTestView(recordingURL: store.savedRecordingURL,
                     raw: store.rawTrack, correction: store.correction, mapImage: floorPlan,

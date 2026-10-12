@@ -48,7 +48,7 @@ struct AARMovementView: View {
         }
     }
 
-    private func participantMarker(_ participant: DemoParticipant) -> some View {
+    private func participantMarker(_ participant: InstructorParticipant) -> some View {
         Text("\(participant.number)")
             .font(markerFont)
             .foregroundStyle(InstructorColor.textPrimary)
@@ -65,16 +65,12 @@ struct AARMovementView: View {
 }
 
 #Preview("AAR 동선") {
-    let store = InstructorStore(floorPlans: [
-        DemoFloorPlan(
-            id: "preview-plan",
-            name: "훈련장 A 도면",
-            fileName: "훈련장 A 도면.png",
-            referenceDistance: 15
-        )
-    ])
-    store.openSessionCreation()
-    store.createSession()
+    let store = InstructorPreviewFixture.store(floorPlan: DemoFloorPlan(
+        id: "preview-plan",
+        name: "훈련장 A 도면",
+        fileName: "훈련장 A 도면.png",
+        referenceDistance: 15
+    ))
     store.startTraining()
     store.finishTraining()
 

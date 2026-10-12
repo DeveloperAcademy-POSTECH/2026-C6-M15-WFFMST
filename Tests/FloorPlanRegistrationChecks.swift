@@ -126,7 +126,10 @@ enum FloorPlanRegistrationChecks {
         store.openSessionCreation()
         precondition(store.canCreateSession)
         store.createSession()
+        try await wait { store.phase == .teamReadiness }
         precondition(store.currentSession?.floorPlan == uploadedReference)
+        store.goBack()
+        try await wait { store.phase == .sessionCreation }
 
         await repository.failNextUpload()
         store.openFloorPlanCreation()

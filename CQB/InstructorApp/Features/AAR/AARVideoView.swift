@@ -73,7 +73,7 @@ struct AARVideoView: View {
 }
 
 private struct CameraPlaceholderTile: View {
-    let participant: DemoParticipant
+    let participant: InstructorParticipant
 
     private let cameraAspectRatio: CGFloat = 1_672 / 941
 
@@ -139,16 +139,12 @@ private struct CameraPlaceholderTile: View {
 #if DEBUG
 @MainActor
 private func aarVideoPreview(selectedCount: Int) -> some View {
-    let store = InstructorStore(floorPlans: [
-        DemoFloorPlan(
-            id: "preview-plan",
-            name: "훈련장 A 도면",
-            fileName: "훈련장 A 도면.png",
-            referenceDistance: 15
-        )
-    ])
-    store.openSessionCreation()
-    store.createSession()
+    let store = InstructorPreviewFixture.store(floorPlan: DemoFloorPlan(
+        id: "preview-plan",
+        name: "훈련장 A 도면",
+        fileName: "훈련장 A 도면.png",
+        referenceDistance: 15
+    ))
     store.startTraining()
     store.finishTraining()
     for participant in store.participants.dropFirst(selectedCount) {

@@ -29,6 +29,7 @@
 				docs/flows.md,
 				"docs/issue-8-implementation.md",
 				"docs/issue-46-implementation.md",
+				"docs/issue-49-implementation.md",
 				docs/README.md,
 			);
 			target = 788A1084307682B8003DEA3E /* InstructorApp */;

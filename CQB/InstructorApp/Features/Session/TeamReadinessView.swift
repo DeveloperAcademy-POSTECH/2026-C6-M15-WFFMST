@@ -1,3 +1,4 @@
+import CQBCore
 import CQBDesignSystem
 import SwiftUI
 
@@ -8,6 +9,7 @@ struct TeamReadinessView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             InstructorBackButton(action: store.goBack)
+                .disabled(store.isEndingSession)
 
             HStack(alignment: .top) {
                 Text("팀 준비 상태")
@@ -17,9 +19,30 @@ struct TeamReadinessView: View {
 
                 Spacer()
 
-                invitationCode
+                sessionPIN
             }
             .frame(height: 56, alignment: .top)
+
+            if store.isEndingSession {
+                ProgressView("세션 종료 중…")
+                    .padding(.top, 16)
+                    .accessibilityIdentifier("readiness.ending")
+            } else if store.memberConnectionState == .connecting {
+                ProgressView("참가자 준비 상태 연결 중…")
+                    .padding(.top, 16)
+                    .accessibilityIdentifier("readiness.connecting")
+            } else if let error = store.memberObservationError {
+                connectionError(error)
+                    .padding(.top, 16)
+            }
+
+            if let error = store.sessionEndError {
+                Text(error)
+                    .font(DSTypography.bodySmall)
+                    .foregroundStyle(InstructorColor.textSecondary)
+                    .padding(.top, 16)
+                    .accessibilityIdentifier("readiness.endError")
+            }
 
             readinessList
                 .padding(.top, 42)
@@ -49,8 +72,9 @@ struct TeamReadinessView: View {
         }
     }
 
-    private var invitationCode: some View {
-        Text("PIN · \(store.invitationCode)")
+    private var sessionPIN: some View {
+        let pin = store.currentSession?.pin ?? "------"
+        return Text("PIN · \(pin)")
             .font(DSTypography.h2)
             .foregroundStyle(InstructorColor.textPrimary)
             .monospacedDigit()
@@ -61,7 +85,30 @@ struct TeamReadinessView: View {
                 RoundedRectangle(cornerRadius: 4)
                     .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
             }
-            .accessibilityLabel("세션 PIN \(store.invitationCode)")
+            .accessibilityLabel("세션 PIN \(pin)")
+    }
+
+    private func connectionError(_ message: String) -> some View {
+        HStack(spacing: 16) {
+            Label(message, systemImage: "wifi.exclamationmark")
+                .font(DSTypography.bodySmall)
+                .foregroundStyle(InstructorColor.textSecondary)
+
+            Spacer()
+
+            Button("다시 연결", action: store.retryMemberObservation)
+                .disabled(!store.canRetryMemberObservation)
+                .font(DSTypography.bodySmall)
+                .foregroundStyle(InstructorColor.actionPrimary)
+                .accessibilityIdentifier("readiness.reconnect")
+        }
+        .padding(16)
+        .background(InstructorColor.surfaceBase)
+        .clipShape(.rect(cornerRadius: 4))
+        .overlay {
+            RoundedRectangle(cornerRadius: 4)
+                .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
+        }
     }
 
     private var readinessList: some View {
@@ -116,17 +163,19 @@ struct TeamReadinessView: View {
 }
 
 #Preview("팀 준비 상태 · 일부 준비") {
-    let store = InstructorStore(floorPlans: [
-        DemoFloorPlan(
-            id: "preview-plan",
-            name: "훈련장 A 도면",
-            fileName: "훈련장 A 도면.png",
-            referenceDistance: 15
-        )
-    ])
-    store.openSessionCreation()
-    store.createSession()
-    store.loadReadinessSample(.partial)
+    let plan = DemoFloorPlan(
+        id: "preview-plan",
+        name: "훈련장 A 도면",
+        fileName: "훈련장 A 도면.png",
+        referenceDistance: 15
+    )
+    var participants = InstructorPreviewFixture.participants
+    for index in participants.indices { participants[index].isReady = index < 3 }
+    let store = InstructorStore(
+        floorPlans: [plan],
+        previewSession: InstructorPreviewFixture.session(floorPlan: plan.reference),
+        previewParticipants: participants
+    )
 
     return TeamReadinessView()
         .environment(store)
