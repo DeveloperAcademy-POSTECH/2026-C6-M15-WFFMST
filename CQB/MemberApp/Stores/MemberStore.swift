@@ -11,11 +11,12 @@ final class MemberStore {
     @ObservationIgnored private let recordingFileStore = LocalRecordingFileStore()
     @ObservationIgnored private let sessionRepository: any SessionRepository
     @ObservationIgnored private let memberRepository: any MemberRepository
+    @ObservationIgnored private let floorPlanFileRepository: any FloorPlanFileRepository
     @ObservationIgnored private let recordingRepository: any RecordingRepository
     @ObservationIgnored private let videoChunkRepository: any VideoChunkRepository
     @ObservationIgnored private let trackResultRepository: any TrackResultRepository
 
-    let trainingMap: TrainingMap?
+    private(set) var trainingMap: TrainingMap?
     private(set) var rawTrack: RawTrackDocument?
     private(set) var correction: RouteCorrectionOutput?
     private(set) var recordingFiles: LocalRecordingFiles?
@@ -60,6 +61,7 @@ final class MemberStore {
     init(
         sessionRepository: any SessionRepository,
         memberRepository: any MemberRepository,
+        floorPlanFileRepository: any FloorPlanFileRepository,
         recordingRepository: any RecordingRepository,
         videoChunkRepository: any VideoChunkRepository,
         trackResultRepository: any TrackResultRepository,
@@ -67,12 +69,13 @@ final class MemberStore {
     ) {
         self.sessionRepository = sessionRepository
         self.memberRepository = memberRepository
+        self.floorPlanFileRepository = floorPlanFileRepository
         self.recordingRepository = recordingRepository
         self.videoChunkRepository = videoChunkRepository
         self.trackResultRepository = trackResultRepository
         self.cameraService = cameraService ?? ARRecordingService()
         self.memberID = Self.loadOrCreateMemberID()
-        self.trainingMap = try? BundledTrainingMapLoader.load()
+        self.trainingMap = nil
     }
 
     var isReady: Bool { startPoint != nil && directionPoint != nil && isTrackingReady }
@@ -111,10 +114,18 @@ final class MemberStore {
 
         isJoining = true
         errorMessage = nil
+        trainingMap = nil
         Task { @MainActor in
             defer { isJoining = false }
             do {
                 let session = try await sessionRepository.session(forPin: pin)
+                let sessionMap: TrainingMap
+                do {
+                    let files = try await floorPlanFileRepository.download(session.floorPlan)
+                    sessionMap = try BundledTrainingMapLoader.load(files: files, for: session.floorPlan)
+                } catch {
+                    throw SessionFloorPlanLoadFailure()
+                }
                 let member = Member(
                     id: memberID,
                     sessionID: session.id,
@@ -125,12 +136,15 @@ final class MemberStore {
                 try await memberRepository.join(member, pin: pin)
 
                 sessionID = session.id
+                trainingMap = sessionMap
                 self.pin = pin
                 self.memberName = name
                 lastSessionStatus = session.status
                 phase = .setup
                 observeSession(id: session.id)
                 startReadinessHeartbeat()
+            } catch is SessionFloorPlanLoadFailure {
+                errorMessage = "이 세션의 도면을 불러오지 못했습니다. 네트워크 연결을 확인하고 다시 시도해주세요."
             } catch let error as RepositoryError {
                 switch error {
                 case .notFound:
@@ -405,6 +419,7 @@ final class MemberStore {
         shouldReportReadiness = false
         cameraService.stop()
         sessionID = nil
+        trainingMap = nil
         pin = ""
         memberName = ""
         startPoint = nil
@@ -635,6 +650,7 @@ final class MemberStore {
         savedRecordingURLs = []
         filesSaved = false
         sessionID = nil
+        trainingMap = nil
         pin = ""
         memberName = ""
         startPoint = nil
@@ -663,3 +679,5 @@ final class MemberStore {
         }
     }
 }
+
+private struct SessionFloorPlanLoadFailure: Error {}

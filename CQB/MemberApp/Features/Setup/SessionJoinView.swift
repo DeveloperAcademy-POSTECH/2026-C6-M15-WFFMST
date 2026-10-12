@@ -6,6 +6,7 @@ struct SessionJoinView: View {
     @State private var memberName = ""
     @FocusState private var focusedField: Field?
     /// 참가 요청 및 서버 검증은 호출부에서 처리한다.
+    var isJoining = false
     var onJoin: (String, String) -> Void
 
     private enum Field: Hashable { case pin, name }
@@ -52,11 +53,11 @@ struct SessionJoinView: View {
                     
                     Spacer(minLength: 28)
                     
-                    ActionButton("참가") {
+                    ActionButton(isJoining ? "세션 도면 불러오는 중…" : "참가") {
                         focusedField = nil
                         onJoin(pin, memberName.trimmingCharacters(in: .whitespacesAndNewlines))
                     }
-                    .disabled(!canJoin)
+                    .disabled(!canJoin || isJoining)
                 }
                 .font(DSTypography.body)
                 .padding(.horizontal, 24)

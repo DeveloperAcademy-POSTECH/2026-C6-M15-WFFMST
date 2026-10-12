@@ -11,7 +11,7 @@ struct RootView: View {
         Group {
             switch store.phase {
             case .join:
-                SessionJoinView { pin, name in
+                SessionJoinView(isJoining: store.isJoining) { pin, name in
                     store.join(pin: pin, memberName: name)
                 }
             case .setup:
