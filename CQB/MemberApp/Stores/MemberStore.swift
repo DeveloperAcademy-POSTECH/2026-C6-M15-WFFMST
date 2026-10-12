@@ -520,7 +520,8 @@ final class MemberStore {
                 } else {
                     self.uploadStatusMessage = "영상 조각 \(status.uploadedCount)개 업로드 완료"
                 }
-                if let count = self.uploadManifest?.videoChunkCount {
+                let count = self.savedRecordingURLs.count
+                if count > 0 {
                     let completed = status.uploadedCount + (self.uploadManifest?.uploadedTrackResult == true ? 1 : 0)
                     self.refreshUploadProgress(completedItems: completed, totalItems: count + 1)
                 }
