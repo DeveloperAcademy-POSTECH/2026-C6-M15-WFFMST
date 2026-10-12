@@ -34,6 +34,9 @@ struct RootView: View {
                     onReset: { store.resetPosition() },
                     allowsPositionReset: store.canResetPosition,
                     allowsManualStop: true,
+                    canRetryRecordingStart: store.canRetryRecordingStart,
+                    isStartingRecording: store.isStarting,
+                    onRetryRecordingStart: { Task { await store.retryStartingRecording() } },
                     onCameraReadinessChange: { store.updateTrackingReadiness($0) },
                     cameraService: store.cameraService,
                     onStopRecording: { await store.finishRecording() }
@@ -62,7 +65,15 @@ struct RootView: View {
                 set: { if !$0 { store.clearRecordingError() } }
             )
         ) {
-            Button("확인", role: .cancel) { store.clearRecordingError() }
+            if store.canRetryRecordingStart {
+                Button("재시도") {
+                    Task { await store.retryStartingRecording() }
+                }
+                .disabled(!store.isReady || store.isStarting)
+                Button("나중에", role: .cancel) { store.clearRecordingError() }
+            } else {
+                Button("확인", role: .cancel) { store.clearRecordingError() }
+            }
         } message: {
             Text(store.errorMessage ?? "녹화 중 문제가 발생했습니다.")
         }

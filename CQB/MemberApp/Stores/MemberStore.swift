@@ -20,6 +20,7 @@ final class MemberStore {
     private(set) var isStarting = false
     private(set) var isJoining = false
     private(set) var isTrackingReady = false
+    private(set) var canRetryRecordingStart = false
     @ObservationIgnored private var identity: TrackIdentity?
     @ObservationIgnored private var sessionID: UUID?
     @ObservationIgnored private let memberID: UUID
@@ -163,6 +164,7 @@ final class MemberStore {
               let sessionID, let startPoint, let directionPoint else { return }
         isStarting = true
         defer { isStarting = false }
+        canRetryRecordingStart = false
         errorMessage = nil
         do {
             let identity = TrackIdentity(sessionID: sessionID, memberID: memberID, recordingID: UUID())
@@ -176,18 +178,25 @@ final class MemberStore {
             filesSaved = false
             recordingStartedAt = Date()
             startRequestedBySession = false
+            canRetryRecordingStart = false
             phase = .recording
         } catch {
-            // AR tracking may have become unstable between the signal and capture setup.
-            // Keep the request pending so the next stable tracking callback can retry.
+            // Keep the session start request pending so the member can retry while the
+            // session is running, or tracking recovery can trigger another attempt.
+            canRetryRecordingStart = true
+            errorMessage = "녹화 시작에 실패했습니다. 준비 상태를 확인하고 다시 시도해주세요.\n\(error.localizedDescription)"
             if !cameraService.isReady {
                 isTrackingReady = false
                 scheduleReadinessReport()
-                return
             }
-            startRequestedBySession = false
-            errorMessage = error.localizedDescription
         }
+    }
+
+    /// 녹화 시작 실패 후, running 세션의 시작 요청을 사용해 다시 시도한다.
+    func retryStartingRecording() async {
+        guard canRetryRecordingStart, startRequestedBySession,
+              phase == .waiting, isReady, !isStarting else { return }
+        await startRecordingFromSessionSignal()
     }
 
     private func observeSession(id: UUID) {
@@ -314,6 +323,7 @@ final class MemberStore {
         isTrackingReady = false
         lastSessionStatus = nil
         startRequestedBySession = false
+        canRetryRecordingStart = false
         phase = .join
         errorMessage = message
     }
@@ -431,6 +441,7 @@ final class MemberStore {
         readinessReportTask = nil
         shouldReportReadiness = false
         startRequestedBySession = false
+        canRetryRecordingStart = false
         lastSessionStatus = nil
         isTrackingReady = false
         hasShownSessionStreamError = false

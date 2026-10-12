@@ -9,6 +9,9 @@ struct TrainingRecordingView: View {
     var onReset: (() -> Void)? = nil
     var allowsPositionReset = false
     var allowsManualStop = false
+    var canRetryRecordingStart = false
+    var isStartingRecording = false
+    var onRetryRecordingStart: () -> Void = {}
     var onCameraReadinessChange: (Bool) -> Void = { _ in }
     var cameraService = ARRecordingService()
     var onStopRecording: () async -> Void = {}
@@ -82,7 +85,18 @@ struct TrainingRecordingView: View {
                     .padding(24)
                 }
 
-                if allowsPositionReset, isWaiting, let onReset {
+                if canRetryRecordingStart, isWaiting {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            Button("녹화 재시도", action: onRetryRecordingStart)
+                                .font(DSTypography.caption)
+                                .disabled(!isCameraReady || isStartingRecording)
+                        }
+                    }
+                    .padding(24)
+                } else if allowsPositionReset, isWaiting, let onReset {
                     VStack {
                         Spacer()
                         HStack {
