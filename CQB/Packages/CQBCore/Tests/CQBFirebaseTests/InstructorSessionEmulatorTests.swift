@@ -78,6 +78,97 @@ private func emulatorIdentity() async throws -> (uid: String, token: String) {
     return (uid, token)
 }
 
+@Test(
+    "Firestore REST API로 훈련 서버 시각·종료와 대원별 기록 상태 권한을 검증한다",
+    .enabled(if: ProcessInfo.processInfo.environment["CQB_FIREBASE_EMULATOR_TESTS"] == "1")
+)
+func instructorTrainingLifecycleOnEmulator() async throws {
+    // #47 업로드 구현과 별개인 상태 계약 검사다. 실제 SDK 구독·화면 전환은 앱에서 별도 검증한다.
+    let instructor = try await emulatorIdentity()
+    let first = try await emulatorIdentity()
+    let second = try await emulatorIdentity()
+    let session = Session(
+        id: UUID(), pin: String(format: "%06d", Int.random(in: 0...999_999)), name: "Issue 56 Emulator 검증",
+        status: .waiting, floorPlan: FloorPlanReference(floorPlanID: UUID(), navigationSHA256: String(repeating: "b", count: 64))
+    )
+    try await createSessionOnEmulator(session, instructorUID: instructor.uid, token: instructor.token)
+    let firstID = UUID()
+    let secondID = UUID()
+    try await writeMemberToEmulator(session: session, memberID: firstID, uid: first.uid, token: first.token, isReady: true)
+    try await writeMemberToEmulator(session: session, memberID: secondID, uid: second.uid, token: second.token, isReady: true)
+
+    try await commit(writes: [[
+        "update": ["name": documentName("sessions/\(session.id.uuidString)"), "fields": ["status": stringField("running")]],
+        "updateMask": ["fieldPaths": ["status"]],
+        "updateTransforms": [["fieldPath": "startedAt", "setToServerValue": "REQUEST_TIME"]],
+    ]], token: instructor.token)
+    let running = try fields(in: await emulatorDocument("sessions/\(session.id.uuidString)", token: instructor.token))
+    #expect(stringValue(running["status"]) == "running")
+    let startedAt = (running["startedAt"] as? [String: Any])?["timestampValue"] as? String
+    #expect(startedAt != nil)
+    let empty = try await emulatorCollection("sessions/\(session.id.uuidString)/recordings", token: instructor.token)
+    #expect((empty["documents"] as? [[String: Any]] ?? []).isEmpty)
+
+    let firstRecording = UUID()
+    let secondRecording = UUID()
+    try await writeLifecycleRecord(session.id, firstID, firstRecording, state: .recording, token: first.token, isNew: true)
+    try await writeLifecycleRecord(session.id, secondID, secondRecording, state: .recording, token: second.token, isNew: true)
+    try await endSessionOnEmulator(session, token: instructor.token)
+    let ended = try fields(in: await emulatorDocument("sessions/\(session.id.uuidString)", token: instructor.token))
+    #expect(stringValue(ended["status"]) == "ended")
+    #expect((ended["startedAt"] as? [String: Any])?["timestampValue"] as? String == startedAt)
+    await #expect(throws: InstructorEmulatorTestError.notFound) {
+        try await emulatorDocument("pins/\(session.pin)", token: first.token)
+    }
+
+    // 세션 종료 후에도 대원은 본인 기록의 처리·업로드 결과를 보고할 수 있어야 한다.
+    try await writeLifecycleRecord(session.id, firstID, firstRecording, state: .finishing, token: first.token)
+    let firstPath = "sessions/\(session.id.uuidString)/recordings/\(firstRecording.uuidString)"
+    let finishing = try fields(in: await emulatorDocument(firstPath, token: instructor.token))
+    #expect(stringValue(finishing["state"]) == "finishing")
+
+    // 교관이 대원 기록을 완료 처리하는 우회 경로는 허용하지 않는다.
+    var forbidden = authorizedRequest(url: URL(string: "http://127.0.0.1:8080/v1/projects/cqb-wffmst/databases/(default)/documents:commit")!, token: instructor.token)
+    forbidden.httpMethod = "POST"
+    forbidden.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    forbidden.httpBody = try JSONSerialization.data(withJSONObject: ["writes": [[
+        "update": ["name": documentName(firstPath), "fields": ["state": stringField("done")]],
+        "updateMask": ["fieldPaths": ["state"]],
+        "updateTransforms": [["fieldPath": "lastActiveAt", "setToServerValue": "REQUEST_TIME"]],
+    ]]])
+    _ = try await emulatorJSON(forbidden, expectedStatus: 403)
+
+    try await writeLifecycleRecord(session.id, firstID, firstRecording, state: .done, token: first.token)
+    try await writeLifecycleRecord(session.id, secondID, secondRecording, state: .failed, token: second.token)
+    let result = try await emulatorCollection("sessions/\(session.id.uuidString)/recordings", token: instructor.token)
+    let documents = try #require(result["documents"] as? [[String: Any]])
+    #expect(documents.count == 2)
+    let states = try documents.compactMap { stringValue(try fields(in: $0)["state"]) }.sorted()
+    #expect(states == ["done", "failed"])
+}
+
+private func writeLifecycleRecord(
+    _ sessionID: UUID, _ memberID: UUID, _ recordingID: UUID,
+    state: RecordingState, token: String, isNew: Bool = false
+) async throws {
+    var transforms: [[String: Any]] = [["fieldPath": "lastActiveAt", "setToServerValue": "REQUEST_TIME"]]
+    if isNew { transforms.append(["fieldPath": "startedAt", "setToServerValue": "REQUEST_TIME"]) }
+    try await commit(writes: [[
+        "update": [
+            "name": documentName("sessions/\(sessionID.uuidString)/recordings/\(recordingID.uuidString)"),
+            "fields": [
+                "identity": ["mapValue": ["fields": [
+                    "sessionID": stringField(sessionID.uuidString), "memberID": stringField(memberID.uuidString),
+                    "recordingID": stringField(recordingID.uuidString),
+                ]]],
+                "state": stringField(state.rawValue),
+            ],
+        ],
+        "updateMask": ["fieldPaths": ["identity", "state"]],
+        "updateTransforms": transforms,
+    ]], token: token)
+}
+
 private func createSessionOnEmulator(
     _ session: Session,
     instructorUID: String,

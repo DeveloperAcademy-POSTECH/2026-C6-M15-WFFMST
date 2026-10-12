@@ -38,7 +38,11 @@ public enum CQBFirebaseModule {
             let settings = firestore.settings
             settings.isSSLEnabled = false
             firestore.settings = settings
-            Storage.storage().useEmulator(withHost: host, port: 9199)
+            let storage = Storage.storage()
+            // Firebase Storage 12.19부터 비루프백 HTTP에는 인증 토큰을 기본 전송하지 않는다.
+            // Emulator를 명시한 Debug 실행에서만 실기기 로컬 테스트를 허용한다.
+            storage.allowInsecureTokenAttachment = true
+            storage.useEmulator(withHost: host, port: 9199)
             logger.notice("Firebase 에뮬레이터 사용: \(host, privacy: .public)")
         }
         signOutIfTargetChanged(to: host ?? "production")
