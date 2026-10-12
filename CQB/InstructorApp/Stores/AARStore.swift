@@ -43,6 +43,8 @@ final class AARStore {
     @ObservationIgnored private var requestedVideoIDs: [String] = []
     /// 참가자 ID별 가장 최근 기록과 세션 시작부터 기록 시작까지의 초
     @ObservationIgnored private var participantRecordings: [String: (recording: Recording, offset: Double)]?
+    /// 기록 목록을 받지 못했다. 영상도 받을 수 없다
+    @ObservationIgnored private var recordingsLoadFailed = false
     /// 이 세션의 모든 기록. AAR을 마칠 때 영상을 지우는 데 쓴다
     @ObservationIgnored private var sessionRecordings: [Recording] = []
     @ObservationIgnored private var playbackTask: Task<Void, Never>?
@@ -132,7 +134,8 @@ final class AARStore {
             if loadedSessionID == session.id {
                 Self.logger.error("AAR 기록 불러오기 실패: \(error.localizedDescription, privacy: .private)")
                 tracks = Dictionary(uniqueKeysWithValues: participantIDs.map { ($0, TrackState.unavailable("기록을 불러오지 못했습니다.")) })
-                videos = videos.mapValues { _ in .unavailable("기록을 불러오지 못했습니다.") }
+                recordingsLoadFailed = true
+                startRequestedVideoLoads()
             }
         }
         await floorPlanLoaded
@@ -177,6 +180,7 @@ final class AARStore {
         videos = [:]
         requestedVideoIDs = []
         participantRecordings = nil
+        recordingsLoadFailed = false
         sessionRecordings = []
         playbackPosition = 0
         playbackDuration = 0
@@ -270,6 +274,10 @@ final class AARStore {
     private func startRequestedVideoLoads() {
         for participantID in requestedVideoIDs where videoTasks[participantID] == nil {
             if case .ready = videos[participantID] { continue }
+            if recordingsLoadFailed {
+                videos[participantID] = .unavailable("기록을 불러오지 못했습니다.")
+                continue
+            }
             guard let participantRecordings else {
                 videos[participantID] = .loading
                 continue
