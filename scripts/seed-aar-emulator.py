@@ -200,7 +200,6 @@ def main():
     ffmpeg = None if args.no_video else shutil.which("ffmpeg")
     if not args.no_video and ffmpeg is None:
         print("ffmpeg가 없어 영상 없이 넣습니다. (brew install ffmpeg)", file=sys.stderr)
-    video_dir = tempfile.mkdtemp(prefix="cqb-aar-seed-")
 
     session_id = str(uuid.uuid4()).upper()
     pin = f"{uuid.uuid4().int % 900000 + 100000}"
@@ -227,30 +226,33 @@ def main():
     ]
     summary = {"sessionID": session_id, "pin": pin, "floorPlan": floor_plan, "members": []}
 
-    for name, offset, status, vertices, gaps, chunk_seconds in members:
-        member_id, recording_id = str(uuid.uuid4()).upper(), str(uuid.uuid4()).upper()
-        identity = {"sessionID": session_id, "memberID": member_id, "recordingID": recording_id}
-        write_document(args.host, f"sessions/{session_id}/members/{member_id}", {
-            "id": member_id, "sessionID": session_id, "name": name, "isReady": True,
-            "lastActiveAt": started_at, "uid": f"seed-{member_id}", "pin": pin,
-        })
-        chunks = make_chunks(ffmpeg, video_dir, name, chunk_seconds) if ffmpeg and chunk_seconds else []
-        for index, chunk in enumerate(chunks):
-            with open(chunk, "rb") as file:
-                upload_file(args.host, f"sessions/{session_id}/recordings/{recording_id}/video/chunk_{index:04d}.mp4",
-                            file.read(), "video/mp4")
-        write_document(args.host, f"sessions/{session_id}/recordings/{recording_id}", {
-            "identity": identity, "state": "done", "startedAt": started_at + timedelta(seconds=offset),
-            "lastActiveAt": started_at + timedelta(seconds=60), "videoChunkCount": len(chunks),
-        })
-        if status is not None:
-            document = track_result(identity, floor_plan, status, vertices, gaps)
-            upload_file(args.host, f"sessions/{session_id}/recordings/{recording_id}/result.json",
-                        json.dumps(document, ensure_ascii=False, sort_keys=True).encode(), "application/json")
-        summary["members"].append({"name": name, "result": status or "없음", "videoChunks": len(chunks),
-                                   "recordingOffset": offset, **identity})
-
-    shutil.rmtree(video_dir, ignore_errors=True)
+    # 중간에 실패해도 만든 영상 조각을 지운다.
+    video_dir = tempfile.mkdtemp(prefix="cqb-aar-seed-")
+    try:
+        for name, offset, status, vertices, gaps, chunk_seconds in members:
+            member_id, recording_id = str(uuid.uuid4()).upper(), str(uuid.uuid4()).upper()
+            identity = {"sessionID": session_id, "memberID": member_id, "recordingID": recording_id}
+            write_document(args.host, f"sessions/{session_id}/members/{member_id}", {
+                "id": member_id, "sessionID": session_id, "name": name, "isReady": True,
+                "lastActiveAt": started_at, "uid": f"seed-{member_id}", "pin": pin,
+            })
+            chunks = make_chunks(ffmpeg, video_dir, name, chunk_seconds) if ffmpeg and chunk_seconds else []
+            for index, chunk in enumerate(chunks):
+                with open(chunk, "rb") as file:
+                    upload_file(args.host, f"sessions/{session_id}/recordings/{recording_id}/video/chunk_{index:04d}.mp4",
+                                file.read(), "video/mp4")
+            write_document(args.host, f"sessions/{session_id}/recordings/{recording_id}", {
+                "identity": identity, "state": "done", "startedAt": started_at + timedelta(seconds=offset),
+                "lastActiveAt": started_at + timedelta(seconds=60), "videoChunkCount": len(chunks),
+            })
+            if status is not None:
+                document = track_result(identity, floor_plan, status, vertices, gaps)
+                upload_file(args.host, f"sessions/{session_id}/recordings/{recording_id}/result.json",
+                            json.dumps(document, ensure_ascii=False, sort_keys=True).encode(), "application/json")
+            summary["members"].append({"name": name, "result": status or "없음", "videoChunks": len(chunks),
+                                       "recordingOffset": offset, **identity})
+    finally:
+        shutil.rmtree(video_dir, ignore_errors=True)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
 
