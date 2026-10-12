@@ -6,6 +6,7 @@ struct AppContainer: View {
     @State private var store = MemberStore(
         sessionRepository: FirestoreSessionRepository(),
         memberRepository: FirestoreMemberRepository(),
+        floorPlanFileRepository: StorageFloorPlanFileRepository(),
         recordingRepository: FirestoreRecordingRepository(),
         videoChunkRepository: StorageVideoChunkRepository(),
         trackResultRepository: StorageTrackResultRepository()
