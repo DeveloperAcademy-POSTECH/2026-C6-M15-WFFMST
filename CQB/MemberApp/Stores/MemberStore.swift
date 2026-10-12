@@ -378,7 +378,6 @@ final class MemberStore {
                 await enqueueVideoChunk(index: index, url: url)
             }
             try await videoChunkUploadQueue?.setFinalChunkCount(savedRecordingURLs.count)
-            await markRecordingAsFinishing(identity: identity, chunkCount: savedRecordingURLs.count)
         }
         catch { errorMessage = error.localizedDescription }
         rawTrack = RawTrackDocument(identity: identity, floorPlan: map.reference,
@@ -533,25 +532,6 @@ final class MemberStore {
         guard enqueuedVideoChunkIndexes.insert(index).inserted,
               let videoChunkUploadQueue else { return }
         await videoChunkUploadQueue.enqueue(LocalVideoChunk(index: index, url: url))
-    }
-
-    private func markRecordingAsFinishing(identity: TrackIdentity, chunkCount: Int) async {
-        do {
-            if !recordingMetadataStarted {
-                try await recordingRepository.startRecording(
-                    Recording(identity: identity, state: .recording, lastActiveAt: .now)
-                )
-                recordingMetadataStarted = true
-            }
-            try await recordingRepository.updateRecording(
-                Recording(identity: identity, state: .finishing, lastActiveAt: .now,
-                          videoChunkCount: chunkCount)
-            )
-            recordingMarkedFinishing = true
-        } catch {
-            uploadErrorMessage = error.localizedDescription
-            uploadStatusMessage = "서버 상태 갱신 실패 · 종료 후 재시도합니다."
-        }
     }
 
     private func refreshUploadProgress(completedItems: Int, totalItems: Int) {
