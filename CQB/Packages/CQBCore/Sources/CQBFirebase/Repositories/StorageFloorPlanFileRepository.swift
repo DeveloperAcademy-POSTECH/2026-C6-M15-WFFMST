@@ -32,10 +32,15 @@ public struct StorageFloorPlanFileRepository: FloorPlanFileRepository {
     public func download(_ reference: FloorPlanReference) async throws -> FloorPlanFiles {
         let navigationMap = try await StorageTransfer.download(StoragePaths.floorPlanNavigationMap(reference))
         try verify(navigationMap, against: reference)
+
+        async let imagePNG = StorageTransfer.download(StoragePaths.floorPlanImage(reference))
+        async let resolvedMask = StorageTransfer.download(StoragePaths.floorPlanMask(reference))
+        let (image, mask) = try await (imagePNG, resolvedMask)
+
         return FloorPlanFiles(
-            imagePNG: try await StorageTransfer.download(StoragePaths.floorPlanImage(reference)),
+            imagePNG: image,
             navigationMapJSON: navigationMap,
-            resolvedMask: try await StorageTransfer.download(StoragePaths.floorPlanMask(reference))
+            resolvedMask: mask
         )
     }
 
