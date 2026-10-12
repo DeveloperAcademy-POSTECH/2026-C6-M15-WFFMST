@@ -12,7 +12,8 @@ struct AppContainer: View {
         memberRepository: FirestoreMemberRepository(),
         recordingRepository: FirestoreRecordingRepository(),
         trackResultRepository: StorageTrackResultRepository(),
-        floorPlanFileRepository: StorageFloorPlanFileRepository()
+        floorPlanFileRepository: StorageFloorPlanFileRepository(),
+        videoChunkRepository: StorageVideoChunkRepository()
     )
 
     var body: some View {

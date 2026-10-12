@@ -1,3 +1,4 @@
+@preconcurrency import AVFoundation
 import CQBCore
 import CoreGraphics
 import Foundation
@@ -7,7 +8,7 @@ import os
 import UIKit
 #endif
 
-/// AAR 화면의 동선 불러오기와 재생 상태를 관리한다.
+/// AAR 화면의 동선·영상 불러오기와 재생 상태를 관리한다.
 /// 훈련 흐름(`InstructorStore`)과 따로 바뀌므로 Store를 분리했다. 화면 전환(`phase`)은 `InstructorStore`가 맡는다.
 @MainActor
 @Observable
@@ -19,6 +20,16 @@ final class AARStore {
         case unavailable(String)
     }
 
+    enum VideoState {
+        case loading
+        case ready(AVPlayer, AARVideoTimeline)
+        /// 영상을 보여 줄 수 없다. 화면에 보여 줄 이유를 담는다
+        case unavailable(String)
+    }
+
+    /// 영상 재생 위치가 타임라인과 이만큼(초) 벌어지면 다시 맞춘다
+    private static let videoDriftTolerance = 0.3
+
     private static let logger = Logger(subsystem: "com.wffmst.cqb", category: "AARStore")
 
     @ObservationIgnored private let sessionRepository: any SessionRepository
@@ -26,11 +37,21 @@ final class AARStore {
     @ObservationIgnored private let recordingRepository: any RecordingRepository
     @ObservationIgnored private let floorPlanFileRepository: any FloorPlanFileRepository
     @ObservationIgnored private let trackLoader: AARTrackLoader
+    @ObservationIgnored private let videoLoader: AARVideoLoader
+    @ObservationIgnored private var videoTasks: [String: Task<Void, Never>] = [:]
+    /// 영상을 보여 달라고 요청한 대원. 기록 목록을 받기 전에 요청되면 받은 뒤 불러온다
+    @ObservationIgnored private var requestedVideoIDs: [String] = []
+    /// 참가자 ID별 가장 최근 기록과 세션 시작부터 기록 시작까지의 초
+    @ObservationIgnored private var participantRecordings: [String: (recording: Recording, offset: Double)]?
+    /// 이 세션의 모든 기록. AAR을 마칠 때 영상을 지우는 데 쓴다
+    @ObservationIgnored private var sessionRecordings: [Recording] = []
     @ObservationIgnored private var playbackTask: Task<Void, Never>?
     @ObservationIgnored private var loadedSessionID: UUID?
 
     /// 참가자 ID(`Member.id` 문자열)별 동선 상태
     private(set) var tracks: [String: TrackState] = [:]
+    /// 참가자 ID별 영상 상태. 영상 모드에서 선택한 대원만 담긴다
+    private(set) var videos: [String: VideoState] = [:]
     private(set) var playbackPosition = 0.0
     private(set) var playbackDuration = 0.0
     private(set) var isPlaying = false
@@ -46,13 +67,15 @@ final class AARStore {
         memberRepository: any MemberRepository = DemoMemberRepository(),
         recordingRepository: any RecordingRepository = DemoRecordingRepository(),
         trackResultRepository: any TrackResultRepository = DemoTrackResultRepository(),
-        floorPlanFileRepository: any FloorPlanFileRepository = DemoFloorPlanFileRepository()
+        floorPlanFileRepository: any FloorPlanFileRepository = DemoFloorPlanFileRepository(),
+        videoChunkRepository: any VideoChunkRepository = DemoVideoChunkRepository()
     ) {
         self.sessionRepository = sessionRepository
         self.memberRepository = memberRepository
         self.recordingRepository = recordingRepository
         self.floorPlanFileRepository = floorPlanFileRepository
         trackLoader = AARTrackLoader(repository: trackResultRepository)
+        videoLoader = AARVideoLoader(repository: videoChunkRepository)
     }
 
     var canPlay: Bool { playbackDuration > 0 && !isLoading }
@@ -63,11 +86,31 @@ final class AARStore {
         return path.position(at: playbackPosition)
     }
 
+    /// 현재 재생 위치에서 대원 영상의 장면. 영상이 준비되지 않았으면 nil
+    func videoFrame(for participantID: String) -> AARVideoTimeline.Frame? {
+        guard case .ready(_, let timeline) = videos[participantID] else { return nil }
+        return timeline.frame(at: playbackPosition)
+    }
+
+    /// 영상 모드에서 보여 줄 대원을 바꾼다. 요금이 내려받기에서 나오므로 요청한 대원만 받는다.
+    /// 선택에서 빠진 대원의 영상은 멈추기만 하고 캐시에 둔다.
+    func showVideos(for participantIDs: [String]) {
+        requestedVideoIDs = participantIDs
+        for (participantID, state) in videos where !participantIDs.contains(participantID) {
+            if case .ready(let player, _) = state { player.pause() }
+        }
+        startRequestedVideoLoads()
+        syncVideos(seek: true)
+    }
+
     /// AAR에 들어갈 때 한 번 부른다. 같은 세션은 다시 받지 않는다.
     /// - Parameter localFloorPlan: 이 기기에 등록된 도면. 세션 도면과 같으면 내려받지 않고 쓴다
     func load(session: Session, participantIDs: [String], localFloorPlan: LocalRegisteredFloorPlan?) async {
         guard loadedSessionID != session.id else { return }
+        // 영상 화면이 먼저 요청했을 수 있어 요청한 대원은 남긴다.
+        let requested = requestedVideoIDs
         reset()
+        requestedVideoIDs = requested
         loadedSessionID = session.id
         isLoading = true
         tracks = Dictionary(uniqueKeysWithValues: participantIDs.map { ($0, TrackState.loading) })
@@ -81,12 +124,15 @@ final class AARStore {
         do {
             let (sessionValue, recordingList) = try await (latestSession, recordings)
             if loadedSessionID == session.id {
+                rememberRecordings(session: sessionValue ?? session, recordings: recordingList ?? [], participantIDs: participantIDs)
+                startRequestedVideoLoads()
                 await loadTracks(session: sessionValue ?? session, recordings: recordingList ?? [], participantIDs: participantIDs)
             }
         } catch {
             if loadedSessionID == session.id {
                 Self.logger.error("AAR 기록 불러오기 실패: \(error.localizedDescription, privacy: .private)")
                 tracks = Dictionary(uniqueKeysWithValues: participantIDs.map { ($0, TrackState.unavailable("기록을 불러오지 못했습니다.")) })
+                videos = videos.mapValues { _ in .unavailable("기록을 불러오지 못했습니다.") }
             }
         }
         await floorPlanLoaded
@@ -103,13 +149,35 @@ final class AARStore {
     func setPlaybackPosition(_ value: Double) {
         guard value.isFinite else { return }
         playbackPosition = min(max(0, value), playbackDuration)
+        syncVideos(seek: true)
     }
 
-    /// AAR을 나갈 때 재생을 멈추고 불러온 동선을 비운다.
+    /// AAR을 마치고 나갈 때 부른다. 이 세션의 영상을 Storage와 기기 캐시에서 지운다.
+    /// 삭제가 실패해도 나가는 것을 막지 않는다. 남은 영상은 Storage 수명 주기 규칙이 1일 뒤 지운다.
+    func finish() {
+        let recordings = sessionRecordings.map { (identity: $0.identity, chunkCount: $0.videoChunkCount) }
+        reset()
+        guard !recordings.isEmpty else { return }
+        let loader = videoLoader
+        Task {
+            let failed = await loader.finish(recordings)
+            if !failed.isEmpty {
+                Self.logger.error("AAR 영상 삭제 실패: \(failed.count)개 기록")
+            }
+        }
+    }
+
+    /// 재생을 멈추고 불러온 동선과 영상을 비운다.
     func reset() {
         pause()
         loadedSessionID = nil
         tracks = [:]
+        videoTasks.values.forEach { $0.cancel() }
+        videoTasks = [:]
+        videos = [:]
+        requestedVideoIDs = []
+        participantRecordings = nil
+        sessionRecordings = []
         playbackPosition = 0
         playbackDuration = 0
         floorPlanImageSize = nil
@@ -124,6 +192,7 @@ final class AARStore {
         guard canPlay else { return }
         if playbackPosition >= playbackDuration { playbackPosition = 0 }
         isPlaying = true
+        syncVideos(seek: true)
         playbackTask?.cancel()
         playbackTask = Task { [weak self] in
             let clock = ContinuousClock()
@@ -138,8 +207,10 @@ final class AARStore {
                 self.playbackPosition = min(self.playbackPosition + seconds, self.playbackDuration)
                 if self.playbackPosition >= self.playbackDuration {
                     self.isPlaying = false
+                    self.syncVideos(seek: false)
                     return
                 }
+                self.syncVideos(seek: false)
             }
         }
     }
@@ -148,6 +219,112 @@ final class AARStore {
         isPlaying = false
         playbackTask?.cancel()
         playbackTask = nil
+        syncVideos(seek: false)
+    }
+
+    /// 화면에 보이는 영상을 타임라인 위치에 맞춘다.
+    /// - Parameter seek: 사용자가 위치를 옮겼을 때 true. 재생 중에는 많이 벌어졌을 때만 다시 맞춘다
+    private func syncVideos(seek: Bool) {
+        for participantID in requestedVideoIDs {
+            guard case .ready(let player, let timeline) = videos[participantID] else { continue }
+            switch timeline.frame(at: playbackPosition) {
+            case .notStarted:
+                player.pause()
+                Self.seek(player, to: 0, ifDriftFrom: seek ? nil : 0)
+            case .playing(let seconds):
+                Self.seek(player, to: seconds, ifDriftFrom: seek ? nil : player.currentTime().seconds)
+                if isPlaying {
+                    if player.rate == 0 { player.play() }
+                } else {
+                    player.pause()
+                }
+            case .ended(let seconds):
+                player.pause()
+                Self.seek(player, to: seconds, ifDriftFrom: seek ? nil : player.currentTime().seconds)
+            }
+        }
+    }
+
+    /// `current`가 nil이면 항상, 아니면 목표와 많이 벌어졌을 때만 옮긴다.
+    private static func seek(_ player: AVPlayer, to seconds: Double, ifDriftFrom current: Double?) {
+        if let current, current.isFinite, abs(current - seconds) < videoDriftTolerance { return }
+        player.seek(
+            to: CMTime(seconds: seconds, preferredTimescale: 600),
+            toleranceBefore: .zero,
+            toleranceAfter: .zero
+        )
+    }
+
+    private func rememberRecordings(session: Session, recordings: [Recording], participantIDs: [String]) {
+        sessionRecordings = recordings
+        var latest: [String: (recording: Recording, offset: Double)] = [:]
+        for participantID in participantIDs {
+            guard let recording = Self.latestRecording(for: participantID, in: recordings) else { continue }
+            latest[participantID] = (recording, Self.recordingOffset(session: session, recording: recording))
+        }
+        participantRecordings = latest
+    }
+
+    /// 요청한 대원 중 아직 받지 않은 영상을 받기 시작한다. 기록 목록을 받기 전이면 받는 중으로만 표시한다.
+    /// 받지 못한 영상은 대원을 다시 선택하면 다시 받는다.
+    private func startRequestedVideoLoads() {
+        for participantID in requestedVideoIDs where videoTasks[participantID] == nil {
+            if case .ready = videos[participantID] { continue }
+            guard let participantRecordings else {
+                videos[participantID] = .loading
+                continue
+            }
+            guard let entry = participantRecordings[participantID] else {
+                videos[participantID] = .unavailable("기록이 없습니다.")
+                continue
+            }
+            videos[participantID] = .loading
+            let sessionID = loadedSessionID
+            let loader = videoLoader
+            videoTasks[participantID] = Task { [weak self] in
+                let result = await loader.load(entry.recording.identity, chunkCount: entry.recording.videoChunkCount)
+                let state = await Self.videoState(for: result, offset: entry.offset)
+                guard let self, !Task.isCancelled, self.loadedSessionID == sessionID else { return }
+                self.videoTasks[participantID] = nil
+                self.videos[participantID] = state
+                self.updatePlaybackDuration()
+                self.syncVideos(seek: true)
+            }
+        }
+    }
+
+    private static func videoState(for result: AARVideoLoadResult, offset: Double) async -> VideoState {
+        switch result {
+        case .loaded(let chunks):
+            do {
+                let composition = try await AARVideoComposer.compose(chunks)
+                let duration = try await composition.load(.duration).seconds
+                let player = AVPlayer(playerItem: AVPlayerItem(asset: composition))
+                player.isMuted = true
+                player.actionAtItemEnd = .pause
+                return .ready(player, AARVideoTimeline(recordingOffset: offset, duration: duration.isFinite ? duration : 0))
+            } catch {
+                logger.error("AAR 영상 이어 붙이기 실패: \(error.localizedDescription, privacy: .private)")
+                return .unavailable("영상을 재생할 수 없습니다.")
+            }
+        case .notUploaded:
+            return .unavailable("영상이 아직 올라오지 않았습니다.")
+        case .unavailable:
+            return .unavailable("영상을 불러오지 못했습니다.")
+        }
+    }
+
+    /// 동선과 영상 중 가장 늦게 끝나는 시각까지 재생한다.
+    private func updatePlaybackDuration() {
+        let trackEnds = tracks.values.compactMap { state -> Double? in
+            guard case .ready(let path, _) = state else { return nil }
+            return path.endTime
+        }
+        let videoEnds = videos.values.compactMap { state -> Double? in
+            guard case .ready(_, let timeline) = state else { return nil }
+            return timeline.endTime
+        }
+        playbackDuration = (trackEnds + videoEnds).max() ?? 0
     }
 
     private func loadTracks(session: Session, recordings: [Recording], participantIDs: [String]) async {
@@ -171,10 +348,7 @@ final class AARStore {
         }
         guard loadedSessionID == session.id else { return }
         for (participantID, state) in results { tracks[participantID] = state }
-        playbackDuration = tracks.values.compactMap { state -> Double? in
-            guard case .ready(let path, _) = state else { return nil }
-            return path.endTime
-        }.max() ?? 0
+        updatePlaybackDuration()
     }
 
     private func loadFloorPlan(_ reference: FloorPlanReference, local: LocalRegisteredFloorPlan?) async {
@@ -254,6 +428,15 @@ struct DemoRecordingRepository: RecordingRepository {
             continuation.finish()
         }
     }
+}
+
+/// Preview에서 Firebase 없이 Store를 생성하기 위한 빈 Repository다.
+struct DemoVideoChunkRepository: VideoChunkRepository {
+    func upload(fileURL: URL, identity: TrackIdentity, index: Int) async throws {}
+    func downloadVideo(_ identity: TrackIdentity, chunkCount: Int, to directory: URL) async throws -> [URL] {
+        throw RepositoryError.notFound
+    }
+    func deleteVideo(_ identity: TrackIdentity, chunkCount: Int) async throws {}
 }
 
 /// Preview에서 Firebase 없이 Store를 생성하기 위한 빈 Repository다.

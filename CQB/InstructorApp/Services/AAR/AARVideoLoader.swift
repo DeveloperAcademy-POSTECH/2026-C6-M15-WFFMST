@@ -50,7 +50,7 @@ actor AARVideoLoader {
 
     /// AAR을 마치면 Storage의 영상 조각과 기기 캐시를 지운다.
     /// 삭제가 실패해도 AAR 종료를 막지 않는다. 실패한 기록을 돌려준다.
-    /// Storage 영상 1일 자동 삭제 규칙은 아직 설정 전이라, 실패한 영상은 Storage에 남는다.
+    /// 실패한 영상은 Storage 수명 주기 규칙이 올린 지 1일 뒤 지운다.
     func finish(_ recordings: [(identity: TrackIdentity, chunkCount: Int?)]) async -> [TrackIdentity] {
         inFlight.values.forEach { $0.cancel() }
         inFlight = [:]
