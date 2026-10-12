@@ -61,6 +61,31 @@ final class MemberStore {
     var isReady: Bool { startPoint != nil && directionPoint != nil && isTrackingReady }
     var canResetPosition: Bool { phase == .waiting && !startRequestedBySession }
 
+    #if DEBUG && targetEnvironment(simulator)
+    private(set) var isSimulatedReady = false
+
+    /// Firebase 초기화와 같은 환경 변수 조건을 사용한다. 운영 연결에는 노출하지 않는다.
+    var isReadinessTestAvailable: Bool {
+        !(ProcessInfo.processInfo.environment["FIREBASE_EMULATOR_HOST"] ?? "").isEmpty
+    }
+
+    func setSimulatedReadiness(_ isReady: Bool) {
+        guard isReadinessTestAvailable, canResetPosition else { return }
+        isSimulatedReady = isReady
+        scheduleReadinessReport()
+    }
+    #endif
+
+    /// 테스트는 서버 보고만 대체한다. 실제 AR 준비 판정과 녹화 시작 조건은 바꾸지 않는다.
+    private var readinessForReporting: Bool {
+        #if DEBUG && targetEnvironment(simulator)
+        if isReadinessTestAvailable {
+            return isSimulatedReady && startPoint != nil && directionPoint != nil
+        }
+        #endif
+        return isReady
+    }
+
     /// PIN으로 세션을 조회하고 대원 등록이 성공한 뒤에만 setup으로 전환한다.
     func join(pin: String, memberName: String) {
         let name = memberName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -141,6 +166,9 @@ final class MemberStore {
         startPoint = nil
         directionPoint = nil
         isTrackingReady = false
+        #if DEBUG && targetEnvironment(simulator)
+        isSimulatedReady = false
+        #endif
         phase = .setup
         scheduleReadinessReport()
     }
@@ -286,7 +314,7 @@ final class MemberStore {
                     id: self.memberID,
                     sessionID: sessionID,
                     name: self.memberName,
-                    isReady: self.isReady,
+                    isReady: self.readinessForReporting,
                     lastActiveAt: .now
                 )
                 do {
@@ -321,6 +349,9 @@ final class MemberStore {
         startPoint = nil
         directionPoint = nil
         isTrackingReady = false
+        #if DEBUG && targetEnvironment(simulator)
+        isSimulatedReady = false
+        #endif
         lastSessionStatus = nil
         startRequestedBySession = false
         canRetryRecordingStart = false
@@ -444,6 +475,9 @@ final class MemberStore {
         canRetryRecordingStart = false
         lastSessionStatus = nil
         isTrackingReady = false
+        #if DEBUG && targetEnvironment(simulator)
+        isSimulatedReady = false
+        #endif
         hasShownSessionStreamError = false
         hasShownReadinessError = false
         cameraService.discardFinishedCapture()

@@ -2,7 +2,7 @@ import CQBDesignSystem
 import SwiftUI
 
 struct ParticipantReadyRow: View {
-    let participant: DemoParticipant
+    let participant: InstructorParticipant
 
     var body: some View {
         HStack(spacing: 16) {
@@ -44,7 +44,7 @@ struct ParticipantReadyRow: View {
 #Preview("대원 준비 상태") {
     VStack(spacing: 24) {
         ParticipantReadyRow(
-            participant: DemoParticipant(
+            participant: InstructorParticipant(
                 id: "ready",
                 number: 1,
                 name: "강유키1234",
@@ -54,7 +54,7 @@ struct ParticipantReadyRow: View {
             )
         )
         ParticipantReadyRow(
-            participant: DemoParticipant(
+            participant: InstructorParticipant(
                 id: "setting",
                 number: 2,
                 name: "매버릭1234",

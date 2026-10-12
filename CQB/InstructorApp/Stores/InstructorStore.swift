@@ -1,6 +1,7 @@
 import CQBCore
 import Foundation
 import Observation
+import os
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -8,9 +9,22 @@ import UIKit
 @MainActor
 @Observable
 final class InstructorStore {
+    enum MemberConnectionState {
+        case idle, connecting, connected, failed
+    }
+
+    private static let logger = Logger(subsystem: "com.wffmst.cqb", category: "InstructorStore")
+
     let floorPlanDraft: FloorPlanDraftStore
     @ObservationIgnored private let floorPlanFileRepository: any FloorPlanFileRepository
+    @ObservationIgnored private let sessionRepository: any SessionRepository
+    @ObservationIgnored private let memberRepository: any MemberRepository
+    @ObservationIgnored private let pinGenerator: () -> String
     @ObservationIgnored private var floorPlanUploadTask: Task<Void, Never>?
+    @ObservationIgnored private var sessionCreationTask: Task<Void, Never>?
+    @ObservationIgnored private var memberObservationTask: Task<Void, Never>?
+    @ObservationIgnored private var sessionEndTask: Task<Void, Never>?
+    @ObservationIgnored private var memberObservationID: UUID?
 #if canImport(UIKit)
     private(set) var selectedPlanImage: UIImage?
 #endif
@@ -18,8 +32,7 @@ final class InstructorStore {
     private(set) var floorPlans: [DemoFloorPlan]
     private(set) var trainingName = "샘플 훈련"
     private(set) var selectedFloorPlanID: String?
-    private(set) var participants: [DemoParticipant] = []
-    private(set) var readinessSample: ReadinessSample = .ready
+    private(set) var participants: [InstructorParticipant] = []
     private(set) var aarMode: AARMode = .movement
     private(set) var selectedParticipantIDs: Set<String> = []
     private(set) var playbackPosition = 331.0
@@ -27,9 +40,14 @@ final class InstructorStore {
     private(set) var isUploadingFloorPlan = false
     private(set) var floorPlanUploadError: String?
     private(set) var currentSession: Session?
+    private(set) var isCreatingSession = false
+    private(set) var sessionCreationError: String?
+    private(set) var memberObservationError: String?
+    private(set) var memberConnectionState: MemberConnectionState = .idle
+    private(set) var isEndingSession = false
+    private(set) var sessionEndError: String?
     private var failedFloorPlanRegistration: LocalRegisteredFloorPlan?
 
-    let invitationCode = "123456"
     let sampleTrainingElapsed = "00:12:34"
     let playbackDuration = 2172.0
     let maximumVideoCount = 4
@@ -37,27 +55,52 @@ final class InstructorStore {
     init(
         floorPlans: [DemoFloorPlan] = [],
         floorPlanDraft: FloorPlanDraftStore? = nil,
-        floorPlanFileRepository: any FloorPlanFileRepository = DemoFloorPlanFileRepository()
+        floorPlanFileRepository: any FloorPlanFileRepository = DemoFloorPlanFileRepository(),
+        sessionRepository: any SessionRepository = DemoSessionRepository(),
+        memberRepository: any MemberRepository = DemoMemberRepository(),
+        pinGenerator: @escaping () -> String = InstructorStore.makePIN,
+        previewSession: Session? = nil,
+        previewParticipants: [InstructorParticipant] = []
     ) {
         self.floorPlanDraft = floorPlanDraft ?? FloorPlanDraftStore()
         self.floorPlanFileRepository = floorPlanFileRepository
+        self.sessionRepository = sessionRepository
+        self.memberRepository = memberRepository
+        self.pinGenerator = pinGenerator
         self.floorPlans = floorPlans
+        self.currentSession = previewSession
+        self.participants = previewParticipants
+        if previewSession != nil {
+            phase = .teamReadiness
+            memberConnectionState = .connected
+        }
         selectedFloorPlanID = floorPlans.first?.id
     }
 
     var selectedFloorPlan: DemoFloorPlan? { floorPlans.first { $0.id == selectedFloorPlanID } }
     var canOpenSessionCreation: Bool { !floorPlans.isEmpty }
-    var canCreateSession: Bool { !trainingName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedFloorPlan != nil }
+    var canCreateSession: Bool {
+        !isCreatingSession
+            && !trainingName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && selectedFloorPlan != nil
+    }
     var readyCount: Int { participants.filter(\.isReady).count }
     var unreadyCount: Int { participants.count - readyCount }
-    var canStartTraining: Bool { !participants.isEmpty && participants.allSatisfy(\.isReady) }
-    var canRequestTrainingStart: Bool { readyCount > 0 }
+    var canStartTraining: Bool { canRequestTrainingStart && unreadyCount == 0 }
+    var canRequestTrainingStart: Bool {
+        phase == .teamReadiness && currentSession != nil && !isEndingSession
+            && memberConnectionState == .connected && readyCount > 0
+    }
+    var canRetryMemberObservation: Bool {
+        phase == .teamReadiness && currentSession != nil && !isEndingSession
+            && memberConnectionState == .failed
+    }
     var requiresUnreadyExclusionConfirmation: Bool { canRequestTrainingStart && unreadyCount > 0 }
     var canGoBack: Bool {
         [.floorPlanList, .floorPlanCreation, .sessionCreation, .teamReadiness].contains(phase)
-            && !isUploadingFloorPlan
+            && !isUploadingFloorPlan && !isCreatingSession && !isEndingSession
     }
-    var selectedParticipants: [DemoParticipant] { participants.filter { selectedParticipantIDs.contains($0.id) } }
+    var selectedParticipants: [InstructorParticipant] { participants.filter { selectedParticipantIDs.contains($0.id) } }
     var selectionSummary: String {
         if selectedParticipantIDs.count == participants.count && !participants.isEmpty { return "전체 대원" }
         return selectedParticipants.isEmpty ? "대원 선택" : "대원 " + selectedParticipants.map { String($0.number) }.joined(separator: ", ")
@@ -83,8 +126,12 @@ final class InstructorStore {
               let registration = failedFloorPlanRegistration else { return }
         uploadFloorPlan(registration)
     }
-    func setTrainingName(_ value: String) { trainingName = value }
+    func setTrainingName(_ value: String) {
+        guard !isCreatingSession else { return }
+        trainingName = value
+    }
     func selectFloorPlan(_ id: String?) {
+        guard !isCreatingSession else { return }
         guard id == nil || floorPlans.contains(where: { $0.id == id }) else { return }
         selectedFloorPlanID = id
 #if canImport(UIKit)
@@ -93,29 +140,51 @@ final class InstructorStore {
     }
     func createSession() {
         guard phase == .sessionCreation, canCreateSession, let floorPlan = selectedFloorPlan else { return }
-        currentSession = Session(
-            id: UUID(),
-            pin: invitationCode,
-            name: trainingName.trimmingCharacters(in: .whitespacesAndNewlines),
-            status: .preparing,
-            floorPlan: floorPlan.reference
-        )
-        loadReadinessSample(.ready)
-        phase = .teamReadiness
-    }
-    func loadReadinessSample(_ sample: ReadinessSample) {
-        readinessSample = sample
-        participants = sample == .empty ? [] : InstructorMockData.participants
-        if sample == .partial {
-            for index in participants.indices { participants[index].isReady = index < 3 }
+        stopObservingMembers()
+        sessionCreationTask?.cancel()
+        isCreatingSession = true
+        sessionCreationError = nil
+        sessionEndError = nil
+        participants = []
+        currentSession = nil
+
+        let name = trainingName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let reference = floorPlan.reference
+        let repository = sessionRepository
+        let makePIN = pinGenerator
+        sessionCreationTask = Task { [weak self] in
+            do {
+                let session = try await Self.createSession(
+                    name: name,
+                    floorPlan: reference,
+                    repository: repository,
+                    pinGenerator: makePIN
+                )
+                try Task.checkCancellation()
+                guard let self, self.phase == .sessionCreation else { return }
+                self.currentSession = session
+                self.isCreatingSession = false
+                self.sessionCreationTask = nil
+                self.phase = .teamReadiness
+                self.startObservingMembers(for: session)
+            } catch {
+                guard let self, !(error is CancellationError), self.phase == .sessionCreation else { return }
+                let failure = error as NSError
+                Self.logger.error("세션 생성 실패: domain=\(failure.domain, privacy: .public) code=\(failure.code) description=\(failure.localizedDescription, privacy: .private)")
+                self.isCreatingSession = false
+                self.sessionCreationTask = nil
+                self.sessionCreationError = Self.sessionCreationMessage(for: error)
+            }
         }
     }
     func startTraining() {
         guard phase == .teamReadiness, canStartTraining else { return }
+        stopObservingMembers()
         phase = .trainingInProgress
     }
     func startTrainingExcludingUnreadyParticipants() {
         guard phase == .teamReadiness, canRequestTrainingStart else { return }
+        stopObservingMembers()
         participants.removeAll { !$0.isReady }
         phase = .trainingInProgress
     }
@@ -166,11 +235,11 @@ final class InstructorStore {
         phase = .aarCompleted
     }
     func returnHome() {
+        cancelSessionWork()
         trainingName = "샘플 훈련"
         selectFloorPlan(floorPlans.first?.id)
         participants = []
         selectedParticipantIDs = []
-        readinessSample = .ready
         aarMode = .movement
         aarNotice = nil
         currentSession = nil
@@ -178,9 +247,12 @@ final class InstructorStore {
         phase = .home
     }
     func goBack() {
-        guard !isUploadingFloorPlan else { return }
+        guard !isUploadingFloorPlan, !isCreatingSession, !isEndingSession else { return }
         switch phase {
-        case .floorPlanList, .sessionCreation: phase = .home
+        case .floorPlanList: phase = .home
+        case .sessionCreation:
+            cancelSessionCreation()
+            phase = .home
         case .floorPlanCreation:
             clearFloorPlanUpload()
             if floorPlanDraft.step == .scaling {
@@ -190,11 +262,176 @@ final class InstructorStore {
                 phase = .floorPlanList
             }
         case .teamReadiness:
+            endCurrentSession()
+        default: break
+        }
+    }
+
+    func retryMemberObservation() {
+        guard canRetryMemberObservation, memberObservationTask == nil, let currentSession else { return }
+        startObservingMembers(for: currentSession)
+    }
+
+    private static func createSession(
+        name: String,
+        floorPlan: FloorPlanReference,
+        repository: any SessionRepository,
+        pinGenerator: () -> String
+    ) async throws -> Session {
+        for _ in 0..<5 {
+            try Task.checkCancellation()
+            let session = Session(
+                id: UUID(),
+                pin: pinGenerator(),
+                name: name,
+                status: .waiting,
+                floorPlan: floorPlan
+            )
+            do {
+                try await repository.createSession(session)
+                return session
+            } catch RepositoryError.pinTaken {
+                continue
+            }
+        }
+        throw RepositoryError.pinTaken
+    }
+
+    nonisolated private static func makePIN() -> String {
+        String(format: "%06d", Int.random(in: 0...999_999))
+    }
+
+    private func startObservingMembers(for session: Session) {
+        stopObservingMembers()
+        memberObservationError = nil
+        memberConnectionState = .connecting
+        let observationID = UUID()
+        memberObservationID = observationID
+        let repository = memberRepository
+        memberObservationTask = Task { [weak self] in
+            do {
+                for try await members in repository.observeMembers(sessionID: session.id) {
+                    try Task.checkCancellation()
+                    guard let self,
+                          self.memberObservationID == observationID,
+                          self.phase == .teamReadiness,
+                          self.currentSession?.id == session.id else { return }
+                    self.participants = Self.displayParticipants(from: members)
+                    self.memberConnectionState = .connected
+                }
+            } catch {
+                guard !(error is CancellationError), !Task.isCancelled else { return }
+                let failure = error as NSError
+                Self.logger.error("참가자 구독 실패: domain=\(failure.domain, privacy: .public) code=\(failure.code) description=\(failure.localizedDescription, privacy: .private)")
+            }
+            // 오류뿐 아니라 예기치 않은 정상 종료도 재연결이 필요하다.
+            guard !Task.isCancelled, let self,
+                  self.memberObservationID == observationID,
+                  self.phase == .teamReadiness else { return }
+            self.memberObservationTask = nil
+            self.memberObservationID = nil
+            self.memberConnectionState = .failed
+            self.memberObservationError = "참가자 준비 상태 연결이 끊어졌습니다. 다시 연결해주세요."
+        }
+    }
+
+    private func stopObservingMembers() {
+        memberObservationID = nil
+        memberObservationTask?.cancel()
+        memberObservationTask = nil
+        memberConnectionState = .idle
+        memberObservationError = nil
+    }
+
+    private func endCurrentSession() {
+        guard !isEndingSession else { return }
+        guard let session = currentSession else {
+            stopObservingMembers()
             participants = []
             currentSession = nil
             phase = .sessionCreation
-        default: break
+            return
         }
+        stopObservingMembers()
+        isEndingSession = true
+        sessionEndError = nil
+        let repository = sessionRepository
+        sessionEndTask = Task { [weak self] in
+            do {
+                try await repository.updateStatus(of: session, to: .ended)
+                try Task.checkCancellation()
+                guard let self, self.phase == .teamReadiness, self.currentSession?.id == session.id else { return }
+                self.isEndingSession = false
+                self.sessionEndTask = nil
+                self.participants = []
+                self.currentSession = nil
+                self.phase = .sessionCreation
+            } catch {
+                guard let self, !(error is CancellationError), self.phase == .teamReadiness else { return }
+                self.isEndingSession = false
+                self.sessionEndTask = nil
+                self.sessionEndError = "세션을 종료하지 못했습니다. 네트워크 연결을 확인한 뒤 다시 시도해주세요."
+                if self.currentSession?.id == session.id {
+                    self.startObservingMembers(for: session)
+                }
+            }
+        }
+    }
+
+    private func cancelSessionCreation() {
+        sessionCreationTask?.cancel()
+        sessionCreationTask = nil
+        isCreatingSession = false
+        sessionCreationError = nil
+    }
+
+    private func cancelSessionWork() {
+        cancelSessionCreation()
+        stopObservingMembers()
+        sessionEndTask?.cancel()
+        sessionEndTask = nil
+        isEndingSession = false
+        sessionEndError = nil
+    }
+
+    private static func displayParticipants(from members: [Member]) -> [InstructorParticipant] {
+        members
+            .sorted { $0.id.uuidString < $1.id.uuidString }
+            .enumerated()
+            .map { index, member in
+                InstructorParticipant(
+                    id: member.id.uuidString,
+                    number: index + 1,
+                    name: member.name,
+                    isReady: member.isReady,
+                    x: 0.22 + Double(index % 4) * 0.17,
+                    y: index < 4 ? 0.5 : 0.68
+                )
+            }
+    }
+
+#if DEBUG
+    /// 에뮬레이터 시험 데이터(`scripts/seed-aar-emulator.py`)의 세션으로 AAR을 바로 연다.
+    /// 훈련 시작·종료 흐름 없이 AAR 화면을 확인하기 위한 디버그 전용 진입점이다.
+    func openAARForDebug(session: Session, members: [Member]) {
+        cancelSessionWork()
+        currentSession = session
+        participants = Self.displayParticipants(from: members)
+        if let plan = floorPlans.first(where: { $0.reference == session.floorPlan }) {
+            selectFloorPlan(plan.id)
+        }
+        aarMode = .movement
+        selectedParticipantIDs = Set(participants.map(\.id))
+        aarNotice = nil
+        phase = .aar
+    }
+#endif
+
+    private static func sessionCreationMessage(for error: Error) -> String {
+        if error as? RepositoryError == .pinTaken {
+            return "사용 가능한 PIN을 만들지 못했습니다. 다시 시도해주세요."
+        }
+        return "세션을 만들지 못했습니다. 네트워크 연결을 확인한 뒤 다시 시도해주세요."
     }
 
     private func uploadFloorPlan(_ registration: LocalRegisteredFloorPlan) {

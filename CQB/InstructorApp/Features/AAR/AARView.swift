@@ -1,3 +1,4 @@
+import CQBCore
 import SwiftUI
 
 private enum AARLayout {
@@ -10,6 +11,9 @@ private enum AARLayout {
 }
 
 struct AARView: View {
+    @Environment(InstructorStore.self) private var store
+    @Environment(AARStore.self) private var aarStore
+
     var body: some View {
         GeometryReader { geometry in
             let settingsWidth = min(298, max(240, geometry.size.width * 0.22))
@@ -37,40 +41,44 @@ struct AARView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(InstructorColor.canvas.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+        .task(id: store.currentSession?.id) { await loadTracks() }
+        .onDisappear { aarStore.reset() }
+    }
+
+    private func loadTracks() async {
+        guard let session = store.currentSession else { return }
+        await aarStore.load(
+            session: session,
+            participantIDs: store.participants.map(\.id),
+            localFloorPlan: store.selectedFloorPlan?.registeredPlan
+        )
     }
 }
 
 #Preview("AAR 동선") {
-    let store = InstructorStore(floorPlans: [
-        DemoFloorPlan(
-            id: "preview-plan",
-            name: "훈련장 A 도면",
-            fileName: "훈련장 A 도면.png",
-            referenceDistance: 15
-        )
-    ])
-    store.openSessionCreation()
-    store.createSession()
+    let store = InstructorPreviewFixture.store(floorPlan: DemoFloorPlan(
+        id: "preview-plan",
+        name: "훈련장 A 도면",
+        fileName: "훈련장 A 도면.png",
+        referenceDistance: 15
+    ))
     store.startTraining()
     store.finishTraining()
 
     return AARView()
         .environment(store)
+        .environment(AARStore())
         .frame(width: 1_366, height: 1_024)
         .preferredColorScheme(.dark)
 }
 
 #Preview("AAR 영상") {
-    let store = InstructorStore(floorPlans: [
-        DemoFloorPlan(
-            id: "preview-plan",
-            name: "훈련장 A 도면",
-            fileName: "훈련장 A 도면.png",
-            referenceDistance: 15
-        )
-    ])
-    store.openSessionCreation()
-    store.createSession()
+    let store = InstructorPreviewFixture.store(floorPlan: DemoFloorPlan(
+        id: "preview-plan",
+        name: "훈련장 A 도면",
+        fileName: "훈련장 A 도면.png",
+        referenceDistance: 15
+    ))
     store.startTraining()
     store.finishTraining()
     store.toggleParticipantSelection("member-5")
@@ -79,6 +87,7 @@ struct AARView: View {
 
     return AARView()
         .environment(store)
+        .environment(AARStore())
         .frame(width: 1_366, height: 1_024)
         .preferredColorScheme(.dark)
 }
