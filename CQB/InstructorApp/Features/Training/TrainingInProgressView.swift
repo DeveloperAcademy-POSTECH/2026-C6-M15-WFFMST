@@ -21,15 +21,33 @@ struct TrainingInProgressView: View {
 
                 Spacer()
 
+                if let error = store.trainingActionError {
+                    Text(error)
+                        .foregroundStyle(InstructorColor.textSecondary)
+                        .accessibilityIdentifier("training.finishError")
+                }
+                if store.sessionConnectionState == .connecting {
+                    ProgressView("서버 훈련 정보 연결 중…")
+                } else if let error = store.sessionObservationError {
+                    HStack {
+                        Text(error)
+                        Button("다시 연결", action: store.retrySessionObservation)
+                            .disabled(!store.canRetrySessionObservation)
+                            .accessibilityIdentifier("training.reconnect")
+                    }
+                    .foregroundStyle(InstructorColor.textSecondary)
+                }
+
                 HStack {
                     Spacer()
                     ActionButton(
-                        "훈련 종료",
+                        store.isFinishingTraining ? "훈련 종료 중…" : "훈련 종료",
                         tone: .secondary,
                         fillsWidth: true,
                         action: store.finishTraining
                     )
                     .frame(width: 300, height: 48)
+                    .disabled(!store.canFinishTraining)
                     .accessibilityIdentifier("training.finish")
                 }
             }
@@ -44,16 +62,15 @@ struct TrainingInProgressView: View {
     }
 
     private var trainingTimer: some View {
-        TimelineView(.periodic(from: store.trainingStartedAt ?? .now, by: 1)) { context in
-            let elapsed = store.formattedTrainingElapsed(at: context.date)
-
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let elapsed = store.trainingElapsed(at: context.date)
             HStack(spacing: 24) {
                 Circle()
                     .fill(InstructorColor.teamOne)
                     .frame(width: 12, height: 12)
                     .accessibilityHidden(true)
 
-                Text(elapsed)
+                Text(elapsed ?? "시작 시각 확인 중…")
                     .font(displayFont)
                     .tracking(2.4)
                     .foregroundStyle(InstructorColor.textPrimary)
@@ -63,7 +80,8 @@ struct TrainingInProgressView: View {
             }
             .frame(minWidth: 254, minHeight: 72)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("훈련 경과 시간 \(elapsed)")
+            .accessibilityLabel(elapsed.map { "훈련 경과 시간 \($0)" } ?? "서버 시작 시각 확인 중")
+            .accessibilityIdentifier("training.elapsed")
         }
     }
 

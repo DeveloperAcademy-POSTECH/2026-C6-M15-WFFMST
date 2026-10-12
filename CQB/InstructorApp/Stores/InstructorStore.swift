@@ -16,16 +16,20 @@ final class InstructorStore {
     private static let logger = Logger(subsystem: "com.wffmst.cqb", category: "InstructorStore")
 
     let floorPlanDraft: FloorPlanDraftStore
+    let trainingRecords: TrainingRecordStore
     @ObservationIgnored private let floorPlanFileRepository: any FloorPlanFileRepository
     @ObservationIgnored private let sessionRepository: any SessionRepository
     @ObservationIgnored private let memberRepository: any MemberRepository
     @ObservationIgnored private let pinGenerator: () -> String
-    @ObservationIgnored private let now: () -> Date
     @ObservationIgnored private var floorPlanUploadTask: Task<Void, Never>?
     @ObservationIgnored private var sessionCreationTask: Task<Void, Never>?
     @ObservationIgnored private var memberObservationTask: Task<Void, Never>?
     @ObservationIgnored private var sessionEndTask: Task<Void, Never>?
     @ObservationIgnored private var memberObservationID: UUID?
+    @ObservationIgnored private var trainingActionTask: Task<Void, Never>?
+    @ObservationIgnored private var trainingActionID: UUID?
+    @ObservationIgnored private var sessionObservationTask: Task<Void, Never>?
+    @ObservationIgnored private var sessionObservationID: UUID?
 #if canImport(UIKit)
     private(set) var selectedPlanImage: UIImage?
 #endif
@@ -48,6 +52,12 @@ final class InstructorStore {
     private(set) var isEndingSession = false
     private(set) var sessionEndError: String?
     private(set) var trainingStartedAt: Date?
+    private(set) var isStartingTraining = false
+    private(set) var isFinishingTraining = false
+    private(set) var trainingActionError: String?
+    private(set) var sessionConnectionState: MemberConnectionState = .idle
+    private(set) var sessionObservationError: String?
+    private(set) var trainingParticipants: [InstructorParticipant] = []
     private var failedFloorPlanRegistration: LocalRegisteredFloorPlan?
 
     let playbackDuration = 2172.0
@@ -59,23 +69,29 @@ final class InstructorStore {
         floorPlanFileRepository: any FloorPlanFileRepository = DemoFloorPlanFileRepository(),
         sessionRepository: any SessionRepository = DemoSessionRepository(),
         memberRepository: any MemberRepository = DemoMemberRepository(),
+        recordingRepository: any RecordingRepository = DemoRecordingRepository(),
         pinGenerator: @escaping () -> String = InstructorStore.makePIN,
-        now: @escaping () -> Date = Date.init,
         previewSession: Session? = nil,
-        previewParticipants: [InstructorParticipant] = []
+        previewParticipants: [InstructorParticipant] = [],
+        previewPhase: InstructorPhase = .teamReadiness
     ) {
         self.floorPlanDraft = floorPlanDraft ?? FloorPlanDraftStore()
         self.floorPlanFileRepository = floorPlanFileRepository
         self.sessionRepository = sessionRepository
         self.memberRepository = memberRepository
+        self.trainingRecords = TrainingRecordStore(repository: recordingRepository)
         self.pinGenerator = pinGenerator
-        self.now = now
         self.floorPlans = floorPlans
         self.currentSession = previewSession
+        self.trainingStartedAt = previewSession?.startedAt
         self.participants = previewParticipants
         if previewSession != nil {
-            phase = .teamReadiness
+            phase = previewPhase
             memberConnectionState = .connected
+            if previewPhase != .teamReadiness {
+                trainingParticipants = previewParticipants
+                selectedParticipantIDs = Set(previewParticipants.map(\.id))
+            }
         }
         selectedFloorPlanID = floorPlans.first?.id
     }
@@ -91,17 +107,25 @@ final class InstructorStore {
     var unreadyCount: Int { participants.count - readyCount }
     var canStartTraining: Bool { canRequestTrainingStart && unreadyCount == 0 }
     var canRequestTrainingStart: Bool {
-        phase == .teamReadiness && currentSession != nil && !isEndingSession
+        phase == .teamReadiness && currentSession != nil && !isEndingSession && !isStartingTraining
             && memberConnectionState == .connected && readyCount > 0
     }
     var canRetryMemberObservation: Bool {
-        phase == .teamReadiness && currentSession != nil && !isEndingSession
+        phase == .teamReadiness && currentSession != nil && !isEndingSession && !isStartingTraining
             && memberConnectionState == .failed
     }
     var requiresUnreadyExclusionConfirmation: Bool { canRequestTrainingStart && unreadyCount > 0 }
     var canGoBack: Bool {
         [.floorPlanList, .floorPlanCreation, .sessionCreation, .teamReadiness].contains(phase)
-            && !isUploadingFloorPlan && !isCreatingSession && !isEndingSession
+            && !isUploadingFloorPlan && !isCreatingSession && !isEndingSession && !isStartingTraining
+    }
+    var canFinishTraining: Bool { phase == .trainingInProgress && !isFinishingTraining }
+    var canRetrySessionObservation: Bool {
+        phase == .trainingInProgress && sessionConnectionState == .failed && !isFinishingTraining
+    }
+    func trainingElapsed(at now: Date) -> String? {
+        guard trainingStartedAt != nil else { return nil }
+        return formattedTrainingElapsed(at: now)
     }
     var selectedParticipants: [InstructorParticipant] { participants.filter { selectedParticipantIDs.contains($0.id) } }
     var selectionSummary: String {
@@ -156,6 +180,7 @@ final class InstructorStore {
     }
     func createSession() {
         guard phase == .sessionCreation, canCreateSession, let floorPlan = selectedFloorPlan else { return }
+        cancelTrainingWork()
         stopObservingMembers()
         sessionCreationTask?.cancel()
         isCreatingSession = true
@@ -196,19 +221,51 @@ final class InstructorStore {
     }
     func startTraining() {
         guard phase == .teamReadiness, canStartTraining else { return }
-        stopObservingMembers()
-        trainingStartedAt = now()
-        phase = .trainingInProgress
+        requestTrainingStart(with: participants)
     }
     func startTrainingExcludingUnreadyParticipants() {
         guard phase == .teamReadiness, canRequestTrainingStart else { return }
-        stopObservingMembers()
-        participants.removeAll { !$0.isReady }
-        trainingStartedAt = now()
-        phase = .trainingInProgress
+        requestTrainingStart(with: participants.filter(\.isReady))
     }
     func finishTraining() {
-        guard phase == .trainingInProgress else { return }
+        guard canFinishTraining, let session = currentSession else { return }
+        isFinishingTraining = true
+        trainingActionError = nil
+        let id = UUID()
+        trainingActionID = id
+        let repository = sessionRepository
+        trainingActionTask = Task { [weak self] in
+            do {
+                try await repository.updateStatus(of: session, to: .ended)
+                try Task.checkCancellation()
+                guard let self, self.trainingActionID == id, self.phase == .trainingInProgress else { return }
+                self.trainingActionTask = nil
+                self.trainingActionID = nil
+                self.isFinishingTraining = false
+                self.enterResultsPreparation(for: session.id)
+            } catch {
+                guard !Task.isCancelled, let self, self.trainingActionID == id else { return }
+                self.trainingActionTask = nil
+                self.trainingActionID = nil
+                self.isFinishingTraining = false
+                self.trainingActionError = "훈련을 종료하지 못했습니다. 연결을 확인한 뒤 다시 종료해주세요."
+            }
+        }
+    }
+
+    func retrySessionObservation() {
+        guard canRetrySessionObservation, let session = currentSession else { return }
+        startObservingSession(id: session.id)
+    }
+
+    func retryRecordingObservation() {
+        guard phase == .resultsPreparation else { return }
+        trainingRecords.retry()
+    }
+
+    private func enterAAR() {
+        guard phase == .resultsPreparation, trainingRecords.isReadyForAAR else { return }
+        trainingRecords.stop()
         aarMode = .movement
         selectedParticipantIDs = Set(participants.map(\.id))
         playbackPosition = 331
@@ -267,7 +324,7 @@ final class InstructorStore {
         phase = .home
     }
     func goBack() {
-        guard !isUploadingFloorPlan, !isCreatingSession, !isEndingSession else { return }
+        guard !isUploadingFloorPlan, !isCreatingSession, !isEndingSession, !isStartingTraining else { return }
         switch phase {
         case .floorPlanList: phase = .home
         case .sessionCreation:
@@ -406,12 +463,116 @@ final class InstructorStore {
     }
 
     private func cancelSessionWork() {
+        cancelTrainingWork()
         cancelSessionCreation()
         stopObservingMembers()
         sessionEndTask?.cancel()
         sessionEndTask = nil
         isEndingSession = false
         sessionEndError = nil
+    }
+
+    private func requestTrainingStart(with candidates: [InstructorParticipant]) {
+        guard let session = currentSession, !candidates.isEmpty else { return }
+        stopObservingMembers()
+        isStartingTraining = true
+        trainingActionError = nil
+        let id = UUID()
+        trainingActionID = id
+        let repository = sessionRepository
+        trainingActionTask = Task { [weak self] in
+            do {
+                try await repository.updateStatus(of: session, to: .running)
+                try Task.checkCancellation()
+                guard let self, self.trainingActionID == id, self.phase == .teamReadiness else { return }
+                self.trainingActionTask = nil
+                self.trainingActionID = nil
+                self.isStartingTraining = false
+                self.trainingParticipants = candidates
+                self.participants = candidates
+                // 쓰기 성공은 확인했지만 시작 시각은 후속 서버 스냅샷으로만 채운다.
+                self.trainingStartedAt = nil
+                self.currentSession = Self.session(session, with: .running)
+                self.phase = .trainingInProgress
+                self.startObservingSession(id: session.id)
+            } catch {
+                guard !Task.isCancelled, let self, self.trainingActionID == id else { return }
+                self.trainingActionTask = nil
+                self.trainingActionID = nil
+                self.isStartingTraining = false
+                self.trainingActionError = "훈련을 시작하지 못했습니다. 연결을 확인한 뒤 다시 시작해주세요."
+                self.startObservingMembers(for: session)
+            }
+        }
+    }
+
+    private func startObservingSession(id sessionID: UUID) {
+        stopObservingSession()
+        sessionConnectionState = .connecting
+        let id = UUID()
+        sessionObservationID = id
+        let repository = sessionRepository
+        sessionObservationTask = Task { [weak self] in
+            do {
+                for try await session in repository.observeSession(id: sessionID) {
+                    try Task.checkCancellation()
+                    guard let self, self.sessionObservationID == id,
+                          self.currentSession?.id == sessionID, self.phase == .trainingInProgress else { return }
+                    guard session.id == sessionID, session.status == .running || session.status == .ended else { continue }
+                    self.currentSession = session
+                    self.trainingStartedAt = session.startedAt
+                    self.sessionConnectionState = .connected
+                    // 종료 쓰기 중에는 보류 중인 로컬 스냅샷으로 화면을 먼저 전환하지 않는다.
+                    if session.status == .ended, !self.isFinishingTraining {
+                        self.enterResultsPreparation(for: sessionID)
+                    }
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+            }
+            guard !Task.isCancelled, let self, self.sessionObservationID == id else { return }
+            self.sessionObservationTask = nil
+            self.sessionObservationID = nil
+            self.sessionConnectionState = .failed
+            self.sessionObservationError = "세션 상태 연결이 끊어졌습니다. 다시 연결해주세요."
+        }
+    }
+
+    private func enterResultsPreparation(for sessionID: UUID) {
+        guard phase == .trainingInProgress, let session = currentSession, session.id == sessionID else { return }
+        currentSession = Self.session(session, with: .ended)
+        stopObservingSession()
+        trainingActionError = nil
+        phase = .resultsPreparation
+        trainingRecords.observe(sessionID: sessionID, participants: trainingParticipants) { [weak self] in
+            guard let self, self.currentSession?.id == sessionID else { return }
+            self.enterAAR()
+        }
+    }
+
+    private func stopObservingSession() {
+        sessionObservationID = nil
+        sessionObservationTask?.cancel()
+        sessionObservationTask = nil
+        sessionConnectionState = .idle
+        sessionObservationError = nil
+    }
+
+    private func cancelTrainingWork() {
+        trainingActionID = nil
+        trainingActionTask?.cancel()
+        trainingActionTask = nil
+        isStartingTraining = false
+        isFinishingTraining = false
+        trainingActionError = nil
+        trainingParticipants = []
+        stopObservingSession()
+        trainingRecords.reset()
+    }
+
+    private static func session(_ session: Session, with status: SessionStatus) -> Session {
+        Session(id: session.id, pin: session.pin, name: session.name, status: status,
+                startedAt: session.startedAt, floorPlan: session.floorPlan)
     }
 
     private static func displayParticipants(from members: [Member]) -> [InstructorParticipant] {

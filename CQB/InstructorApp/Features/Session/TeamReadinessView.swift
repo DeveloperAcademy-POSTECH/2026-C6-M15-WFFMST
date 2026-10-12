@@ -9,7 +9,7 @@ struct TeamReadinessView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             InstructorBackButton(action: store.goBack)
-                .disabled(store.isEndingSession)
+                .disabled(!store.canGoBack)
 
             HStack(alignment: .top) {
                 Text("팀 준비 상태")
@@ -23,7 +23,11 @@ struct TeamReadinessView: View {
             }
             .frame(height: 56, alignment: .top)
 
-            if store.isEndingSession {
+            if store.isStartingTraining {
+                ProgressView("훈련 시작 중…")
+                    .padding(.top, 16)
+                    .accessibilityIdentifier("readiness.starting")
+            } else if store.isEndingSession {
                 ProgressView("세션 종료 중…")
                     .padding(.top, 16)
                     .accessibilityIdentifier("readiness.ending")
@@ -42,6 +46,14 @@ struct TeamReadinessView: View {
                     .foregroundStyle(InstructorColor.textSecondary)
                     .padding(.top, 16)
                     .accessibilityIdentifier("readiness.endError")
+            }
+
+            if let error = store.trainingActionError {
+                Text(error)
+                    .font(DSTypography.bodySmall)
+                    .foregroundStyle(InstructorColor.textSecondary)
+                    .padding(.top, 16)
+                    .accessibilityIdentifier("training.startError")
             }
 
             readinessList
