@@ -48,8 +48,8 @@ struct AARView: View {
         .background(InstructorColor.canvas.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .task(id: store.currentSession?.id) { await loadTracks() }
-        // 시험·시연 중 영상을 다시 볼 수 있게 당분간 AAR을 떠나도 영상을 지우지 않는다(#66).
-        // 영상은 Storage 수명 주기 규칙이 올린 지 1일 뒤 지운다. 다시 지우려면 `aarStore.finish()`를 부른다.
+        // UT 영상을 남기려고 당분간 AAR을 떠나도 영상을 지우지 않는다(#66). Storage 자동 삭제도 꺼져 있다(docs/repositories.md).
+        // 다시 지우려면 `aarStore.finish()`를 부른다.
         .onDisappear { aarStore.reset() }
     }
 
