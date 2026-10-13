@@ -23,7 +23,12 @@ Store는 `CQBCore`의 프로토콜만 안다. Firebase 구현을 아는 곳은 �
   - 대원은 맞는 PIN으로 `preparing`·`waiting` 세션에만 입장하고, 본인 문서(`uid`)와 본인 기록만 쓴다. 다른 대원 목록은 볼 수 없다.
   - 문서 목록 조회는 교관이 자기 세션의 대원·기록을 볼 때만 된다.
   - Storage의 보정 결과·영상은 기록 주인이 올리고, 그 세션의 교관이 받고 지운다. 도면은 처음 한 번만 올린다.
-- Storage 버킷에 `.mp4`를 올린 지 1일 뒤 지우는 수명 주기 규칙이 있다. `deleteVideo`가 실패해도 남은 영상은 자동으로 지워진다.
+- Storage 버킷의 `.mp4` 1일 자동 삭제(수명 주기 규칙)는 **UT 영상을 남기려고 2026-10-13부터 꺼 두었다.** 지금은 영상이 지워지지 않고 쌓인다(10분 훈련·대원 4명에 약 600MB). UT가 끝나면 영상을 백업하고 다시 켠다.
+
+  ```bash
+  echo '{"rule":[{"action":{"type":"Delete"},"condition":{"age":1,"matchesSuffix":[".mp4"]}}]}' > /tmp/lifecycle.json
+  gcloud storage buckets update gs://cqb-wffmst.firebasestorage.app --lifecycle-file=/tmp/lifecycle.json
+  ```
 - Storage 소프트 삭제는 꺼져 있다. 지운 파일은 바로 사라지고 되살릴 수 없다.
 
 ## 누가 무엇을 부르나
@@ -292,8 +297,8 @@ do {
 
 - `upload`: 파일 하나가 20MB를 넘으면 `RepositoryError.fileTooLarge`. 조각 길이와 화질은 이 제한 안에 들어오게 정한다.
 - `downloadVideo`: 조각을 하나씩 순서대로 받는다. 하나라도 없으면 `RepositoryError.notFound`. `chunkCount`는 `Recording.videoChunkCount`를 넘긴다.
-- `deleteVideo`: AAR이 끝나면 부른다. 이미 없는 조각은 건너뛴다. 실패해도 수명 주기 규칙이 1일 뒤 지우므로 AAR 종료를 막지 않는다.
-  - 지금은 시험·시연 중 영상을 다시 볼 수 있게 교관 앱이 AAR 종료 시 부르지 않는다(#66). 영상은 수명 주기 규칙으로만 지워진다.
+- `deleteVideo`: AAR이 끝나면 부른다. 이미 없는 조각은 건너뛴다. 실패해도 AAR 종료를 막지 않는다. 남은 영상은 수명 주기 규칙이 켜져 있으면 1일 뒤 지워진다.
+  - 지금은 UT 영상을 남기려고 교관 앱이 AAR 종료 시 부르지 않고(#66), 수명 주기 규칙도 꺼 두었다. 영상은 지워지지 않는다.
 - 영상은 Storage에서 내려받는 양만큼 요금이 나온다. 필요한 대원의 영상만 받고, 받은 파일은 기기에 두고 다시 쓴다.
 
 ### 공통
