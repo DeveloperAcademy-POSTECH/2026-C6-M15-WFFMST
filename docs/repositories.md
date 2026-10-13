@@ -293,6 +293,7 @@ do {
 - `upload`: 파일 하나가 20MB를 넘으면 `RepositoryError.fileTooLarge`. 조각 길이와 화질은 이 제한 안에 들어오게 정한다.
 - `downloadVideo`: 조각을 하나씩 순서대로 받는다. 하나라도 없으면 `RepositoryError.notFound`. `chunkCount`는 `Recording.videoChunkCount`를 넘긴다.
 - `deleteVideo`: AAR이 끝나면 부른다. 이미 없는 조각은 건너뛴다. 실패해도 수명 주기 규칙이 1일 뒤 지우므로 AAR 종료를 막지 않는다.
+  - 지금은 시험·시연 중 영상을 다시 볼 수 있게 교관 앱이 AAR 종료 시 부르지 않는다(#66). 영상은 수명 주기 규칙으로만 지워진다.
 - 영상은 Storage에서 내려받는 양만큼 요금이 나온다. 필요한 대원의 영상만 받고, 받은 파일은 기기에 두고 다시 쓴다.
 
 ### 공통
