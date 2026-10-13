@@ -48,8 +48,9 @@ struct AARView: View {
         .background(InstructorColor.canvas.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .task(id: store.currentSession?.id) { await loadTracks() }
-        // AAR 화면을 떠나면(AAR 종료·홈) 다시 돌아오지 않으므로 이 세션의 영상을 지운다.
-        .onDisappear { aarStore.finish() }
+        // 시험·시연 중 영상을 다시 볼 수 있게 당분간 AAR을 떠나도 영상을 지우지 않는다(#66).
+        // 영상은 Storage 수명 주기 규칙이 올린 지 1일 뒤 지운다. 다시 지우려면 `aarStore.finish()`를 부른다.
+        .onDisappear { aarStore.reset() }
     }
 
     private func loadTracks() async {
