@@ -1,0 +1,108 @@
+import SwiftUI
+import CQBDesignSystem
+
+struct RootView: View {
+    @Environment(MemberStore.self) private var store
+    private var floorPlan: UIImage? {
+        store.trainingMap.flatMap { UIImage(contentsOfFile: $0.imageURL.path) }
+    }
+
+    var body: some View {
+        Group {
+            switch store.phase {
+            case .join:
+                SessionJoinView(isJoining: store.isJoining) { pin, name in
+                    store.join(pin: pin, memberName: name)
+                }
+            case .setup:
+                if let floorPlan {
+                    StartPositionSetupView(
+                        floorPlan: floorPlan,
+                        startPoint: store.startPoint,
+                        directionPoint: store.directionPoint
+                    ) { start, direction in
+                        store.confirmPosition(start: start, direction: direction)
+                    }
+                } else {
+                    ContentUnavailableView("도면을 불러올 수 없습니다", systemImage: "map")
+                }
+            case .waiting, .recording, .saving, .correcting:
+                TrainingRecordingView(
+                    phase: store.phase,
+                    startedAt: store.recordingStartedAt,
+                    onFinish: { Task { await store.finishRecording() } },
+                    onReset: { store.resetPosition() },
+                    allowsPositionReset: store.canResetPosition,
+                    allowsManualStop: true,
+                    canRetryRecordingStart: store.canRetryRecordingStart,
+                    isStartingRecording: store.isStarting,
+                    uploadStatusMessage: store.uploadStatusMessage,
+                    onRetryRecordingStart: { Task { await store.retryStartingRecording() } },
+                    onCameraReadinessChange: { store.updateTrackingReadiness($0) },
+                    cameraService: store.cameraService,
+                    onStopRecording: { await store.finishRecording() }
+                )
+                #if DEBUG && targetEnvironment(simulator)
+                .safeAreaInset(edge: .bottom) {
+                    if store.phase == .waiting, store.isReadinessTestAvailable {
+                        Toggle(isOn: Binding(
+                            get: { store.isSimulatedReady },
+                            set: { store.setSimulatedReadiness($0) }
+                        )) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("준비 완료 전송 (테스트)").font(.headline)
+                                Text("에뮬레이터 전용 · 서버 준비 상태만 변경하며 AR·녹화는 지원하지 않습니다.")
+                                    .font(.caption)
+                            }
+                        }
+                        .accessibilityIdentifier("emulator-readiness-toggle")
+                        .disabled(!store.canResetPosition)
+                        .tint(DSColor.main)
+                        .foregroundStyle(DSColor.white)
+                        .padding()
+                        .background(DSColor.area1)
+                    }
+                }
+                #endif
+            case .saved:
+                RecordingSaveTestView(recordingURLs: store.savedRecordingURLs,
+                    raw: store.rawTrack, correction: store.correction, mapImage: floorPlan,
+                    files: store.recordingFiles, filesSaved: store.filesSaved,
+                    onHome: { store.returnToJoin() },
+                    onRetry: { Task { await store.retrySaving() } }) {
+                    store.startUploading()
+                }
+            case .uploading:
+                RecordingUploadView(
+                    progress: store.uploadProgress,
+                    isComplete: store.isUploadComplete,
+                    statusMessage: store.uploadStatusMessage,
+                    errorMessage: store.uploadErrorMessage,
+                    isUploading: store.isUploading,
+                    onRetry: { await store.retryUploading() },
+                    onHome: { store.returnToJoin() }
+                )
+                .task { await store.uploadRecording() }
+            }
+        }
+        .alert(
+            "기록 안내",
+            isPresented: Binding(
+                get: { store.errorMessage != nil },
+                set: { if !$0 { store.clearRecordingError() } }
+            )
+        ) {
+            if store.canRetryRecordingStart {
+                Button("재시도") {
+                    Task { await store.retryStartingRecording() }
+                }
+                .disabled(!store.isReady || store.isStarting)
+                Button("나중에", role: .cancel) { store.clearRecordingError() }
+            } else {
+                Button("확인", role: .cancel) { store.clearRecordingError() }
+            }
+        } message: {
+            Text(store.errorMessage ?? "녹화 중 문제가 발생했습니다.")
+        }
+    }
+}

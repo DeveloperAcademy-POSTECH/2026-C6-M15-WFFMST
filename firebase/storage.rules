@@ -1,0 +1,40 @@
+rules_version = '2';
+
+// Firebase 콘솔의 Storage 규칙과 같게 유지한다. 바꿀 때는 에뮬레이터에서 먼저 확인한다.
+// 세션 파일은 Firestore의 세션·기록·대원 문서로 교관과 기록 주인을 확인한다.
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function underSizeLimit() {
+      return request.resource.size <= 20 * 1024 * 1024;
+    }
+
+    // 도면: 로그인 사용자가 읽고, 처음 한 번만 올린다. 덮어쓰기·삭제는 막는다.
+    match /floorPlans/{floorPlanID}/{fileName} {
+      allow read: if signedIn();
+      allow create: if signedIn() && resource == null && underSizeLimit();
+    }
+
+    // 보정 결과와 영상: 기록 주인(대원)이 올리고, 그 세션의 교관이 받고 지운다.
+    match /sessions/{sessionID}/recordings/{recordingID}/{allPaths=**} {
+      function isInstructor() {
+        return signedIn()
+          && firestore.get(/databases/(default)/documents/sessions/$(sessionID)).data.instructorUid == request.auth.uid;
+      }
+
+      function isRecordingOwner() {
+        let memberID = firestore.get(/databases/(default)/documents/sessions/$(sessionID)/recordings/$(recordingID)).data.identity.memberID;
+        return signedIn()
+          && firestore.get(/databases/(default)/documents/sessions/$(sessionID)/members/$(memberID)).data.uid == request.auth.uid;
+      }
+
+      allow read: if isInstructor();
+      allow create, update: if isRecordingOwner() && underSizeLimit();
+      allow delete: if isInstructor();
+    }
+  }
+}

@@ -22,6 +22,13 @@ let package = Package(
             name: "CQBFirebase",
             targets: ["CQBFirebase"]
         ),
+        .library(
+            name: "CQBDesignSystem",
+            targets: ["CQBDesignSystem"]
+        ),
+    ],
+    dependencies: [
+        .package(url: "https://github.com/firebase/firebase-ios-sdk.git", from: "12.19.2"),
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
@@ -41,7 +48,23 @@ let package = Package(
         ),
         .target(
             name: "CQBFirebase",
+            dependencies: [
+                "CQBCore",
+                .product(name: "FirebaseCore", package: "firebase-ios-sdk"),
+                .product(name: "FirebaseAuth", package: "firebase-ios-sdk"),
+                .product(name: "FirebaseFirestore", package: "firebase-ios-sdk"),
+                .product(name: "FirebaseStorage", package: "firebase-ios-sdk"),
+            ],
+            swiftSettings: [
+                .enableUpcomingFeature("ApproachableConcurrency"),
+            ],
+        ),
+        .target(
+            name: "CQBDesignSystem",
             dependencies: ["CQBCore"],
+            resources: [
+                .process("Resources")
+            ],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],
@@ -49,6 +72,13 @@ let package = Package(
         .testTarget(
             name: "CQBCoreTests",
             dependencies: ["CQBCore"],
+            swiftSettings: [
+                .enableUpcomingFeature("ApproachableConcurrency"),
+            ],
+        ),
+        .testTarget(
+            name: "CQBFirebaseTests",
+            dependencies: ["CQBFirebase"],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],

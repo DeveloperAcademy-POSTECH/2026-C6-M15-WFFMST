@@ -7,26 +7,74 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0EA19D4E3077388900A5F2CF /* CQBDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 0EA19D4D3077388900A5F2CF /* CQBDesignSystem */; };
 		788A10D9307697FA003DEA3E /* CQBCore in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10D8307697FA003DEA3E /* CQBCore */; };
-		788A10E330769825003DEA3E /* CQBCore in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10E230769825003DEA3E /* CQBCore */; };
 		788A10F030769F19003DEA3E /* CQBFixtures in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10EF30769F19003DEA3E /* CQBFixtures */; };
-		788A10F230769F20003DEA3E /* CQBFixtures in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10F130769F20003DEA3E /* CQBFixtures */; };
+		788A10F530770001003DEA3E /* CQBFirebase in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10F430770001003DEA3E /* CQBFirebase */; };
+		788A10F730770001003DEA3E /* CQBFirebase in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10F630770001003DEA3E /* CQBFirebase */; };
+		C4600001307B000100000001 /* CQBCore in Frameworks */ = {isa = PBXBuildFile; productRef = 788A10D8307697FA003DEA3E /* CQBCore */; };
+		D5100001307ABCDE00000001 /* CQBDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = D5100002307ABCDE00000002 /* CQBDesignSystem */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		788A10733076802C003DEA3E /* MemberApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MemberApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		788A1085307682B8003DEA3E /* InstructorApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = InstructorApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		52000006307C000100000006 /* InstructorAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = InstructorAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXContainerItemProxy section */
+		52000001307C000100000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 788A106B3076802C003DEA3E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 788A1084307682B8003DEA3E;
+			remoteInfo = InstructorApp;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		E810D0C02026100900000001 /* Exceptions for "InstructorApp" folder in "InstructorApp" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				AGENTS.md,
+				docs/flows.md,
+				"docs/issue-8-implementation.md",
+				"docs/issue-46-implementation.md",
+				"docs/issue-49-implementation.md",
+				"docs/issue-56-implementation.md",
+				docs/README.md,
+			);
+			target = 788A1084307682B8003DEA3E /* InstructorApp */;
+		};
+		E827D0C02026101100000001 /* Exceptions for "MemberApp" folder in "MemberApp" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"docs/issue-27-implementation.md",
+			);
+			target = 788A10723076802C003DEA3E /* MemberApp */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		788A10753076802C003DEA3E /* MemberApp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				E827D0C02026101100000001 /* Exceptions for "MemberApp" folder in "MemberApp" target */,
+			);
 			path = MemberApp;
 			sourceTree = "<group>";
 		};
 		788A1086307682B8003DEA3E /* InstructorApp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				E810D0C02026100900000001 /* Exceptions for "InstructorApp" folder in "InstructorApp" target */,
+			);
 			path = InstructorApp;
+			sourceTree = "<group>";
+		};
+		52000005307C000100000005 /* InstructorAppTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = InstructorAppTests;
 			sourceTree = "<group>";
 		};
 		788A10A8307687FD003DEA3E /* Configurations */ = {
@@ -46,14 +94,22 @@
 			isa = PBXFrameworksBuildPhase;
 			files = (
 				788A10D9307697FA003DEA3E /* CQBCore in Frameworks */,
+				0EA19D4E3077388900A5F2CF /* CQBDesignSystem in Frameworks */,
 				788A10F030769F19003DEA3E /* CQBFixtures in Frameworks */,
+				788A10F530770001003DEA3E /* CQBFirebase in Frameworks */,
 			);
 		};
 		788A1082307682B8003DEA3E /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
-				788A10E330769825003DEA3E /* CQBCore in Frameworks */,
-				788A10F230769F20003DEA3E /* CQBFixtures in Frameworks */,
+				C4600001307B000100000001 /* CQBCore in Frameworks */,
+				D5100001307ABCDE00000001 /* CQBDesignSystem in Frameworks */,
+				788A10F730770001003DEA3E /* CQBFirebase in Frameworks */,
+			);
+		};
+		52000008307C000100000008 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -66,6 +122,7 @@
 				788A10A8307687FD003DEA3E /* Configurations */,
 				788A10753076802C003DEA3E /* MemberApp */,
 				788A1086307682B8003DEA3E /* InstructorApp */,
+				52000005307C000100000005 /* InstructorAppTests */,
 				788A10E130769825003DEA3E /* Frameworks */,
 				788A10743076802C003DEA3E /* Products */,
 			);
@@ -76,6 +133,7 @@
 			children = (
 				788A10733076802C003DEA3E /* MemberApp.app */,
 				788A1085307682B8003DEA3E /* InstructorApp.app */,
+				52000006307C000100000006 /* InstructorAppTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -107,6 +165,8 @@
 			packageProductDependencies = (
 				788A10D8307697FA003DEA3E /* CQBCore */,
 				788A10EF30769F19003DEA3E /* CQBFixtures */,
+				788A10F430770001003DEA3E /* CQBFirebase */,
+				0EA19D4D3077388900A5F2CF /* CQBDesignSystem */,
 			);
 			productName = CQB;
 			productReference = 788A10733076802C003DEA3E /* MemberApp.app */;
@@ -127,12 +187,36 @@
 			);
 			name = InstructorApp;
 			packageProductDependencies = (
-				788A10E230769825003DEA3E /* CQBCore */,
-				788A10F130769F20003DEA3E /* CQBFixtures */,
+				788A10D8307697FA003DEA3E /* CQBCore */,
+				D5100002307ABCDE00000002 /* CQBDesignSystem */,
+				788A10F630770001003DEA3E /* CQBFirebase */,
 			);
 			productName = InstructorApp;
 			productReference = 788A1085307682B8003DEA3E /* InstructorApp.app */;
 			productType = "com.apple.product-type.application";
+		};
+		5200000A307C00010000000A /* InstructorAppTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5200000D307C00010000000D /* Build configuration list for PBXNativeTarget "InstructorAppTests" */;
+			buildPhases = (
+				52000007307C000100000007 /* Sources */,
+				52000008307C000100000008 /* Frameworks */,
+				52000009307C000100000009 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				52000002307C000100000002 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				52000005307C000100000005 /* InstructorAppTests */,
+			);
+			name = InstructorAppTests;
+			packageProductDependencies = (
+			);
+			productName = InstructorAppTests;
+			productReference = 52000006307C000100000006 /* InstructorAppTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -149,6 +233,10 @@
 					};
 					788A1084307682B8003DEA3E = {
 						CreatedOnToolsVersion = 27.0;
+					};
+					5200000A307C00010000000A = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = 788A1084307682B8003DEA3E;
 					};
 				};
 			};
@@ -171,6 +259,7 @@
 			targets = (
 				788A10723076802C003DEA3E /* MemberApp */,
 				788A1084307682B8003DEA3E /* InstructorApp */,
+				5200000A307C00010000000A /* InstructorAppTests */,
 			);
 		};
 /* End PBXProject section */
@@ -182,6 +271,11 @@
 			);
 		};
 		788A1083307682B8003DEA3E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
+		52000009307C000100000009 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
 			);
@@ -199,7 +293,20 @@
 			files = (
 			);
 		};
+		52000007307C000100000007 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		52000002307C000100000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 788A1084307682B8003DEA3E /* InstructorApp */;
+			targetProxy = 52000001307C000100000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		788A107C3076802D003DEA3E /* Debug configuration for PBXProject "CQB" */ = {
@@ -332,7 +439,9 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "DEBRIEF Capture";
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
+				INFOPLIST_KEY_NSCameraUsageDescription = "훈련 중 후면 카메라 영상을 화면에 표시하기 위해 카메라 접근이 필요합니다.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -344,7 +453,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = me.wffmst.cqb.member;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wffmst.cqb.member;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -371,7 +480,9 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "DEBRIEF Capture";
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
+				INFOPLIST_KEY_NSCameraUsageDescription = "훈련 중 후면 카메라 영상을 화면에 표시하기 위해 카메라 접근이 필요합니다.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -383,7 +494,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = me.wffmst.cqb.member;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wffmst.cqb.member;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -410,6 +521,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "DEBRIEF Review";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -421,7 +533,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = me.wffmst.cqb.instructor;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wffmst.cqb.instructor;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -448,6 +560,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "DEBRIEF Review";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -459,7 +572,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = me.wffmst.cqb.instructor;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wffmst.cqb.instructor;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -472,6 +585,38 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 2;
+			};
+			name = Release;
+		};
+		5200000B307C00010000000B /* Debug configuration for PBXNativeTarget "InstructorAppTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wffmst.cqb.instructor.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/InstructorApp.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/InstructorApp";
+			};
+			name = Debug;
+		};
+		5200000C307C00010000000C /* Release configuration for PBXNativeTarget "InstructorAppTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wffmst.cqb.instructor.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/InstructorApp.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/InstructorApp";
 			};
 			name = Release;
 		};
@@ -502,6 +647,14 @@
 			);
 			defaultConfigurationName = Release;
 		};
+		5200000D307C00010000000D /* Build configuration list for PBXNativeTarget "InstructorAppTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5200000B307C00010000000B /* Debug configuration for PBXNativeTarget "InstructorAppTests" */,
+				5200000C307C00010000000C /* Release configuration for PBXNativeTarget "InstructorAppTests" */,
+			);
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -512,13 +665,13 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		788A10D8307697FA003DEA3E /* CQBCore */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = CQBCore;
-		};
-		788A10E230769825003DEA3E /* CQBCore */ = {
+		0EA19D4D3077388900A5F2CF /* CQBDesignSystem */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 788A10D7307697FA003DEA3E /* XCLocalSwiftPackageReference "Packages/CQBCore" */;
+			productName = CQBDesignSystem;
+		};
+		788A10D8307697FA003DEA3E /* CQBCore */ = {
+			isa = XCSwiftPackageProductDependency;
 			productName = CQBCore;
 		};
 		788A10EF30769F19003DEA3E /* CQBFixtures */ = {
@@ -526,10 +679,20 @@
 			package = 788A10D7307697FA003DEA3E /* XCLocalSwiftPackageReference "Packages/CQBCore" */;
 			productName = CQBFixtures;
 		};
-		788A10F130769F20003DEA3E /* CQBFixtures */ = {
+		788A10F430770001003DEA3E /* CQBFirebase */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 788A10D7307697FA003DEA3E /* XCLocalSwiftPackageReference "Packages/CQBCore" */;
-			productName = CQBFixtures;
+			productName = CQBFirebase;
+		};
+		788A10F630770001003DEA3E /* CQBFirebase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 788A10D7307697FA003DEA3E /* XCLocalSwiftPackageReference "Packages/CQBCore" */;
+			productName = CQBFirebase;
+		};
+		D5100002307ABCDE00000002 /* CQBDesignSystem */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 788A10D7307697FA003DEA3E /* XCLocalSwiftPackageReference "Packages/CQBCore" */;
+			productName = CQBDesignSystem;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
