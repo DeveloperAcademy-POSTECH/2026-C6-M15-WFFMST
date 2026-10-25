@@ -29,6 +29,10 @@ private actor ControlledImporter: FloorPlanImporting {
             )
         ))
     }
+
+    func fail(_ name: String, error: Error) {
+        pending.removeValue(forKey: name)?.resume(throwing: error)
+    }
 }
 
 private actor ControlledFloorPlanFileRepository: FloorPlanFileRepository {
@@ -64,6 +68,8 @@ private actor ControlledFloorPlanFileRepository: FloorPlanFileRepository {
 @MainActor
 enum FloorPlanRegistrationChecks {
     static func main() async throws {
+        try await checkImportLifecycle()
+
         let importer = ControlledImporter()
         let draft = FloorPlanDraftStore(importer: importer)
         let repository = ControlledFloorPlanFileRepository(failures: 1)
@@ -174,6 +180,57 @@ enum FloorPlanRegistrationChecks {
 
         try await checkOddImageUpload()
         print("PASS: FloorPlanFiles 생성, 홀수 이미지 계약, SHA-256 참조, 업로드·로컬 저장 실패 재시도, 세션 참조")
+    }
+
+    private static func checkImportLifecycle() async throws {
+        let importer = ControlledImporter()
+        let draft = FloorPlanDraftStore(importer: importer)
+
+        draft.importImage(from: URL(fileURLWithPath: "/virtual/cancelled.png"))
+        precondition(draft.processingStage == .analyzingImage)
+        precondition(draft.isProcessing && draft.isImporting)
+        try await wait { await importer.has("cancelled.png") }
+        draft.cancelProcessing()
+        precondition(draft.processingStage == .idle && !draft.isProcessing)
+        precondition(draft.errorMessage == nil, "사용자 취소는 오류로 표시하지 않아야 한다")
+        await importer.succeed("cancelled.png")
+        try await Task.sleep(for: .milliseconds(20))
+        precondition(draft.image == nil, "취소된 작업의 늦은 결과를 반영하지 않아야 한다")
+
+        draft.importImage(from: URL(fileURLWithPath: "/virtual/original.png"))
+        try await wait { await importer.has("original.png") }
+        await importer.succeed("original.png")
+        try await wait { !draft.isProcessing }
+        precondition(draft.image?.fileName == "original.png")
+        draft.setEditorMode(.brush)
+        let pendingStroke = LocalEditStroke(mode: .block,
+            points: [LocalPlanPoint(x: 0.2, y: 0.2), LocalPlanPoint(x: 0.4, y: 0.4)],
+            normalizedDiameter: 0.02)
+        draft.stageBrushStroke(pendingStroke)
+
+        draft.importImage(from: URL(fileURLWithPath: "/virtual/failure.png"))
+        try await wait { await importer.has("failure.png") }
+        await importer.fail("failure.png", error: LocalFloorPlanError.invalid("분석 실패"))
+        try await wait { !draft.isProcessing }
+        precondition(draft.errorMessage == "분석 실패")
+        precondition(draft.image?.fileName == "original.png")
+        precondition(draft.pendingBrushStrokes == [pendingStroke], "교체 실패 시 기존 편집 작업본을 유지해야 한다")
+
+        draft.importImage(from: URL(fileURLWithPath: "/virtual/stale.png"))
+        try await wait { await importer.has("stale.png") }
+        draft.importImage(from: URL(fileURLWithPath: "/virtual/latest.png"))
+        try await wait { await importer.has("latest.png") }
+        await importer.succeed("stale.png")
+        try await Task.sleep(for: .milliseconds(20))
+        precondition(draft.image?.fileName == "original.png", "이전 요청의 결과를 반영하지 않아야 한다")
+        await importer.succeed("latest.png")
+        try await wait { !draft.isProcessing }
+        precondition(draft.image?.fileName == "latest.png")
+        precondition(draft.pendingBrushStrokes.isEmpty, "성공한 교체만 새 작업본을 적용해야 한다")
+
+        let pickerCancellation = NSError(domain: NSCocoaErrorDomain, code: NSUserCancelledError)
+        draft.reportImportFailure(pickerCancellation)
+        precondition(draft.errorMessage == nil, "파일 선택 취소는 오류로 표시하지 않아야 한다")
     }
 
     private static func prepareDraft(_ draft: FloorPlanDraftStore, importer: ControlledImporter) async throws -> LocalEditStroke {
