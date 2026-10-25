@@ -67,12 +67,15 @@ enum FloorPlanRegistrationChecks {
         let importer = ControlledImporter()
         let draft = FloorPlanDraftStore(importer: importer)
         let repository = ControlledFloorPlanFileRepository(failures: 1)
+        let catalog = DemoFloorPlanCatalogRepository()
         let store = InstructorStore(
             floorPlans: [],
             floorPlanDraft: draft,
-            floorPlanFileRepository: repository
+            floorPlanFileRepository: repository,
+            floorPlanCatalogRepository: catalog
         )
 
+        store.loadFloorPlans()
         store.openFloorPlanCreation()
         let stroke = try await prepareDraft(draft, importer: importer)
 
@@ -131,6 +134,22 @@ enum FloorPlanRegistrationChecks {
         store.goBack()
         try await wait { store.phase == .sessionCreation }
 
+        store.openFloorPlanCreation()
+        _ = try await prepareDraft(draft, importer: importer)
+        catalog.saveError = URLError(.cannotWriteToFile)
+        store.registerFloorPlan()
+        try await wait { !store.isUploadingFloorPlan }
+        precondition(store.floorPlans.count == 1, "로컬 저장 실패는 도면을 목록에 추가하지 않아야 한다")
+        precondition(store.floorPlanUploadError?.contains("기기에 목록") == true)
+        catalog.saveError = nil
+        store.retryFloorPlanUpload()
+        try await wait { store.phase == .floorPlanList }
+        let localRetryUploads = await repository.uploads()
+        precondition(localRetryUploads.count == 4)
+        precondition(localRetryUploads[2].0 == localRetryUploads[3].0,
+                     "로컬 저장 재시도는 동일한 Storage 참조를 사용해야 한다")
+        precondition(store.floorPlans.count == 2)
+
         await repository.failNextUpload()
         store.openFloorPlanCreation()
         _ = try await prepareDraft(draft, importer: importer)
@@ -145,16 +164,16 @@ enum FloorPlanRegistrationChecks {
         precondition(!store.isUploadingFloorPlan, "back must discard the failed upload snapshot")
         store.goBack()
         precondition(store.phase == .floorPlanList && draft.image == nil && draft.name.isEmpty)
-        precondition(store.floorPlans.count == 1, "a failed upload must not add a plan")
+        precondition(store.floorPlans.count == 2, "a failed upload must not add a plan")
         store.openFloorPlanCreation()
         precondition(store.floorPlanUploadError == nil && draft.step == .information)
         store.retryFloorPlanUpload()
         precondition(!store.isUploadingFloorPlan, "reopening must not retry the previous registration")
         let finalUploads = await repository.uploads()
-        precondition(finalUploads.count == 3)
+        precondition(finalUploads.count == 5)
 
         try await checkOddImageUpload()
-        print("PASS: FloorPlanFiles 생성, 홀수 이미지 계약, SHA-256 참조, 업로드 실패 재시도·이탈, 세션 참조")
+        print("PASS: FloorPlanFiles 생성, 홀수 이미지 계약, SHA-256 참조, 업로드·로컬 저장 실패 재시도, 세션 참조")
     }
 
     private static func prepareDraft(_ draft: FloorPlanDraftStore, importer: ControlledImporter) async throws -> LocalEditStroke {

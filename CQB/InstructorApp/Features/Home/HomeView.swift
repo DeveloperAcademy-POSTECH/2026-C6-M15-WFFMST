@@ -117,7 +117,7 @@ private struct HomeActionButtonStyle: ButtonStyle {
     NavigationStack {
         HomeView()
             .environment(InstructorStore(floorPlans: [
-                DemoFloorPlan(
+                InstructorFloorPlan(
                     id: "preview-plan",
                     name: "훈련장 A",
                     fileName: "훈련장 A 도면.png",

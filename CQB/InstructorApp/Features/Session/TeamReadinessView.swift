@@ -175,7 +175,7 @@ struct TeamReadinessView: View {
 }
 
 #Preview("팀 준비 상태 · 일부 준비") {
-    let plan = DemoFloorPlan(
+    let plan = InstructorFloorPlan(
         id: "preview-plan",
         name: "훈련장 A 도면",
         fileName: "훈련장 A 도면.png",

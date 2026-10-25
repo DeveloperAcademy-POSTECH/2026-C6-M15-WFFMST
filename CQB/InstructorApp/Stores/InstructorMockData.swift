@@ -1,35 +1,6 @@
 import CQBCore
 import Foundation
 
-// InstructorApp 화면 연결 전용 데이터. 공통 모델·서버 계약이 아니다.
-struct DemoFloorPlan: Identifiable, Equatable {
-    let id: String
-    let name: String
-    let fileName: String
-    let referenceDistance: Double
-    let reference: FloorPlanReference
-    var registeredPlan: LocalRegisteredFloorPlan? = nil
-
-    init(
-        id: String,
-        name: String,
-        fileName: String,
-        referenceDistance: Double,
-        reference: FloorPlanReference = FloorPlanReference(
-            floorPlanID: UUID(),
-            navigationSHA256: "local-demo"
-        ),
-        registeredPlan: LocalRegisteredFloorPlan? = nil
-    ) {
-        self.id = id
-        self.name = name
-        self.fileName = fileName
-        self.referenceDistance = referenceDistance
-        self.reference = reference
-        self.registeredPlan = registeredPlan
-    }
-}
-
 struct InstructorParticipant: Identifiable, Equatable {
     let id: String
     let number: Int
@@ -66,7 +37,7 @@ enum InstructorPreviewFixture {
 
     @MainActor
     static func store(
-        floorPlan: DemoFloorPlan,
+        floorPlan: InstructorFloorPlan,
         participants: [InstructorParticipant]? = nil,
         phase: InstructorPhase = .teamReadiness
     ) -> InstructorStore {
@@ -85,6 +56,32 @@ struct DemoFloorPlanFileRepository: FloorPlanFileRepository {
 
     func download(_ reference: FloorPlanReference) async throws -> FloorPlanFiles {
         throw RepositoryError.notFound
+    }
+}
+
+/// Preview와 로컬 Store 검사에서 사용하는 메모리 카탈로그다.
+@MainActor
+final class DemoFloorPlanCatalogRepository: FloorPlanCatalogRepository {
+    private var stored: [InstructorFloorPlan]
+    var fetchError: Error?
+    var saveError: Error?
+
+    init(floorPlans: [InstructorFloorPlan] = []) {
+        stored = floorPlans
+    }
+
+    func fetchAll() throws -> [InstructorFloorPlan] {
+        if let fetchError { throw fetchError }
+        return stored
+    }
+
+    func save(_ floorPlan: InstructorFloorPlan) throws {
+        if let saveError { throw saveError }
+        if let index = stored.firstIndex(where: { $0.id == floorPlan.id }) {
+            stored[index] = floorPlan
+        } else {
+            stored.append(floorPlan)
+        }
     }
 }
 

@@ -13,11 +13,21 @@ final class InstructorStore {
         case idle, connecting, connected, failed
     }
 
+    enum FloorPlanCatalogState: Equatable {
+        case idle, loading, loaded
+        case failed(String)
+    }
+
+    private enum FloorPlanRegistrationError: Error, Equatable {
+        case localSave
+    }
+
     private static let logger = Logger(subsystem: "com.wffmst.cqb", category: "InstructorStore")
 
     let floorPlanDraft: FloorPlanDraftStore
     let trainingRecords: TrainingRecordStore
     @ObservationIgnored private let floorPlanFileRepository: any FloorPlanFileRepository
+    @ObservationIgnored private let floorPlanCatalogRepository: any FloorPlanCatalogRepository
     @ObservationIgnored private let sessionRepository: any SessionRepository
     @ObservationIgnored private let memberRepository: any MemberRepository
     @ObservationIgnored private let pinGenerator: () -> String
@@ -34,7 +44,8 @@ final class InstructorStore {
     private(set) var selectedPlanImage: UIImage?
 #endif
     private(set) var phase: InstructorPhase = .home
-    private(set) var floorPlans: [DemoFloorPlan]
+    private(set) var floorPlans: [InstructorFloorPlan]
+    private(set) var floorPlanCatalogState: FloorPlanCatalogState
     private(set) var trainingName = "샘플 훈련"
     private(set) var selectedFloorPlanID: String?
     private(set) var participants: [InstructorParticipant] = []
@@ -64,9 +75,10 @@ final class InstructorStore {
     let maximumVideoCount = 4
 
     init(
-        floorPlans: [DemoFloorPlan] = [],
+        floorPlans: [InstructorFloorPlan] = [],
         floorPlanDraft: FloorPlanDraftStore? = nil,
         floorPlanFileRepository: any FloorPlanFileRepository = DemoFloorPlanFileRepository(),
+        floorPlanCatalogRepository: (any FloorPlanCatalogRepository)? = nil,
         sessionRepository: any SessionRepository = DemoSessionRepository(),
         memberRepository: any MemberRepository = DemoMemberRepository(),
         recordingRepository: any RecordingRepository = DemoRecordingRepository(),
@@ -77,11 +89,13 @@ final class InstructorStore {
     ) {
         self.floorPlanDraft = floorPlanDraft ?? FloorPlanDraftStore()
         self.floorPlanFileRepository = floorPlanFileRepository
+        self.floorPlanCatalogRepository = floorPlanCatalogRepository ?? DemoFloorPlanCatalogRepository()
         self.sessionRepository = sessionRepository
         self.memberRepository = memberRepository
         self.trainingRecords = TrainingRecordStore(repository: recordingRepository)
         self.pinGenerator = pinGenerator
         self.floorPlans = floorPlans
+        self.floorPlanCatalogState = floorPlans.isEmpty ? .idle : .loaded
         self.currentSession = previewSession
         self.trainingStartedAt = previewSession?.startedAt
         self.participants = previewParticipants
@@ -96,8 +110,13 @@ final class InstructorStore {
         selectedFloorPlanID = floorPlans.first?.id
     }
 
-    var selectedFloorPlan: DemoFloorPlan? { floorPlans.first { $0.id == selectedFloorPlanID } }
-    var canOpenSessionCreation: Bool { !floorPlans.isEmpty }
+    var selectedFloorPlan: InstructorFloorPlan? { floorPlans.first { $0.id == selectedFloorPlanID } }
+    var canOpenSessionCreation: Bool { floorPlanCatalogState == .loaded && !floorPlans.isEmpty }
+    var isLoadingFloorPlans: Bool { floorPlanCatalogState == .loading }
+    var floorPlanCatalogError: String? {
+        guard case .failed(let message) = floorPlanCatalogState else { return nil }
+        return message
+    }
     var canCreateSession: Bool {
         !isCreatingSession
             && !trainingName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -148,7 +167,30 @@ final class InstructorStore {
     }
 
     func openFloorPlanList() { phase = .floorPlanList }
+    func loadFloorPlans() {
+        guard floorPlanCatalogState == .idle || floorPlanCatalogError != nil else { return }
+        floorPlanCatalogState = .loading
+        do {
+            let restored = try floorPlanCatalogRepository.fetchAll()
+            floorPlans = restored
+            let nextSelection = selectedFloorPlanID.flatMap { selected in
+                restored.contains(where: { $0.id == selected }) ? selected : nil
+            } ?? restored.first?.id
+            selectFloorPlan(nextSelection)
+            floorPlanCatalogState = .loaded
+        } catch {
+            Self.logger.error("도면 목록 복원 실패: \(error.localizedDescription, privacy: .private)")
+            floorPlanCatalogState = .failed("등록한 도면을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.")
+        }
+    }
+
+    func retryFloorPlanCatalogLoad() {
+        guard floorPlanCatalogError != nil else { return }
+        loadFloorPlans()
+    }
+
     func openFloorPlanCreation() {
+        guard floorPlanCatalogState == .loaded else { return }
         floorPlanDraft.begin()
         phase = .floorPlanCreation
     }
@@ -620,6 +662,7 @@ final class InstructorStore {
         floorPlanUploadError = nil
         failedFloorPlanRegistration = registration
         let repository = floorPlanFileRepository
+        let catalogRepository = floorPlanCatalogRepository
         let preparation = Task.detached(priority: .userInitiated) {
             try LocalFloorPlanFileBuilder.build(from: registration)
         }
@@ -633,16 +676,33 @@ final class InstructorStore {
                 try Task.checkCancellation()
                 try await repository.upload(upload.files, for: upload.reference)
                 try Task.checkCancellation()
-                guard let self, self.phase == .floorPlanCreation else { return }
-                let plan = DemoFloorPlan(
+                let now = Date.now
+                let plan = InstructorFloorPlan(
                     id: upload.registration.id.uuidString,
                     name: upload.registration.name,
                     fileName: upload.registration.image.fileName,
                     referenceDistance: upload.registration.scale.meters,
                     reference: upload.reference,
+                    createdAt: now,
+                    updatedAt: now,
                     registeredPlan: upload.registration
                 )
-                self.floorPlans.append(plan)
+                do {
+                    try catalogRepository.save(plan)
+                } catch {
+                    let failure = error as NSError
+                    Self.logger.error("등록 도면 로컬 저장 실패: domain=\(failure.domain, privacy: .public) code=\(failure.code) description=\(failure.localizedDescription, privacy: .private)")
+                    throw FloorPlanRegistrationError.localSave
+                }
+                try Task.checkCancellation()
+                guard let self, self.phase == .floorPlanCreation else { return }
+                if let index = self.floorPlans.firstIndex(where: { $0.id == plan.id }) {
+                    self.floorPlans[index] = plan
+                } else {
+                    self.floorPlans.append(plan)
+                }
+                self.floorPlans.sort { ($0.createdAt, $0.id) < ($1.createdAt, $1.id) }
+                self.floorPlanCatalogState = .loaded
                 self.selectFloorPlan(plan.id)
                 self.clearFloorPlanUpload()
                 self.floorPlanDraft.reset()
@@ -665,7 +725,10 @@ final class InstructorStore {
     }
 
     private static func floorPlanUploadMessage(for error: Error) -> String {
-        switch error as? RepositoryError {
+        if error as? FloorPlanRegistrationError == .localSave {
+            return "도면 파일은 업로드했지만 기기에 목록을 저장하지 못했습니다. 다시 시도해주세요."
+        }
+        return switch error as? RepositoryError {
         case .fileTooLarge:
             "도면 파일이 업로드 제한인 20MB를 초과했습니다."
         case .integrityMismatch:

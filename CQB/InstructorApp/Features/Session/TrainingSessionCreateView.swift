@@ -143,7 +143,7 @@ struct TrainingSessionCreateView: View {
 
 #Preview("새 훈련 세션") {
     let store = InstructorStore(floorPlans: [
-        DemoFloorPlan(
+        InstructorFloorPlan(
             id: "preview-plan",
             name: "훈련장 A 도면",
             fileName: "훈련장 A 도면.png",
