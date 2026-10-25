@@ -1,10 +1,13 @@
 import Foundation
 import CoreGraphics
 import ImageIO
+import OSLog
 import UniformTypeIdentifiers
 
 /// PoC V13 추출기를 사용하는 앱 내부 입력 경계. paleWalls 프로필은 이번 이관에서 제외한다.
 struct LocalFloorPlanImportService: FloorPlanImporting {
+    private static let logger = Logger(subsystem: "com.wffmst.cqb", category: "FloorPlanImport")
+
     nonisolated init() {}
 
     nonisolated func process(url: URL) async throws -> LocalExtractionResult {
@@ -22,12 +25,14 @@ struct LocalFloorPlanImportService: FloorPlanImporting {
     }
 
     nonisolated private static func loadAndExtract(url: URL) throws -> LocalExtractionResult {
+        let totalStart = ContinuousClock.now
         try Task.checkCancellation()
         guard url.isFileURL else {
             throw LocalFloorPlanError.invalid("로컬 PNG 또는 JPEG 파일을 선택해 주세요.")
         }
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        let readStart = ContinuousClock.now
         let maximumBytes = 40 * 1_024 * 1_024
         let values = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
         guard values.isRegularFile == true, let size = values.fileSize, size > 0, size <= maximumBytes else {
@@ -42,7 +47,9 @@ struct LocalFloorPlanImportService: FloorPlanImporting {
               [UTType.png.identifier, UTType.jpeg.identifier].contains(type as String) else {
             throw LocalFloorPlanError.invalid("PNG 또는 JPEG 이미지를 읽지 못했습니다.")
         }
+        logDuration("file-read", since: readStart)
         try Task.checkCancellation()
+        let normalizationStart = ContinuousClock.now
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
@@ -82,10 +89,23 @@ struct LocalFloorPlanImportService: FloorPlanImporting {
         guard CGImageDestinationFinalize(destination) else {
             throw LocalFloorPlanError.invalid("도면 이미지를 변환하지 못했습니다.")
         }
+        logDuration("normalization", since: normalizationStart)
         try Task.checkCancellation()
+        let extractionStart = ContinuousClock.now
         let grid = try LocalV13WallDetector.grid(rgba: pixels, width: width, height: height)
+        logDuration("wall-extraction", since: extractionStart)
+        logDuration("service-total", since: totalStart)
         return LocalExtractionResult(
             image: LocalImportedImage(pngData: output as Data, width: width, height: height, fileName: url.lastPathComponent),
             baseGrid: grid)
+    }
+
+    nonisolated private static func logDuration(_ stage: String, since start: ContinuousClock.Instant) {
+#if DEBUG
+        let duration = start.duration(to: .now).components
+        let milliseconds = Double(duration.seconds) * 1_000
+            + Double(duration.attoseconds) / 1_000_000_000_000_000
+        logger.debug("stage=\(stage, privacy: .public) duration_ms=\(milliseconds, privacy: .public)")
+#endif
     }
 }

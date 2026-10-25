@@ -11,6 +11,10 @@ struct FloorPlanCreateView: View {
 
     private enum InputField: Hashable { case name, distance }
 
+    private var isImportInteractionActive: Bool {
+        importer.isPreparing || importer.isPresented || store.isImporting
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
@@ -23,7 +27,8 @@ struct FloorPlanCreateView: View {
 
             sidePanel
                 .containerRelativeFrame(.horizontal, count: 10, span: 3, spacing: 0)
-                .disabled(app.isUploadingFloorPlan || app.floorPlanUploadError != nil)
+                .disabled(isImportInteractionActive || app.isUploadingFloorPlan
+                    || app.floorPlanUploadError != nil)
         }
         .background(InstructorColor.canvas.ignoresSafeArea())
         .ignoresSafeArea(.keyboard, edges: .bottom)
@@ -50,8 +55,7 @@ struct FloorPlanCreateView: View {
     private var header: some View {
         HStack(spacing: 16) {
             InstructorBackButton(action: app.goBack)
-                .disabled(importer.isPreparing || importer.isPresented || store.isImporting
-                    || !app.canGoBack)
+                .disabled(isImportInteractionActive || !app.canGoBack)
 
             Text(store.image?.fileName ?? "도면 설정")
                 .font(DSTypography.h2)
@@ -66,7 +70,7 @@ struct FloorPlanCreateView: View {
             ) {
                 importer.request { focusedField = nil }
             }
-            .disabled(importer.isPreparing || importer.isPresented || store.isProcessing || store.isDrawing
+            .disabled(isImportInteractionActive || store.isProcessing || store.isDrawing
                 || app.isUploadingFloorPlan || app.floorPlanUploadError != nil)
             .accessibilityIdentifier("floorPlan.import")
         }
@@ -285,7 +289,7 @@ struct FloorPlanCreateView: View {
             RoundedRectangle(cornerRadius: 4)
                 .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
         }
-        .disabled(store.image == nil || store.isProcessing || importer.isPresented
+        .disabled(store.image == nil || store.isProcessing || importer.isPreparing || importer.isPresented
             || app.isUploadingFloorPlan || app.floorPlanUploadError != nil)
     }
 
@@ -464,7 +468,7 @@ struct FloorPlanCreateView: View {
             ActionButton(app.isUploadingFloorPlan ? "업로드 중" : "저장",
                          fillsWidth: true, action: app.registerFloorPlan)
                 .frame(height: 52)
-                .disabled(!store.canRegister || importer.isPreparing || importer.isPresented
+                .disabled(!store.canRegister || isImportInteractionActive
                     || app.isUploadingFloorPlan || app.floorPlanUploadError != nil)
                 .accessibilityIdentifier("floorPlan.save")
                 .padding(.horizontal, 24)
@@ -479,6 +483,13 @@ struct FloorPlanCreateView: View {
             || importer.isPreparing || store.errorMessage != nil || importer.message != nil
             || app.isUploadingFloorPlan || app.floorPlanUploadError != nil {
             VStack(alignment: .leading, spacing: 8) {
+                if importer.isPreparing {
+                    HStack {
+                        ProgressView()
+                        Text("파일 선택기를 준비하는 중")
+                    }
+                    .accessibilityIdentifier("floorPlan.import.preparing")
+                }
                 if app.isUploadingFloorPlan {
                     HStack {
                         ProgressView()
@@ -492,6 +503,7 @@ struct FloorPlanCreateView: View {
                         Text(store.activity)
                         Button("취소", action: store.cancelProcessing)
                     }
+                    .accessibilityIdentifier("floorPlan.import.processing")
                 }
                 if let error = store.errorMessage {
                     Text(error)

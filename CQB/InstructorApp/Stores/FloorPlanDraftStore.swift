@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import OSLog
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -9,9 +10,26 @@ private enum LocalFloorPlanHistoryEntry: Sendable {
     case outline(previous: [LocalPlanPoint], next: [LocalPlanPoint])
 }
 
+enum FloorPlanProcessingStage: Equatable {
+    case idle
+    case analyzingImage
+    case preparingPreview
+    case replayingEdits
+
+    var message: String? {
+        switch self {
+        case .idle: nil
+        case .analyzingImage: "도면을 분석하고 벽을 추출하는 중"
+        case .preparingPreview: "분석 결과와 미리보기를 준비하는 중"
+        case .replayingEdits: "편집 결과를 계산하는 중"
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class FloorPlanDraftStore {
+    private static let logger = Logger(subsystem: "com.wffmst.cqb", category: "FloorPlanImport")
     private(set) var name = ""
     private(set) var step: FloorPlanRegistrationStep = .information
     private(set) var image: LocalImportedImage?
@@ -27,10 +45,8 @@ final class FloorPlanDraftStore {
     private(set) var tool: LocalCanvasTool = .move
     private(set) var editorMode: LocalFloorPlanEditorMode = .pen
     private(set) var normalizedDiameter = 0.006
-    private(set) var isProcessing = false
-    private(set) var isImporting = false
+    private(set) var processingStage: FloorPlanProcessingStage = .idle
     private(set) var isDrawing = false
-    private(set) var activity = ""
     private(set) var errorMessage: String?
     private(set) var maskPNGData: Data?
 #if canImport(UIKit)
@@ -63,8 +79,13 @@ final class FloorPlanDraftStore {
     var canRedo: Bool { !redoHistory.isEmpty }
     var canApplySelection: Bool { selection.count >= 3 && !isProcessing }
     var canApplyBrush: Bool { !pendingBrushStrokes.isEmpty && !isProcessing && !isDrawing }
+    var isProcessing: Bool { processingStage != .idle }
+    var isImporting: Bool {
+        processingStage == .analyzingImage || processingStage == .preparingPreview
+    }
+    var activity: String { processingStage.message ?? "" }
     // Only same-image edit replay retains a preview; import/outline/retry work stays visible.
-    var isReplayingEdits: Bool { isProcessing && !isImporting && maskPNGData != nil }
+    var isReplayingEdits: Bool { processingStage == .replayingEdits && maskPNGData != nil }
     var canContinueEditing: Bool {
         image != nil && resolvedGrid != nil && !outline.isEmpty && !isProcessing && !isDrawing
             && selection.isEmpty && pendingBrushStrokes.isEmpty
@@ -115,29 +136,34 @@ final class FloorPlanDraftStore {
     func importImage(from url: URL) {
         invalidateWork()
         errorMessage = nil
-        isProcessing = true
-        isImporting = true
-        activity = "이미지 정규화 및 장애물 자동 추출 중"
+        processingStage = .analyzingImage
         let token = generation
         let service = importer
-        // Prepare the complete replacement off-main, including its first preview.
-        // The old draft remains usable if any of these steps fail or are cancelled.
-        let preparation = Task.detached(priority: .userInitiated) {
-            let result = try await service.process(url: url)
-            try Task.checkCancellation()
-            var cache = try LocalFloorPlanReplayCache(base: result.baseGrid,
-                width: result.image.width, height: result.image.height)
-            let grid = try cache.resolve(edits: [], outline: [])
-            let png = try LocalFloorPlanMaskRenderer.pngData(grid: grid)
-            return (result, cache, grid, png)
-        }
         work = Task { [weak self] in
             do {
-                let (result, cache, grid, png) = try await withTaskCancellationHandler {
+                let result = try await service.process(url: url)
+                try Task.checkCancellation()
+                guard let self, self.generation == token else { return }
+
+                self.processingStage = .preparingPreview
+                let previewStart = ContinuousClock.now
+                // Prepare the complete replacement off-main, including its first preview.
+                // The old draft remains usable if any of these steps fail or are cancelled.
+                let preparation = Task.detached(priority: .userInitiated) {
+                    var cache = try LocalFloorPlanReplayCache(base: result.baseGrid,
+                        width: result.image.width, height: result.image.height)
+                    let grid = try cache.resolve(edits: [], outline: [])
+                    try Task.checkCancellation()
+                    let png = try LocalFloorPlanMaskRenderer.pngData(grid: grid)
+                    return (cache, grid, png)
+                }
+                let (cache, grid, png) = try await withTaskCancellationHandler {
                     try await preparation.value
                 } onCancel: { preparation.cancel() }
                 try Task.checkCancellation()
-                guard let self, self.generation == token else { return }
+                guard self.generation == token else { return }
+                Self.logDuration("preview", since: previewStart)
+
                 self.clearImageState()
                 self.image = result.image
                 self.baseGrid = result.baseGrid
@@ -151,13 +177,11 @@ final class FloorPlanDraftStore {
                 self.step = .editing
                 self.editorMode = .pen
                 self.tool = .pen
-                self.isProcessing = false
-                self.isImporting = false
+                self.processingStage = .idle
                 self.work = nil
             } catch {
                 guard let self, self.generation == token else { return }
-                self.isProcessing = false
-                self.isImporting = false
+                self.processingStage = .idle
                 self.work = nil
                 if !(error is CancellationError) { self.errorMessage = error.localizedDescription }
             }
@@ -167,7 +191,7 @@ final class FloorPlanDraftStore {
     func cancelProcessing() {
         invalidateWork()
         if image == nil { step = .information }
-        errorMessage = "처리를 취소했습니다. 파일을 다시 선택하거나 미리보기를 다시 계산할 수 있습니다."
+        errorMessage = nil
     }
 
     func stageBrushStroke(_ stroke: LocalEditStroke) {
@@ -346,8 +370,7 @@ final class FloorPlanDraftStore {
             maskImage = nil
 #endif
         }
-        isProcessing = true
-        activity = "편집 결과 계산 중"
+        processingStage = .replayingEdits
         errorMessage = nil
         let token = generation
         let currentEdits = edits
@@ -373,11 +396,11 @@ final class FloorPlanDraftStore {
 #if canImport(UIKit)
                 self.maskImage = UIImage(data: png, scale: 1 / CGFloat(grid.cellSizePixels))
 #endif
-                self.isProcessing = false
+                self.processingStage = .idle
                 self.work = nil
             } catch {
                 guard let self, self.generation == token else { return }
-                self.isProcessing = false
+                self.processingStage = .idle
                 self.work = nil
                 if !(error is CancellationError) { self.errorMessage = error.localizedDescription }
             }
@@ -388,8 +411,16 @@ final class FloorPlanDraftStore {
         generation = UUID()
         work?.cancel()
         work = nil
-        isProcessing = false
-        isImporting = false
+        processingStage = .idle
+    }
+
+    private static func logDuration(_ stage: String, since start: ContinuousClock.Instant) {
+#if DEBUG
+        let duration = start.duration(to: .now).components
+        let milliseconds = Double(duration.seconds) * 1_000
+            + Double(duration.attoseconds) / 1_000_000_000_000_000
+        logger.debug("stage=\(stage, privacy: .public) duration_ms=\(milliseconds, privacy: .public)")
+#endif
     }
     private func clearImageState() {
         replayCache = nil
