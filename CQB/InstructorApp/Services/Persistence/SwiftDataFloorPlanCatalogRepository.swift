@@ -49,8 +49,7 @@ final class StoredFloorPlan {
     }
 }
 
-@MainActor
-final class SwiftDataFloorPlanCatalogRepository: FloorPlanCatalogRepository {
+nonisolated final class SwiftDataFloorPlanCatalogRepository: FloorPlanCatalogRepository {
     private let context: ModelContext
 
     init(container: ModelContainer) {
