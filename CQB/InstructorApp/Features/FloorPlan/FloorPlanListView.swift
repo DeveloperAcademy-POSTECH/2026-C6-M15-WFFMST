@@ -30,8 +30,30 @@ struct FloorPlanListView: View {
                 LazyVStack(spacing: 24) {
                     floorPlanHeader
 
-                    ForEach(Array(store.floorPlans.enumerated()), id: \.element.id) { index, floorPlan in
-                        floorPlanRow(floorPlan, number: index + 1)
+                    if store.isLoadingFloorPlans {
+                        catalogStatus(
+                            title: "등록한 도면을 불러오는 중입니다.",
+                            systemImage: "arrow.triangle.2.circlepath"
+                        )
+                        .accessibilityIdentifier("floorPlan.catalog.loading")
+                    } else if let error = store.floorPlanCatalogError {
+                        VStack(spacing: 20) {
+                            catalogStatus(title: error, systemImage: "exclamationmark.triangle")
+                            ActionButton("다시 불러오기", action: store.retryFloorPlanCatalogLoad)
+                                .frame(width: 220, height: 52)
+                                .accessibilityIdentifier("floorPlan.catalog.retry")
+                        }
+                        .accessibilityIdentifier("floorPlan.catalog.error")
+                    } else if store.floorPlans.isEmpty {
+                        catalogStatus(
+                            title: "등록된 도면이 없습니다.",
+                            systemImage: "map"
+                        )
+                        .accessibilityIdentifier("floorPlan.catalog.empty")
+                    } else {
+                        ForEach(Array(store.floorPlans.enumerated()), id: \.element.id) { index, floorPlan in
+                            floorPlanRow(floorPlan, number: index + 1)
+                        }
                     }
                 }
             }
@@ -69,6 +91,7 @@ struct FloorPlanListView: View {
             }
             .accessibilityLabel("도면 추가")
             .accessibilityIdentifier("floorPlan.add")
+            .disabled(store.floorPlanCatalogState != .loaded)
         }
         .font(DSTypography.h3)
         .foregroundStyle(InstructorColor.textPrimary)
@@ -78,7 +101,15 @@ struct FloorPlanListView: View {
         .clipShape(.rect(cornerRadius: 4))
     }
 
-    private func floorPlanRow(_ floorPlan: DemoFloorPlan, number: Int) -> some View {
+    private func catalogStatus(title: String, systemImage: String) -> some View {
+        ContentUnavailableView(title, systemImage: systemImage)
+            .foregroundStyle(InstructorColor.textSecondary)
+            .frame(maxWidth: .infinity, minHeight: 240)
+            .background(InstructorColor.surfaceBase)
+            .clipShape(.rect(cornerRadius: 4))
+    }
+
+    private func floorPlanRow(_ floorPlan: InstructorFloorPlan, number: Int) -> some View {
         HStack(alignment: .top, spacing: 24) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(floorPlan.name)
@@ -126,7 +157,7 @@ struct FloorPlanListView: View {
     NavigationStack {
         FloorPlanListView()
             .environment(InstructorStore(floorPlans: [
-                DemoFloorPlan(
+                InstructorFloorPlan(
                     id: "preview-plan",
                     name: "훈련장 A",
                     fileName: "훈련장 A 도면.png",

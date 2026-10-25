@@ -64,7 +64,7 @@ struct AARView: View {
 }
 
 #Preview("AAR 동선") {
-    let store = InstructorPreviewFixture.store(floorPlan: DemoFloorPlan(
+    let store = InstructorPreviewFixture.store(floorPlan: InstructorFloorPlan(
         id: "preview-plan",
         name: "훈련장 A 도면",
         fileName: "훈련장 A 도면.png",
@@ -79,7 +79,7 @@ struct AARView: View {
 }
 
 #Preview("AAR 영상") {
-    let store = InstructorPreviewFixture.store(floorPlan: DemoFloorPlan(
+    let store = InstructorPreviewFixture.store(floorPlan: InstructorFloorPlan(
         id: "preview-plan",
         name: "훈련장 A 도면",
         fileName: "훈련장 A 도면.png",

@@ -13,8 +13,10 @@ xcrun swiftc -parse-as-library -emit-module -emit-library -module-name CQBCore \
   -o "$test_build_dir/libCQBCore.dylib"
 xcrun swiftc -parse-as-library -module-cache-path "$test_build_dir/ModuleCache" \
   -I "$test_build_dir" -L "$test_build_dir" -lCQBCore \
+  "$task_root/CQB/InstructorApp/Models/InstructorFloorPlan.swift" \
   "$task_root/CQB/InstructorApp/Models/LocalFloorPlan.swift" \
   "$task_root/CQB/InstructorApp/Services/FloorPlanImporting.swift" \
+  "$task_root/CQB/InstructorApp/Services/Persistence/FloorPlanCatalogRepository.swift" \
   "$task_root/CQB/InstructorApp/Services/Import/"*.swift \
   "$task_root/CQB/InstructorApp/Services/Geometry/"*.swift \
   "$task_root/CQB/InstructorApp/Services/Storage/"*.swift \

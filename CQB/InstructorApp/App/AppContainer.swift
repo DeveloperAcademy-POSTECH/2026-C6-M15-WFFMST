@@ -2,26 +2,36 @@ import CQBFirebase
 import SwiftUI
 
 struct AppContainer: View {
-    @State private var store = InstructorStore(
-        floorPlanFileRepository: StorageFloorPlanFileRepository(),
-        sessionRepository: FirestoreSessionRepository(),
-        memberRepository: FirestoreMemberRepository(),
-        recordingRepository: FirestoreRecordingRepository()
-    )
-    @State private var aarStore = AARStore(
-        sessionRepository: FirestoreSessionRepository(),
-        memberRepository: FirestoreMemberRepository(),
-        recordingRepository: FirestoreRecordingRepository(),
-        trackResultRepository: StorageTrackResultRepository(),
-        floorPlanFileRepository: StorageFloorPlanFileRepository(),
-        videoChunkRepository: StorageVideoChunkRepository()
-    )
+    @State private var store: InstructorStore
+    @State private var aarStore: AARStore
+
+    @MainActor
+    init(
+        floorPlanCatalogRepository: (any FloorPlanCatalogRepository)? = nil
+    ) {
+        _store = State(initialValue: InstructorStore(
+            floorPlanFileRepository: StorageFloorPlanFileRepository(),
+            floorPlanCatalogRepository: floorPlanCatalogRepository,
+            sessionRepository: FirestoreSessionRepository(),
+            memberRepository: FirestoreMemberRepository(),
+            recordingRepository: FirestoreRecordingRepository()
+        ))
+        _aarStore = State(initialValue: AARStore(
+            sessionRepository: FirestoreSessionRepository(),
+            memberRepository: FirestoreMemberRepository(),
+            recordingRepository: FirestoreRecordingRepository(),
+            trackResultRepository: StorageTrackResultRepository(),
+            floorPlanFileRepository: StorageFloorPlanFileRepository(),
+            videoChunkRepository: StorageVideoChunkRepository()
+        ))
+    }
 
     var body: some View {
         RootView()
             .environment(store)
             .environment(store.floorPlanDraft)
             .environment(aarStore)
+            .task { store.loadFloorPlans() }
 #if DEBUG
             .task { await openDebugAARIfRequested() }
 #endif
