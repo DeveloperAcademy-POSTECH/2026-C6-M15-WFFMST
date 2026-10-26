@@ -41,3 +41,6 @@ firestore-debug.log*
 ui-debug.log*
 .firebase/
 firebase/emulator-data/
+
+# Local generated artifacts
+/outputs/
