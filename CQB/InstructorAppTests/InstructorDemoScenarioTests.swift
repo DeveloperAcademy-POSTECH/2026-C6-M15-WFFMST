@@ -79,6 +79,82 @@ final class InstructorDemoScenarioTests: XCTestCase {
         restartedStore.shutdown()
     }
 
+    func testDemoScenarioLoadsThreeTracksAndBundledVideosInAAR() async {
+        let environment = InstructorDemoScenario.makeEnvironment(processingDelay: .milliseconds(20))
+        let store = environment.store
+        let aarStore = environment.aarStore
+
+        store.openSessionCreation()
+        store.createSession()
+        let didCreateSession = await waitUntil { store.phase == .teamReadiness && store.canStartTraining }
+        XCTAssertTrue(didCreateSession)
+
+        store.startTraining()
+        let didStartTraining = await waitUntil { store.phase == .trainingInProgress }
+        XCTAssertTrue(didStartTraining)
+        store.finishTraining()
+        let didEnterAAR = await waitUntil { store.phase == .aar }
+        XCTAssertTrue(didEnterAAR)
+
+        guard let session = store.currentSession else {
+            return XCTFail("데모 세션이 유지되어야 합니다.")
+        }
+        let participantIDs = store.participants.map(\.id)
+        await aarStore.load(
+            session: session,
+            participantIDs: participantIDs,
+            localFloorPlan: store.selectedFloorPlan?.registeredPlan
+        )
+
+        XCTAssertEqual(aarStore.floorPlanImageSize?.width, 1_200)
+        XCTAssertEqual(aarStore.floorPlanImageSize?.height, 800)
+        XCTAssertEqual(aarStore.tracks.count, 3)
+        XCTAssertTrue(aarStore.tracks.values.allSatisfy { state in
+            if case .ready = state { return true }
+            return false
+        })
+        XCTAssertEqual(aarStore.playbackDuration, 12, accuracy: 0.001)
+
+        aarStore.setPlaybackPosition(6)
+        let positions = participantIDs.compactMap { aarStore.position(for: $0)?.point }
+        XCTAssertEqual(positions.count, 3)
+        XCTAssertEqual(Set(positions.map { "\($0.x),\($0.y)" }).count, 3)
+
+        store.changeAARMode(to: .video)
+        aarStore.showVideos(for: participantIDs)
+        let didLoadVideos = await waitUntil(attempts: 1_000) {
+            participantIDs.allSatisfy { id in
+                if case .ready? = aarStore.videos[id] { return true }
+                return false
+            }
+        }
+        let videoDiagnostics = participantIDs.map { id -> String in
+            switch aarStore.videos[id] {
+            case .loading?: return "\(id): loading"
+            case .ready?: return "\(id): ready"
+            case .unavailable(let reason)?: return "\(id): \(reason)"
+            case nil: return "\(id): missing"
+            }
+        }.joined(separator: ", ")
+        XCTAssertTrue(didLoadVideos, videoDiagnostics)
+        XCTAssertEqual(aarStore.playbackDuration, 12, accuracy: 0.1)
+        XCTAssertTrue(participantIDs.allSatisfy { id in
+            if case .playing? = aarStore.videoFrame(for: id) { return true }
+            return false
+        })
+
+        aarStore.togglePlayback()
+        XCTAssertTrue(aarStore.isPlaying)
+        aarStore.togglePlayback()
+        XCTAssertFalse(aarStore.isPlaying)
+
+        store.shutdown()
+        aarStore.reset()
+        XCTAssertEqual(store.phase, .home)
+        XCTAssertTrue(aarStore.tracks.isEmpty)
+        XCTAssertTrue(aarStore.videos.isEmpty)
+    }
+
     private func waitUntil(
         attempts: Int = 100,
         condition: @escaping @MainActor () -> Bool
