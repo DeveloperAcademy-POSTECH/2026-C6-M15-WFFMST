@@ -4,6 +4,7 @@ import SwiftUI
 struct AppContainer: View {
     @State private var store: InstructorStore
     @State private var aarStore: AARStore
+    @State private var demoMode = InstructorDemoMode()
 
     @MainActor
     init(
@@ -27,14 +28,22 @@ struct AppContainer: View {
     }
 
     var body: some View {
-        RootView()
-            .environment(store)
-            .environment(store.floorPlanDraft)
-            .environment(aarStore)
-            .task { store.loadFloorPlans() }
+        Group {
+            if demoMode.isActive {
+                InstructorDemoContainer()
+                    .id(demoMode.runID)
+            } else {
+                RootView()
+                    .environment(store)
+                    .environment(store.floorPlanDraft)
+                    .environment(aarStore)
+                    .task { store.loadFloorPlans() }
 #if DEBUG
-            .task { await openDebugAARIfRequested() }
+                    .task { await openDebugAARIfRequested() }
 #endif
+            }
+        }
+        .environment(demoMode)
     }
 
 #if DEBUG
@@ -46,4 +55,21 @@ struct AppContainer: View {
         store.openAARForDebug(session: snapshot.session, members: snapshot.members)
     }
 #endif
+}
+
+@MainActor
+private struct InstructorDemoContainer: View {
+    @State private var store = InstructorDemoScenario.makeStore()
+    @State private var aarStore = AARStore()
+
+    var body: some View {
+        RootView()
+            .environment(store)
+            .environment(store.floorPlanDraft)
+            .environment(aarStore)
+            .onDisappear {
+                store.shutdown()
+                aarStore.reset()
+            }
+    }
 }

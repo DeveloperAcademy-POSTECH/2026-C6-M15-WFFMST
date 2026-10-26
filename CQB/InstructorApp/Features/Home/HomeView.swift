@@ -3,6 +3,7 @@ import SwiftUI
 
 struct HomeView: View {
     @Environment(InstructorStore.self) private var store
+    @Environment(InstructorDemoMode.self) private var demoMode
 
     var body: some View {
         HStack(spacing: 24) {
@@ -24,6 +25,16 @@ struct HomeView: View {
                 action: store.openSessionCreation
             )
             .disabled(!store.canOpenSessionCreation)
+
+            if !demoMode.isActive {
+                HomeActionButton(
+                    title: "데모 모드",
+                    tone: .secondary,
+                    accessibilityHint: "샘플 데이터로 교관 앱의 훈련 흐름을 체험합니다.",
+                    accessibilityIdentifier: "home.demo",
+                    action: demoMode.start
+                )
+            }
         }
         .frame(maxWidth: 1_088)
         .padding(.horizontal, 32)
@@ -108,6 +119,7 @@ private struct HomeActionButtonStyle: ButtonStyle {
     NavigationStack {
         HomeView()
             .environment(InstructorStore(floorPlans: []))
+            .environment(InstructorDemoMode())
     }
     .frame(width: 1_366, height: 1_024)
     .preferredColorScheme(.dark)
@@ -124,6 +136,7 @@ private struct HomeActionButtonStyle: ButtonStyle {
                     referenceDistance: 15
                 )
             ]))
+            .environment(InstructorDemoMode())
     }
     .frame(width: 1_366, height: 1_024)
     .preferredColorScheme(.dark)
