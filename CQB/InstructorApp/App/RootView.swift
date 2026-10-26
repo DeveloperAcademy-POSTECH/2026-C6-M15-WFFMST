@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(InstructorStore.self) private var store
+    @Environment(InstructorDemoMode.self) private var demoMode
 
     var body: some View {
         NavigationStack {
@@ -16,7 +17,9 @@ struct RootView: View {
                     }
                 }
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    if !usesHiFiChrome {
+                    if demoMode.isActive {
+                        demoBanner
+                    } else if !usesHiFiChrome {
                         Text("등록 도면 목록은 기기에 저장 · 훈련 진행은 앱 종료 시 사라집니다")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -26,6 +29,31 @@ struct RootView: View {
                     }
                 }
         }
+    }
+
+    private var demoBanner: some View {
+        HStack(spacing: 16) {
+            Label("데모 모드 · 샘플 데이터", systemImage: "testtube.2")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(InstructorColor.textPrimary)
+
+            Spacer()
+
+            Button("데모 종료", action: demoMode.stop)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(InstructorColor.actionPrimary)
+                .accessibilityIdentifier("demo.exit")
+        }
+        .padding(.horizontal, 24)
+        .frame(minHeight: 44)
+        .background(InstructorColor.surfaceRaised)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(InstructorColor.borderDefault)
+                .frame(height: 1)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("demo.banner")
     }
 
     private var usesHiFiChrome: Bool {
