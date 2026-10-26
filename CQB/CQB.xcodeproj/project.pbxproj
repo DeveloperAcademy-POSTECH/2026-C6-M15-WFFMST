@@ -17,6 +17,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A770000130A0000100000001 /* AudioFusionLab.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AudioFusionLab.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		788A10733076802C003DEA3E /* MemberApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MemberApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		788A1085307682B8003DEA3E /* InstructorApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = InstructorApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		52000006307C000100000006 /* InstructorAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = InstructorAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -33,6 +34,13 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		A770000230A0000100000002 /* Exceptions for "AudioFusionLab" folder in "AudioFusionLab" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"docs/issue-77-implementation.md",
+			);
+			target = A770000730A0000100000007 /* AudioFusionLab */;
+		};
 		E810D0C02026100900000001 /* Exceptions for "InstructorApp" folder in "InstructorApp" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -56,6 +64,14 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		A770000330A0000100000003 /* AudioFusionLab */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A770000230A0000100000002 /* Exceptions for "AudioFusionLab" folder in "AudioFusionLab" target */,
+			);
+			path = AudioFusionLab;
+			sourceTree = "<group>";
+		};
 		788A10753076802C003DEA3E /* MemberApp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -90,6 +106,11 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		A770000530A0000100000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
 		788A10703076802C003DEA3E /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
@@ -122,6 +143,7 @@
 				788A10A8307687FD003DEA3E /* Configurations */,
 				788A10753076802C003DEA3E /* MemberApp */,
 				788A1086307682B8003DEA3E /* InstructorApp */,
+				A770000330A0000100000003 /* AudioFusionLab */,
 				52000005307C000100000005 /* InstructorAppTests */,
 				788A10E130769825003DEA3E /* Frameworks */,
 				788A10743076802C003DEA3E /* Products */,
@@ -133,6 +155,7 @@
 			children = (
 				788A10733076802C003DEA3E /* MemberApp.app */,
 				788A1085307682B8003DEA3E /* InstructorApp.app */,
+				A770000130A0000100000001 /* AudioFusionLab.app */,
 				52000006307C000100000006 /* InstructorAppTests.xctest */,
 			);
 			name = Products;
@@ -148,6 +171,26 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		A770000730A0000100000007 /* AudioFusionLab */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A770000A30A000010000000A /* Build configuration list for PBXNativeTarget "AudioFusionLab" */;
+			buildPhases = (
+				A770000430A0000100000004 /* Sources */,
+				A770000530A0000100000005 /* Frameworks */,
+				A770000630A0000100000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			fileSystemSynchronizedGroups = (
+				A770000330A0000100000003 /* AudioFusionLab */,
+			);
+			name = AudioFusionLab;
+			packageProductDependencies = (
+			);
+			productName = AudioFusionLab;
+			productReference = A770000130A0000100000001 /* AudioFusionLab.app */;
+			productType = "com.apple.product-type.application";
+		};
 		788A10723076802C003DEA3E /* MemberApp */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 788A107E3076802D003DEA3E /* Build configuration list for PBXNativeTarget "MemberApp" */;
@@ -228,6 +271,9 @@
 				LastSwiftUpdateCheck = 2700;
 				LastUpgradeCheck = 2700;
 				TargetAttributes = {
+					A770000730A0000100000007 = {
+						CreatedOnToolsVersion = 27.0;
+					};
 					788A10723076802C003DEA3E = {
 						CreatedOnToolsVersion = 27.0;
 					};
@@ -259,12 +305,18 @@
 			targets = (
 				788A10723076802C003DEA3E /* MemberApp */,
 				788A1084307682B8003DEA3E /* InstructorApp */,
+				A770000730A0000100000007 /* AudioFusionLab */,
 				5200000A307C00010000000A /* InstructorAppTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		A770000630A0000100000006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
 		788A10713076802C003DEA3E /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
@@ -283,6 +335,11 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		A770000430A0000100000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
 		788A106F3076802C003DEA3E /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			files = (
@@ -309,6 +366,82 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		A770000830A0000100000008 /* Debug configuration for PBXNativeTarget "AudioFusionLab" */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = 788A10A8307687FD003DEA3E /* Configurations */;
+			baseConfigurationReferenceRelativePath = Base.xcconfig;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Audio Fusion Lab";
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
+				INFOPLIST_KEY_NSCameraUsageDescription = "ARKit 실행 환경에서 오디오와 기록 시간을 함께 검증하기 위해 카메라 접근이 필요합니다.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "여러 기기의 소리 분류 결과와 시간축을 검증하기 위해 마이크 접근이 필요합니다.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wffmst.cqb.audiofusionlab;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		A770000930A0000100000009 /* Release configuration for PBXNativeTarget "AudioFusionLab" */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = 788A10A8307687FD003DEA3E /* Configurations */;
+			baseConfigurationReferenceRelativePath = Base.xcconfig;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Audio Fusion Lab";
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
+				INFOPLIST_KEY_NSCameraUsageDescription = "ARKit 실행 환경에서 오디오와 기록 시간을 함께 검증하기 위해 카메라 접근이 필요합니다.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "여러 기기의 소리 분류 결과와 시간축을 검증하기 위해 마이크 접근이 필요합니다.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wffmst.cqb.audiofusionlab;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 		788A107C3076802D003DEA3E /* Debug configuration for PBXProject "CQB" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -623,6 +756,14 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		A770000A30A000010000000A /* Build configuration list for PBXNativeTarget "AudioFusionLab" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A770000830A0000100000008 /* Debug configuration for PBXNativeTarget "AudioFusionLab" */,
+				A770000930A0000100000009 /* Release configuration for PBXNativeTarget "AudioFusionLab" */,
+			);
+			defaultConfigurationName = Release;
+		};
 		788A106E3076802C003DEA3E /* Build configuration list for PBXProject "CQB" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
