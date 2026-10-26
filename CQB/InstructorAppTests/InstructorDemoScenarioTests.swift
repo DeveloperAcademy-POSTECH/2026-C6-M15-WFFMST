@@ -1,3 +1,5 @@
+import AVFoundation
+import UIKit
 import XCTest
 @testable import InstructorApp
 
@@ -153,6 +155,37 @@ final class InstructorDemoScenarioTests: XCTestCase {
         XCTAssertEqual(store.phase, .home)
         XCTAssertTrue(aarStore.tracks.isEmpty)
         XCTAssertTrue(aarStore.videos.isEmpty)
+    }
+
+    func testBundledDemoVideoMakesPlaybackProgressVisible() async throws {
+        guard let url = Bundle.main.url(
+            forResource: "DEBRIEF-Demo-AAR",
+            withExtension: "mp4"
+        ) else {
+            return XCTFail("데모 영상이 앱 번들에 포함되어야 합니다.")
+        }
+
+        let asset = AVURLAsset(url: url)
+        let duration = try await asset.load(.duration).seconds
+        XCTAssertEqual(duration, 12, accuracy: 0.1)
+
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
+
+        var frames: [Data] = []
+        for second in [1.0, 6.0, 11.0] {
+            let (image, _) = try await generator.image(
+                at: CMTime(seconds: second, preferredTimescale: 600)
+            )
+            guard let data = UIImage(cgImage: image).pngData() else {
+                return XCTFail("데모 영상 프레임을 비교할 수 있어야 합니다.")
+            }
+            frames.append(data)
+        }
+
+        XCTAssertEqual(Set(frames).count, frames.count, "탐색 위치마다 눈으로 구분되는 화면이어야 합니다.")
     }
 
     private func waitUntil(
