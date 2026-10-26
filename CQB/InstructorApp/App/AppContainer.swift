@@ -67,5 +67,9 @@ private struct InstructorDemoContainer: View {
             .environment(store)
             .environment(store.floorPlanDraft)
             .environment(aarStore)
+            .onDisappear {
+                store.shutdown()
+                aarStore.reset()
+            }
     }
 }

@@ -52,6 +52,13 @@ final class InstructorDemoScenarioTests: XCTestCase {
         }
         XCTAssertTrue(didReachResultsPreparation)
         XCTAssertEqual(store.phase, .resultsPreparation)
+
+        store.shutdown()
+
+        XCTAssertEqual(store.phase, .home)
+        XCTAssertNil(store.currentSession)
+        XCTAssertTrue(store.participants.isEmpty)
+        XCTAssertTrue(store.trainingRecords.rows.isEmpty)
     }
 
     func testEachDemoStoreStartsFromCleanState() async {
@@ -67,6 +74,9 @@ final class InstructorDemoScenarioTests: XCTestCase {
         XCTAssertNil(restartedStore.currentSession)
         XCTAssertTrue(restartedStore.participants.isEmpty)
         XCTAssertEqual(restartedStore.selectedFloorPlan?.name, "데모 훈련장")
+
+        firstStore.shutdown()
+        restartedStore.shutdown()
     }
 
     private func waitUntil(

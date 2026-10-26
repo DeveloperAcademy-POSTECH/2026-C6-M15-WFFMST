@@ -365,6 +365,14 @@ final class InstructorStore {
         playbackPosition = 331
         phase = .home
     }
+
+    /// 화면 트리에서 Store를 제거하기 전에 진행 중인 앱 내부 작업을 모두 정리한다.
+    func shutdown() {
+        clearFloorPlanUpload()
+        floorPlanDraft.reset()
+        returnHome()
+    }
+
     func goBack() {
         guard !isUploadingFloorPlan, !isCreatingSession, !isEndingSession, !isStartingTraining else { return }
         switch phase {
