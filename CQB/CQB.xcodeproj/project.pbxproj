@@ -42,6 +42,7 @@
 				"docs/issue-46-implementation.md",
 				"docs/issue-49-implementation.md",
 				"docs/issue-56-implementation.md",
+				"docs/issue-80-implementation.md",
 				docs/README.md,
 			);
 			target = 788A1084307682B8003DEA3E /* InstructorApp */;
