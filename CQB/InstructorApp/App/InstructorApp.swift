@@ -1,12 +1,21 @@
 import CQBFirebase
 import os
+import SwiftData
 import SwiftUI
 
 @main
 struct InstructorApp: App {
     private static let logger = Logger(subsystem: "com.wffmst.cqb", category: "InstructorApp")
+    private let floorPlanCatalogRepository: any FloorPlanCatalogRepository
 
     init() {
+        do {
+            let container = try ModelContainer(for: StoredFloorPlan.self)
+            floorPlanCatalogRepository = SwiftDataFloorPlanCatalogRepository(container: container)
+        } catch {
+            Self.logger.error("도면 목록 저장소 초기화 실패: \(error.localizedDescription, privacy: .private)")
+            floorPlanCatalogRepository = UnavailableFloorPlanCatalogRepository(error: error)
+        }
         CQBFirebaseModule.configure()
         Task {
             do {
@@ -19,7 +28,7 @@ struct InstructorApp: App {
 
     var body: some Scene {
         WindowGroup {
-            AppContainer()
+            AppContainer(floorPlanCatalogRepository: floorPlanCatalogRepository)
         }
     }
 }

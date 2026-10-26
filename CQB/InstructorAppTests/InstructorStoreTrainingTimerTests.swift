@@ -38,7 +38,7 @@ final class InstructorStoreTrainingTimerTests: XCTestCase {
     }
 
     private func makeStore(startedAt: Date?) -> InstructorStore {
-        let floorPlan = DemoFloorPlan(
+        let floorPlan = InstructorFloorPlan(
             id: "floor-plan",
             name: "테스트 도면",
             fileName: "floor-plan.png",

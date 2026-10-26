@@ -15,9 +15,50 @@ struct InstructorStoreChecks {
         await checkEndingGuardsAndFailureRecovery()
         await TrainingLifecycleChecks.run()
         checkTrainingAndAARFlow()
+        checkFloorPlanCatalogRestoration()
         checkFloorPlanFlow()
         checkFloorPlanGeometry()
         print("PASS: InstructorStore 세션 생성·입력 잠금, 구독 오류·재연결 시작 차단, 종료 경합·실패 복구, 화면 흐름")
+    }
+
+    @MainActor
+    static func checkFloorPlanCatalogRestoration() {
+        let first = InstructorFloorPlan(
+            id: "first-plan",
+            name: "첫 번째 도면",
+            fileName: "first.png",
+            referenceDistance: 10,
+            createdAt: Date(timeIntervalSince1970: 1),
+            updatedAt: Date(timeIntervalSince1970: 1)
+        )
+        let second = InstructorFloorPlan(
+            id: "second-plan",
+            name: "두 번째 도면",
+            fileName: "second.png",
+            referenceDistance: 20,
+            createdAt: Date(timeIntervalSince1970: 2),
+            updatedAt: Date(timeIntervalSince1970: 2)
+        )
+        let catalog = DemoFloorPlanCatalogRepository(floorPlans: [first, second])
+        let store = InstructorStore(floorPlanCatalogRepository: catalog)
+
+        expect(!store.canOpenSessionCreation, "복원 전 세션 생성 차단")
+        store.loadFloorPlans()
+        expect(store.floorPlanCatalogState == .loaded, "도면 카탈로그 복원 완료")
+        expect(store.floorPlans.map(\.id) == [first.id, second.id], "저장된 도면 목록 복원")
+        expect(store.selectedFloorPlanID == first.id && store.canOpenSessionCreation,
+               "복원 후 기본 도면 선택·세션 생성 허용")
+
+        let failingCatalog = DemoFloorPlanCatalogRepository(floorPlans: [first])
+        failingCatalog.fetchError = CheckError.disconnected
+        let failingStore = InstructorStore(floorPlanCatalogRepository: failingCatalog)
+        failingStore.loadFloorPlans()
+        expect(failingStore.floorPlanCatalogError != nil && failingStore.floorPlans.isEmpty,
+               "복원 실패를 빈 목록 성공으로 처리하지 않음")
+        failingCatalog.fetchError = nil
+        failingStore.retryFloorPlanCatalogLoad()
+        expect(failingStore.floorPlanCatalogState == .loaded && failingStore.floorPlans == [first],
+               "복원 재시도 성공")
     }
 
     @MainActor
@@ -153,7 +194,7 @@ struct InstructorStoreChecks {
     static func checkSessionCreationInputLock() async {
         for failsFirst in [false, true] {
             let firstPlan = makePlan()
-            let secondPlan = DemoFloorPlan(
+            let secondPlan = InstructorFloorPlan(
                 id: "second-plan", name: "다른 도면", fileName: "second.png", referenceDistance: 20
             )
             let repository = SessionRepositorySpy(creationOutcomes: [], suspendsCreations: true)
@@ -402,8 +443,8 @@ struct InstructorStoreChecks {
         expect(!emptyStore.canCreateSession && emptyStore.phase == .home, "도면 없는 세션 생성 차단")
     }
 
-    static func makePlan() -> DemoFloorPlan {
-        DemoFloorPlan(
+    static func makePlan() -> InstructorFloorPlan {
+        InstructorFloorPlan(
             id: "seed-plan",
             name: "테스트 도면",
             fileName: "test-floor-plan.png",

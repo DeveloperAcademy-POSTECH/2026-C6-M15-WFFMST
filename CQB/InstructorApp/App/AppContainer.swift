@@ -2,29 +2,48 @@ import CQBFirebase
 import SwiftUI
 
 struct AppContainer: View {
-    @State private var store = InstructorStore(
-        floorPlanFileRepository: StorageFloorPlanFileRepository(),
-        sessionRepository: FirestoreSessionRepository(),
-        memberRepository: FirestoreMemberRepository(),
-        recordingRepository: FirestoreRecordingRepository()
-    )
-    @State private var aarStore = AARStore(
-        sessionRepository: FirestoreSessionRepository(),
-        memberRepository: FirestoreMemberRepository(),
-        recordingRepository: FirestoreRecordingRepository(),
-        trackResultRepository: StorageTrackResultRepository(),
-        floorPlanFileRepository: StorageFloorPlanFileRepository(),
-        videoChunkRepository: StorageVideoChunkRepository()
-    )
+    @State private var store: InstructorStore
+    @State private var aarStore: AARStore
+    @State private var demoMode = InstructorDemoMode()
+
+    @MainActor
+    init(
+        floorPlanCatalogRepository: (any FloorPlanCatalogRepository)? = nil
+    ) {
+        _store = State(initialValue: InstructorStore(
+            floorPlanFileRepository: StorageFloorPlanFileRepository(),
+            floorPlanCatalogRepository: floorPlanCatalogRepository,
+            sessionRepository: FirestoreSessionRepository(),
+            memberRepository: FirestoreMemberRepository(),
+            recordingRepository: FirestoreRecordingRepository()
+        ))
+        _aarStore = State(initialValue: AARStore(
+            sessionRepository: FirestoreSessionRepository(),
+            memberRepository: FirestoreMemberRepository(),
+            recordingRepository: FirestoreRecordingRepository(),
+            trackResultRepository: StorageTrackResultRepository(),
+            floorPlanFileRepository: StorageFloorPlanFileRepository(),
+            videoChunkRepository: StorageVideoChunkRepository()
+        ))
+    }
 
     var body: some View {
-        RootView()
-            .environment(store)
-            .environment(store.floorPlanDraft)
-            .environment(aarStore)
+        Group {
+            if demoMode.isActive {
+                InstructorDemoContainer()
+                    .id(demoMode.runID)
+            } else {
+                RootView()
+                    .environment(store)
+                    .environment(store.floorPlanDraft)
+                    .environment(aarStore)
+                    .task { store.loadFloorPlans() }
 #if DEBUG
-            .task { await openDebugAARIfRequested() }
+                    .task { await openDebugAARIfRequested() }
 #endif
+            }
+        }
+        .environment(demoMode)
     }
 
 #if DEBUG
@@ -36,4 +55,24 @@ struct AppContainer: View {
         store.openAARForDebug(session: snapshot.session, members: snapshot.members)
     }
 #endif
+}
+
+@MainActor
+private struct InstructorDemoContainer: View {
+    @State private var environment: InstructorDemoScenario.Environment
+
+    init() {
+        _environment = State(initialValue: InstructorDemoScenario.makeEnvironment())
+    }
+
+    var body: some View {
+        RootView()
+            .environment(environment.store)
+            .environment(environment.store.floorPlanDraft)
+            .environment(environment.aarStore)
+            .onDisappear {
+                environment.store.shutdown()
+                environment.aarStore.reset()
+            }
+    }
 }

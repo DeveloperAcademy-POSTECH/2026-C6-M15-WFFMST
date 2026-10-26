@@ -158,7 +158,7 @@ enum TrainingLifecycleChecks {
     private static func readyStore(allReady: Bool = true) async -> (InstructorStore, LifecycleRepository, [Member]) {
         let repository = LifecycleRepository()
         let store = InstructorStore(
-            floorPlans: [DemoFloorPlan(id: "plan", name: "검사 도면", fileName: "plan.png", referenceDistance: 10)],
+            floorPlans: [InstructorFloorPlan(id: "plan", name: "검사 도면", fileName: "plan.png", referenceDistance: 10)],
             sessionRepository: repository, memberRepository: repository, recordingRepository: repository
         )
         store.openSessionCreation()

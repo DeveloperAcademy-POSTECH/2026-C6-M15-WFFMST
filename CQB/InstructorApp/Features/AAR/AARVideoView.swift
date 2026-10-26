@@ -206,7 +206,7 @@ private struct AARPlayerView: UIViewRepresentable {
 #if DEBUG
 @MainActor
 private func aarVideoPreview(selectedCount: Int) -> some View {
-    let store = InstructorPreviewFixture.store(floorPlan: DemoFloorPlan(
+    let store = InstructorPreviewFixture.store(floorPlan: InstructorFloorPlan(
         id: "preview-plan",
         name: "훈련장 A 도면",
         fileName: "훈련장 A 도면.png",
