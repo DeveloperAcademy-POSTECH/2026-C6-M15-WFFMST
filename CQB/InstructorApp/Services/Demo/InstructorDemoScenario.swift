@@ -13,20 +13,49 @@ enum InstructorDemoScenario {
     ]
 
     @MainActor
-    static func makeStore() -> InstructorStore {
+    struct Environment {
+        let store: InstructorStore
+        let aarStore: AARStore
+    }
+
+    @MainActor
+    static func makeEnvironment(processingDelay: Duration = .seconds(1)) -> Environment {
         let plan = makeFloorPlan()
+        let sessionRepository = InstructorDemoSessionRepository()
+        let memberRepository = InstructorDemoMemberRepository(memberIDs: memberIDs)
+        let recordingRepository = InstructorDemoRecordingRepository(
+            memberIDs: memberIDs,
+            sessionRepository: sessionRepository,
+            processingDelay: processingDelay
+        )
         let store = InstructorStore(
             floorPlans: [plan],
             floorPlanFileRepository: DemoFloorPlanFileRepository(),
             floorPlanCatalogRepository: DemoFloorPlanCatalogRepository(floorPlans: [plan]),
-            sessionRepository: InstructorDemoSessionRepository(),
-            memberRepository: InstructorDemoMemberRepository(memberIDs: memberIDs),
-            recordingRepository: InstructorDemoRecordingRepository(memberIDs: memberIDs),
+            sessionRepository: sessionRepository,
+            memberRepository: memberRepository,
+            recordingRepository: recordingRepository,
             pinGenerator: { "012345" }
         )
         store.setTrainingName("TestFlight 데모 훈련")
         store.selectFloorPlan(plan.id)
-        return store
+        let aarStore = AARStore(
+            sessionRepository: sessionRepository,
+            memberRepository: memberRepository,
+            recordingRepository: recordingRepository,
+            trackResultRepository: InstructorDemoTrackResultRepository(
+                memberIDs: memberIDs,
+                floorPlan: plan.reference
+            ),
+            floorPlanFileRepository: DemoFloorPlanFileRepository(),
+            videoChunkRepository: InstructorDemoVideoChunkRepository()
+        )
+        return Environment(store: store, aarStore: aarStore)
+    }
+
+    @MainActor
+    static func makeStore() -> InstructorStore {
+        makeEnvironment().store
     }
 
     @MainActor
@@ -169,6 +198,10 @@ private final class InstructorDemoSessionRepository: SessionRepository, @uncheck
         }
     }
 
+    func startedAt(sessionID: UUID) -> Date? {
+        lock.withLock { sessions[sessionID]?.startedAt }
+    }
+
     private func save(_ session: Session) {
         lock.withLock { sessions[session.id] = session }
     }
@@ -250,28 +283,162 @@ private struct InstructorDemoMemberRepository: MemberRepository {
     }
 }
 
-private struct InstructorDemoRecordingRepository: RecordingRepository {
+private final class InstructorDemoRecordingRepository: RecordingRepository, @unchecked Sendable {
     let memberIDs: [UUID]
+    let sessionRepository: InstructorDemoSessionRepository
+    let processingDelay: Duration
+    private let lock = NSLock()
+    private var recordings: [UUID: [Recording]] = [:]
+    private var scheduledSessions: Set<UUID> = []
+    private var observers: [UUID: [UUID: AsyncThrowingStream<[Recording], Error>.Continuation]] = [:]
+
+    init(
+        memberIDs: [UUID],
+        sessionRepository: InstructorDemoSessionRepository,
+        processingDelay: Duration
+    ) {
+        self.memberIDs = memberIDs
+        self.sessionRepository = sessionRepository
+        self.processingDelay = processingDelay
+    }
 
     func startRecording(_ recording: Recording) async throws {}
     func updateRecording(_ recording: Recording) async throws {}
 
     func observeRecordings(sessionID: UUID) -> AsyncThrowingStream<[Recording], Error> {
-        let recordings = memberIDs.enumerated().map { index, memberID in
+        return AsyncThrowingStream { continuation in
+            let token = UUID()
+            let (current, shouldSchedule) = lock.withLock { () -> ([Recording], Bool) in
+                let current = recordings[sessionID] ?? makeRecordings(sessionID: sessionID, state: .finishing)
+                recordings[sessionID] = current
+                observers[sessionID, default: [:]][token] = continuation
+                return (current, scheduledSessions.insert(sessionID).inserted)
+            }
+            continuation.yield(current)
+            if shouldSchedule { scheduleCompletion(sessionID: sessionID) }
+            continuation.onTermination = { [weak self] _ in
+                guard let self else { return }
+                self.lock.withLock { self.observers[sessionID]?[token] = nil }
+            }
+        }
+    }
+
+    private func scheduleCompletion(sessionID: UUID) {
+        Task { [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(for: processingDelay)
+            let completed = makeRecordings(sessionID: sessionID, state: .done)
+            let continuations = lock.withLock { () -> [AsyncThrowingStream<[Recording], Error>.Continuation] in
+                self.recordings[sessionID] = completed
+                return Array(self.observers[sessionID, default: [:]].values)
+            }
+            continuations.forEach { $0.yield(completed) }
+        }
+    }
+
+    private func makeRecordings(sessionID: UUID, state: RecordingState) -> [Recording] {
+        let startedAt = sessionRepository.startedAt(sessionID: sessionID) ?? .now
+        return memberIDs.enumerated().map { index, memberID in
             Recording(
                 identity: TrackIdentity(
                     sessionID: sessionID,
                     memberID: memberID,
                     recordingID: UUID(uuidString: "30000000-0000-0000-0000-00000000008\(index + 1)")!
                 ),
-                state: .finishing,
-                startedAt: .now,
+                state: state,
+                startedAt: startedAt,
                 lastActiveAt: .now,
-                videoChunkCount: nil
+                videoChunkCount: state == .done ? 1 : nil
             )
         }
-        return AsyncThrowingStream { continuation in
-            continuation.yield(recordings)
-        }
     }
+}
+
+private struct InstructorDemoTrackResultRepository: TrackResultRepository {
+    let memberIDs: [UUID]
+    let floorPlan: FloorPlanReference
+
+    func upload(_ result: TrackResultDocument) async throws {}
+
+    func download(_ identity: TrackIdentity) async throws -> TrackResultDocument {
+        guard let index = memberIDs.firstIndex(of: identity.memberID) else {
+            throw RepositoryError.notFound
+        }
+        let points = Self.paths[index]
+        let vertices = points.enumerated().map { offset, point in
+            TrackResultVertex(
+                t: Double(offset) * 1.5,
+                point: point,
+                part: 0,
+                sampleIndex: offset,
+                provenance: .generated
+            )
+        }
+        return TrackResultDocument(
+            identity: identity,
+            floorPlan: floorPlan,
+            sourceRawSHA256: "instructor-demo-track-\(index + 1)",
+            algorithm: TrackAlgorithmIdentity(
+                name: "instructor-demo",
+                version: "1",
+                settingsID: "testflight-review"
+            ),
+            status: .done,
+            vertices: vertices,
+            sampleCoverage: [
+                TrackSampleCoverage(
+                    samples: TrackSampleRange(from: 0, through: vertices.count - 1),
+                    vertices: TrackVertexRange(from: 0, through: vertices.count - 1)
+                )
+            ],
+            unresolvedIntervals: [],
+            searchIncomplete: false,
+            warnings: []
+        )
+    }
+
+    private static let paths: [[ImagePoint]] = [
+        [
+            ImagePoint(x: 110, y: 650), ImagePoint(x: 250, y: 650),
+            ImagePoint(x: 430, y: 620), ImagePoint(x: 450, y: 480),
+            ImagePoint(x: 450, y: 360), ImagePoint(x: 600, y: 330),
+            ImagePoint(x: 720, y: 360), ImagePoint(x: 720, y: 470),
+            ImagePoint(x: 900, y: 500)
+        ],
+        [
+            ImagePoint(x: 1050, y: 650), ImagePoint(x: 900, y: 650),
+            ImagePoint(x: 820, y: 570), ImagePoint(x: 820, y: 450),
+            ImagePoint(x: 870, y: 350), ImagePoint(x: 960, y: 220),
+            ImagePoint(x: 780, y: 170), ImagePoint(x: 620, y: 180),
+            ImagePoint(x: 580, y: 310)
+        ],
+        [
+            ImagePoint(x: 120, y: 150), ImagePoint(x: 260, y: 180),
+            ImagePoint(x: 410, y: 190), ImagePoint(x: 560, y: 210),
+            ImagePoint(x: 610, y: 330), ImagePoint(x: 570, y: 460),
+            ImagePoint(x: 500, y: 600), ImagePoint(x: 680, y: 650),
+            ImagePoint(x: 880, y: 640)
+        ]
+    ]
+}
+
+private final class InstructorDemoBundleToken {}
+
+private struct InstructorDemoVideoChunkRepository: VideoChunkRepository {
+    func upload(fileURL: URL, identity: TrackIdentity, index: Int) async throws {}
+
+    func downloadVideo(_ identity: TrackIdentity, chunkCount: Int, to directory: URL) async throws -> [URL] {
+        guard chunkCount == 1,
+              let source = [Bundle.main, Bundle(for: InstructorDemoBundleToken.self)]
+                .compactMap({ $0.url(forResource: "DEBRIEF-Demo-AAR", withExtension: "mp4") })
+                .first else {
+            throw RepositoryError.notFound
+        }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let destination = directory.appendingPathComponent("chunk_0000.mp4")
+        try FileManager.default.copyItem(at: source, to: destination)
+        return [destination]
+    }
+
+    func deleteVideo(_ identity: TrackIdentity, chunkCount: Int) async throws {}
 }
