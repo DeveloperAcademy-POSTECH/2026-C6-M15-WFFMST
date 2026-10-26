@@ -59,17 +59,20 @@ struct AppContainer: View {
 
 @MainActor
 private struct InstructorDemoContainer: View {
-    @State private var store = InstructorDemoScenario.makeStore()
-    @State private var aarStore = AARStore()
+    @State private var environment: InstructorDemoScenario.Environment
+
+    init() {
+        _environment = State(initialValue: InstructorDemoScenario.makeEnvironment())
+    }
 
     var body: some View {
         RootView()
-            .environment(store)
-            .environment(store.floorPlanDraft)
-            .environment(aarStore)
+            .environment(environment.store)
+            .environment(environment.store.floorPlanDraft)
+            .environment(environment.aarStore)
             .onDisappear {
-                store.shutdown()
-                aarStore.reset()
+                environment.store.shutdown()
+                environment.aarStore.reset()
             }
     }
 }
