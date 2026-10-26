@@ -25,4 +25,4 @@ TestFlight 외부 심사자가 별도 대원 기기나 운영 데이터 없이 �
 - InstructorApp Debug 시뮬레이터 빌드
 - `InstructorDemoScenarioTests`: 홈부터 AAR 진입, 3개 동선, 번들 영상, 1·6·11초 프레임 변화, 재생·일시정지, 초기화
 - InstructorApp Release 빌드 및 번들 리소스 포함 여부
-- 실제 iPad에서는 데모 훈련 종료 후 AAR 자동 진입, 참가자 선택, 동선 이동, 영상 재생과 다시 시작을 확인한다.
+- 실제 iPad에서 데모 훈련 종료 후 AAR 자동 진입, 참가자 선택, 동선 이동, 영상 재생·탐색과 다시 시작을 확인했다.
