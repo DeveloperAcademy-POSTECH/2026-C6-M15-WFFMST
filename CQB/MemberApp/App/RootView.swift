@@ -68,21 +68,24 @@ struct RootView: View {
             MemberTrainingFlowView(demoControl: demoControl)
         case .saved:
             RecordingSaveTestView(recordingURLs: store.savedRecordingURLs,
+                isDemo: store.isDemoMode,
                 raw: store.rawTrack, correction: store.correction, mapImage: floorPlan,
                 files: store.recordingFiles, filesSaved: store.filesSaved,
                 onHome: { store.returnToJoin() },
-                onRetry: { Task { await store.retrySaving() } }) {
+                onRetry: { Task { await store.retrySaving() } },
+                onDiscardDemo: discardFailedDemo) {
                 store.startUploading()
             }
         case .uploading:
             RecordingUploadView(
+                isDemo: store.isDemoMode,
                 progress: store.uploadProgress,
                 isComplete: store.isUploadComplete,
                 statusMessage: store.uploadStatusMessage,
                 errorMessage: store.uploadErrorMessage,
                 isUploading: store.isUploading,
                 onRetry: { await store.retryUploading() },
-                onHome: { store.returnToJoin() }
+                onHome: finishDemoOrReturnHome
             )
             .task { await store.uploadRecording() }
         }
@@ -106,6 +109,19 @@ struct RootView: View {
     private var startDemoAction: (() -> Void)? {
         guard !demoMode.isActive else { return nil }
         return { demoMode.start() }
+    }
+
+    private func finishDemoOrReturnHome() {
+        if store.isDemoMode {
+            if store.finishDemo() { demoMode.stop() }
+        } else {
+            store.returnToJoin()
+        }
+    }
+
+    private func discardFailedDemo() {
+        guard store.discardFailedDemo() else { return }
+        demoMode.stop()
     }
 
     private var canExitDemo: Bool {

@@ -5,6 +5,7 @@ import SwiftUI
 struct MemberTrainingFlowView: View {
     @Environment(MemberStore.self) private var store
     var demoControl: MemberDemoSessionControl?
+    @State private var isShowingDemoStopConfirmation = false
 
     var body: some View {
         TrainingRecordingView(
@@ -13,7 +14,7 @@ struct MemberTrainingFlowView: View {
             onFinish: { Task { await store.finishRecording() } },
             onReset: { store.resetPosition() },
             allowsPositionReset: store.canResetPosition,
-            allowsManualStop: true,
+            allowsManualStop: demoControl == nil,
             canRetryRecordingStart: store.canRetryRecordingStart,
             isStartingRecording: store.isStarting,
             uploadStatusMessage: store.uploadStatusMessage,
@@ -23,21 +24,46 @@ struct MemberTrainingFlowView: View {
             onStopRecording: { await store.finishRecording() }
         )
         .overlay(alignment: .bottom) {
-            if demoControl != nil, store.phase == .waiting {
-                Button(demoStartTitle ?? "데모 훈련 시작", action: startDemoTraining)
+            if demoControl != nil {
+                switch store.phase {
+                case .waiting:
+                    Button(demoStartTitle ?? "데모 훈련 시작", action: startDemoTraining)
+                        .font(DSTypography.body.weight(.semibold))
+                        .foregroundStyle(DSColor.background)
+                        .padding(.horizontal, 20)
+                        .frame(minHeight: 48)
+                        .background(DSColor.main, in: RoundedRectangle(cornerRadius: 4))
+                        .disabled(!store.isReady || isDemoStartDisabled)
+                        .opacity(store.isReady && !isDemoStartDisabled ? 1 : 0.55)
+                        .accessibilityHint(store.isReady
+                            ? "별도 iPad 없이 로컬 데모 훈련을 시작합니다."
+                            : "카메라와 AR 추적 준비가 끝나면 사용할 수 있습니다.")
+                        .accessibilityIdentifier("demo.startTraining")
+                        .padding(.bottom, 24)
+                case .recording:
+                    Button("데모 훈련 종료") {
+                        isShowingDemoStopConfirmation = true
+                    }
                     .font(DSTypography.body.weight(.semibold))
-                    .foregroundStyle(DSColor.background)
+                    .foregroundStyle(DSColor.white)
                     .padding(.horizontal, 20)
                     .frame(minHeight: 48)
-                    .background(DSColor.main, in: RoundedRectangle(cornerRadius: 4))
-                    .disabled(!store.isReady || isDemoStartDisabled)
-                    .opacity(store.isReady && !isDemoStartDisabled ? 1 : 0.55)
-                    .accessibilityHint(store.isReady
-                        ? "별도 iPad 없이 로컬 데모 훈련을 시작합니다."
-                        : "카메라와 AR 추적 준비가 끝나면 사용할 수 있습니다.")
-                    .accessibilityIdentifier("demo.startTraining")
+                    .background(.red.opacity(0.9), in: RoundedRectangle(cornerRadius: 4))
+                    .accessibilityHint("영상과 동선 기록을 끝내고 결과 처리로 이동합니다.")
+                    .accessibilityIdentifier("demo.stopTraining")
                     .padding(.bottom, 24)
+                default:
+                    EmptyView()
+                }
             }
+        }
+        .confirmationDialog("데모 훈련을 종료할까요?", isPresented: $isShowingDemoStopConfirmation) {
+            Button("데모 훈련 종료", role: .destructive) {
+                Task { await store.finishRecording() }
+            }
+            Button("계속 기록", role: .cancel) {}
+        } message: {
+            Text("기록을 저장하고 경로 보정 결과를 만든 뒤 로컬 완료 흐름으로 이동합니다.")
         }
         #if DEBUG && targetEnvironment(simulator)
         .safeAreaInset(edge: .bottom) {

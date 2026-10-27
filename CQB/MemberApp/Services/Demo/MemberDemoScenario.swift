@@ -21,7 +21,10 @@ enum MemberDemoScenario {
     }
 
     @MainActor
-    static func makeEnvironment() -> Environment {
+    static func makeEnvironment(
+        runID: UUID = UUID(),
+        uploadSimulator: MemberDemoUploadSimulator = MemberDemoUploadSimulator()
+    ) -> Environment {
         let session = Session(
             id: sessionID,
             pin: "012345",
@@ -39,7 +42,9 @@ enum MemberDemoScenario {
             floorPlanFileRepository: MemberDemoFloorPlanFileRepository(),
             recordingRepository: MemberDemoRecordingRepository(),
             videoChunkRepository: MemberDemoVideoChunkRepository(),
-            trackResultRepository: MemberDemoTrackResultRepository()
+            trackResultRepository: MemberDemoTrackResultRepository(),
+            executionEnvironment: .demo(runID: runID),
+            demoUploadSimulator: uploadSimulator
         )
         return Environment(
             store: store,
