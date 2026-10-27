@@ -86,7 +86,9 @@ final class MemberDemoScenarioTests: XCTestCase {
             floorPlanFileRepository: TestFloorPlanFileRepository(),
             recordingRepository: TestRecordingRepository(),
             videoChunkRepository: TestVideoChunkRepository(),
-            trackResultRepository: TestTrackResultRepository()
+            trackResultRepository: TestTrackResultRepository(),
+            executionEnvironment: .demo(runID: UUID()),
+            demoUploadSimulator: MemberDemoUploadSimulator(stepDelay: .zero)
         )
 
         store.enterDemoSession(session: session, memberName: "데모 대원")
@@ -95,6 +97,7 @@ final class MemberDemoScenarioTests: XCTestCase {
         store.updateTrackingReadiness(true)
         try await Task.sleep(for: .milliseconds(20))
 
+        XCTAssertTrue(store.isDemoMode)
         XCTAssertEqual(spy.sessionLookupCount, 0)
         XCTAssertEqual(spy.sessionCreateCount, 0)
         XCTAssertEqual(spy.sessionStatusUpdateCount, 0)

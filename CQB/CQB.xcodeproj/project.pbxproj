@@ -61,6 +61,7 @@
 			membershipExceptions = (
 				"docs/issue-27-implementation.md",
 				"docs/issue-87-implementation.md",
+				"docs/issue-88-implementation.md",
 			);
 			target = 788A10723076802C003DEA3E /* MemberApp */;
 		};

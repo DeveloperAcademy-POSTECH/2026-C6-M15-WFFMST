@@ -2,16 +2,35 @@ import Foundation
 import CryptoKit
 
 nonisolated struct LocalRecordingFileStore: Sendable {
+    enum Scope: Sendable, Equatable {
+        case operational
+        case demo(runID: UUID)
+    }
+
+    private let scope: Scope
+    private let baseDirectory: URL?
+
+    init(scope: Scope = .operational, baseDirectory: URL? = nil) {
+        self.scope = scope
+        self.baseDirectory = baseDirectory
+    }
+
     func makeFiles(recordingID: UUID) throws -> LocalRecordingFiles {
-        let root = try FileManager.default.url(for: .applicationSupportDirectory,
-            in: .userDomainMask, appropriateFor: nil, create: true)
-        var directory = root.appendingPathComponent("Recordings", isDirectory: true)
+        var directory = try recordingRoot()
             .appendingPathComponent(recordingID.uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
         try directory.setResourceValues(values)
         return LocalRecordingFiles(directory: directory)
+    }
+
+    /// 데모 실행 디렉터리만 제거한다. 운영 Recordings 경로에는 사용할 수 없다.
+    func removeDemoRun() throws {
+        guard case .demo = scope else { throw CleanupError.operationalScope }
+        let directory = try recordingRoot()
+        guard FileManager.default.fileExists(atPath: directory.path) else { return }
+        try FileManager.default.removeItem(at: directory)
     }
 
     /// 원본은 최초 저장만 허용한다. 해시는 실제로 저장한 바이트를 대상으로 한다.
@@ -48,5 +67,31 @@ nonisolated struct LocalRecordingFileStore: Sendable {
 
     static func sha256(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func recordingRoot() throws -> URL {
+        switch scope {
+        case .operational:
+            let root = try baseDirectory ?? FileManager.default.url(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: true
+            )
+            return root.appendingPathComponent("Recordings", isDirectory: true)
+        case .demo(let runID):
+            let root = try baseDirectory ?? FileManager.default.url(
+                for: .cachesDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: true
+            )
+            return root.appendingPathComponent("DemoRecordings", isDirectory: true)
+                .appendingPathComponent(runID.uuidString, isDirectory: true)
+        }
+    }
+
+    private enum CleanupError: Error {
+        case operationalScope
     }
 }
