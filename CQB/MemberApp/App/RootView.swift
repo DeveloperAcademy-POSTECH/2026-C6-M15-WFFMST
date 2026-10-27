@@ -3,86 +3,18 @@ import CQBDesignSystem
 
 struct RootView: View {
     @Environment(MemberStore.self) private var store
+    @Environment(MemberDemoMode.self) private var demoMode
+    var demoControl: MemberDemoSessionControl?
+
     private var floorPlan: UIImage? {
         store.trainingMap.flatMap { UIImage(contentsOfFile: $0.imageURL.path) }
     }
 
     var body: some View {
-        Group {
-            switch store.phase {
-            case .join:
-                SessionJoinView(isJoining: store.isJoining) { pin, name in
-                    store.join(pin: pin, memberName: name)
-                }
-            case .setup:
-                if let floorPlan {
-                    StartPositionSetupView(
-                        floorPlan: floorPlan,
-                        startPoint: store.startPoint,
-                        directionPoint: store.directionPoint
-                    ) { start, direction in
-                        store.confirmPosition(start: start, direction: direction)
-                    }
-                } else {
-                    ContentUnavailableView("도면을 불러올 수 없습니다", systemImage: "map")
-                }
-            case .waiting, .recording, .saving, .correcting:
-                TrainingRecordingView(
-                    phase: store.phase,
-                    startedAt: store.recordingStartedAt,
-                    onFinish: { Task { await store.finishRecording() } },
-                    onReset: { store.resetPosition() },
-                    allowsPositionReset: store.canResetPosition,
-                    allowsManualStop: true,
-                    canRetryRecordingStart: store.canRetryRecordingStart,
-                    isStartingRecording: store.isStarting,
-                    uploadStatusMessage: store.uploadStatusMessage,
-                    onRetryRecordingStart: { Task { await store.retryStartingRecording() } },
-                    onCameraReadinessChange: { store.updateTrackingReadiness($0) },
-                    cameraService: store.cameraService,
-                    onStopRecording: { await store.finishRecording() }
-                )
-                #if DEBUG && targetEnvironment(simulator)
-                .safeAreaInset(edge: .bottom) {
-                    if store.phase == .waiting, store.isReadinessTestAvailable {
-                        Toggle(isOn: Binding(
-                            get: { store.isSimulatedReady },
-                            set: { store.setSimulatedReadiness($0) }
-                        )) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("준비 완료 전송 (테스트)").font(.headline)
-                                Text("에뮬레이터 전용 · 서버 준비 상태만 변경하며 AR·녹화는 지원하지 않습니다.")
-                                    .font(.caption)
-                            }
-                        }
-                        .accessibilityIdentifier("emulator-readiness-toggle")
-                        .disabled(!store.canResetPosition)
-                        .tint(DSColor.main)
-                        .foregroundStyle(DSColor.white)
-                        .padding()
-                        .background(DSColor.area1)
-                    }
-                }
-                #endif
-            case .saved:
-                RecordingSaveTestView(recordingURLs: store.savedRecordingURLs,
-                    raw: store.rawTrack, correction: store.correction, mapImage: floorPlan,
-                    files: store.recordingFiles, filesSaved: store.filesSaved,
-                    onHome: { store.returnToJoin() },
-                    onRetry: { Task { await store.retrySaving() } }) {
-                    store.startUploading()
-                }
-            case .uploading:
-                RecordingUploadView(
-                    progress: store.uploadProgress,
-                    isComplete: store.isUploadComplete,
-                    statusMessage: store.uploadStatusMessage,
-                    errorMessage: store.uploadErrorMessage,
-                    isUploading: store.isUploading,
-                    onRetry: { await store.retryUploading() },
-                    onHome: { store.returnToJoin() }
-                )
-                .task { await store.uploadRecording() }
+        destination
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if demoMode.isActive {
+                demoBanner
             }
         }
         .alert(
@@ -104,5 +36,124 @@ struct RootView: View {
         } message: {
             Text(store.errorMessage ?? "녹화 중 문제가 발생했습니다.")
         }
+        .alert(
+            "데모 안내",
+            isPresented: Binding(
+                get: { demoControl?.errorMessage != nil },
+                set: { if !$0 { demoControl?.clearError() } }
+            )
+        ) {
+            Button("다시 시도") {
+                guard let demoControl else { return }
+                Task { await demoControl.startTraining() }
+            }
+            Button("확인", role: .cancel) { demoControl?.clearError() }
+        } message: {
+            Text(demoControl?.errorMessage ?? "데모 훈련을 시작하지 못했습니다.")
+        }
+    }
+
+    @ViewBuilder
+    private var destination: some View {
+        switch store.phase {
+        case .join:
+            SessionJoinView(
+                isJoining: store.isJoining,
+                onStartDemo: startDemoAction,
+                onJoin: { pin, name in store.join(pin: pin, memberName: name) }
+            )
+        case .setup:
+            setupView
+        case .waiting, .recording, .saving, .correcting:
+            MemberTrainingFlowView(demoControl: demoControl)
+        case .saved:
+            RecordingSaveTestView(recordingURLs: store.savedRecordingURLs,
+                isDemo: store.isDemoMode,
+                raw: store.rawTrack, correction: store.correction, mapImage: floorPlan,
+                files: store.recordingFiles, filesSaved: store.filesSaved,
+                onHome: { store.returnToJoin() },
+                onRetry: { Task { await store.retrySaving() } },
+                onDiscardDemo: discardFailedDemo) {
+                store.startUploading()
+            }
+        case .uploading:
+            RecordingUploadView(
+                isDemo: store.isDemoMode,
+                progress: store.uploadProgress,
+                isComplete: store.isUploadComplete,
+                statusMessage: store.uploadStatusMessage,
+                errorMessage: store.uploadErrorMessage,
+                isUploading: store.isUploading,
+                onRetry: { await store.retryUploading() },
+                onHome: finishDemoOrReturnHome
+            )
+            .task { await store.uploadRecording() }
+        }
+    }
+
+    @ViewBuilder
+    private var setupView: some View {
+        if let floorPlan {
+            StartPositionSetupView(
+                floorPlan: floorPlan,
+                startPoint: store.startPoint,
+                directionPoint: store.directionPoint
+            ) { start, direction in
+                store.confirmPosition(start: start, direction: direction)
+            }
+        } else {
+            ContentUnavailableView("도면을 불러올 수 없습니다", systemImage: "map")
+        }
+    }
+
+    private var startDemoAction: (() -> Void)? {
+        guard !demoMode.isActive else { return nil }
+        return { demoMode.start() }
+    }
+
+    private func finishDemoOrReturnHome() {
+        if store.isDemoMode {
+            if store.finishDemo() { demoMode.stop() }
+        } else {
+            store.returnToJoin()
+        }
+    }
+
+    private func discardFailedDemo() {
+        guard store.discardFailedDemo() else { return }
+        demoMode.stop()
+    }
+
+    private var canExitDemo: Bool {
+        switch store.phase {
+        case .join, .setup, .waiting:
+            true
+        case .recording, .saving, .correcting, .saved, .uploading:
+            false
+        }
+    }
+
+    private var demoBanner: some View {
+        HStack(spacing: 12) {
+            Label("데모 모드 · 서버에 저장되지 않음", systemImage: "testtube.2")
+                .font(.caption.weight(.semibold))
+
+            Spacer(minLength: 8)
+
+            Button("데모 종료", action: demoMode.stop)
+                .font(.caption.weight(.semibold))
+                .disabled(!canExitDemo)
+                .accessibilityHint(canExitDemo ? "실제 PIN 참가 화면으로 돌아갑니다." : "기록 처리를 완료한 뒤 종료할 수 있습니다.")
+                .accessibilityIdentifier("demo.exit")
+        }
+        .foregroundStyle(DSColor.white)
+        .padding(.horizontal, 16)
+        .frame(minHeight: 40)
+        .background(DSColor.area1)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(DSColor.area3).frame(height: 1)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("demo.banner")
     }
 }

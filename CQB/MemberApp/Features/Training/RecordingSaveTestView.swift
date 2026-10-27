@@ -6,6 +6,7 @@ import CQBDesignSystem
 /// 로컬 기록과 보정 결과 확인 화면. 영상은 녹화 중 조각 단위로 전송한다.
 struct RecordingSaveTestView: View {
     let recordingURLs: [URL]
+    var isDemo = false
     var raw: RawTrackDocument? = nil
     var correction: RouteCorrectionOutput? = nil
     var mapImage: UIImage? = nil
@@ -13,6 +14,7 @@ struct RecordingSaveTestView: View {
     var filesSaved = false
     var onHome: () -> Void = {}
     var onRetry: () -> Void = {}
+    var onDiscardDemo: () -> Void = {}
     var switchView: () -> Void
     @State private var player: AVQueuePlayer?
 
@@ -73,11 +75,18 @@ struct RecordingSaveTestView: View {
                         ActionButton("동선 파일 저장 재시도", action: onRetry)
                     }
                 }
-                Text("영상 조각은 녹화 중 전송하고, 종료 후 보정 동선을 전송합니다.")
+                Text(isDemo
+                    ? "데모 영상과 보정 동선은 기기 안에서만 확인하며 서버로 전송하지 않습니다."
+                    : "영상 조각은 녹화 중 전송하고, 종료 후 보정 동선을 전송합니다.")
                     .font(.caption)
-                ActionButton("업로드 상태 확인", action: switchView)
+                ActionButton(isDemo ? "데모 처리 계속" : "업로드 상태 확인", action: switchView)
                     .disabled(!filesSaved || recordingURLs.isEmpty)
-                if filesSaved { Button("처음으로", action: onHome) }
+                if isDemo && (!filesSaved || recordingURLs.isEmpty) {
+                    Button("데모 종료하고 다시 시작", action: onDiscardDemo)
+                        .foregroundStyle(DSColor.darkGreen)
+                } else if filesSaved, !isDemo {
+                    Button("처음으로", action: onHome)
+                }
             }
             .padding(24)
         }

@@ -3,12 +3,19 @@ import CQBCore
 import Foundation
 import Observation
 
+enum MemberExecutionEnvironment: Sendable, Equatable {
+    case operational
+    case demo(runID: UUID)
+}
+
 /// MemberApp의 화면 흐름과 로컬 녹화 상태를 소유한다.
 @MainActor
 @Observable
 final class MemberStore {
     @ObservationIgnored let cameraService: ARRecordingService
-    @ObservationIgnored private let recordingFileStore = LocalRecordingFileStore()
+    @ObservationIgnored private let executionEnvironment: MemberExecutionEnvironment
+    @ObservationIgnored private let recordingFileStore: LocalRecordingFileStore
+    @ObservationIgnored private let demoUploadSimulator: MemberDemoUploadSimulator
     @ObservationIgnored private let sessionRepository: any SessionRepository
     @ObservationIgnored private let memberRepository: any MemberRepository
     @ObservationIgnored private let floorPlanFileRepository: any FloorPlanFileRepository
@@ -33,6 +40,7 @@ final class MemberStore {
     @ObservationIgnored private var readinessHeartbeatTask: Task<Void, Never>?
     @ObservationIgnored private var readinessReportTask: Task<Void, Never>?
     @ObservationIgnored private var shouldReportReadiness = false
+    @ObservationIgnored private var reportsReadinessToRepository = true
     @ObservationIgnored private var lastSessionStatus: SessionStatus?
     @ObservationIgnored private var startRequestedBySession = false
     @ObservationIgnored private var hasShownSessionStreamError = false
@@ -65,7 +73,9 @@ final class MemberStore {
         recordingRepository: any RecordingRepository,
         videoChunkRepository: any VideoChunkRepository,
         trackResultRepository: any TrackResultRepository,
-        cameraService: ARRecordingService? = nil
+        cameraService: ARRecordingService? = nil,
+        executionEnvironment: MemberExecutionEnvironment = .operational,
+        demoUploadSimulator: MemberDemoUploadSimulator = MemberDemoUploadSimulator()
     ) {
         self.sessionRepository = sessionRepository
         self.memberRepository = memberRepository
@@ -74,12 +84,52 @@ final class MemberStore {
         self.videoChunkRepository = videoChunkRepository
         self.trackResultRepository = trackResultRepository
         self.cameraService = cameraService ?? ARRecordingService()
+        self.executionEnvironment = executionEnvironment
+        self.demoUploadSimulator = demoUploadSimulator
+        switch executionEnvironment {
+        case .operational:
+            self.recordingFileStore = LocalRecordingFileStore()
+        case .demo(let runID):
+            self.recordingFileStore = LocalRecordingFileStore(scope: .demo(runID: runID))
+        }
         self.memberID = Self.loadOrCreateMemberID()
         self.trainingMap = nil
     }
 
+    var isDemoMode: Bool {
+        if case .demo = executionEnvironment { return true }
+        return false
+    }
+
     var isReady: Bool { startPoint != nil && directionPoint != nil && isTrackingReady }
     var canResetPosition: Bool { phase == .waiting && !startRequestedBySession }
+    var isWaitingForTrainingStart: Bool { phase == .waiting && startRequestedBySession }
+
+    /// 데모 Store에서만 사용한다. 번들 지도를 읽고 서버 참가 요청 없이 로컬 세션을 시작한다.
+    func enterDemoSession(session: Session, memberName: String, bundle: Bundle = .main) {
+        guard phase == .join, !isJoining else { return }
+        isJoining = true
+        reportsReadinessToRepository = false
+        errorMessage = nil
+        trainingMap = nil
+        defer { isJoining = false }
+
+        do {
+            let map = try BundledTrainingMapLoader.load(bundle: bundle)
+            guard map.reference == session.floorPlan else {
+                throw SessionFloorPlanLoadFailure()
+            }
+            sessionID = session.id
+            trainingMap = map
+            pin = session.pin
+            self.memberName = memberName
+            lastSessionStatus = session.status
+            phase = .setup
+            observeSession(id: session.id)
+        } catch {
+            errorMessage = "데모 도면을 불러오지 못했습니다. 데모를 종료한 뒤 다시 시도해주세요."
+        }
+    }
 
     #if DEBUG && targetEnvironment(simulator)
     private(set) var isSimulatedReady = false
@@ -113,6 +163,7 @@ final class MemberStore {
               pin.allSatisfy({ $0.isASCII && $0.isNumber }), !name.isEmpty else { return }
 
         isJoining = true
+        reportsReadinessToRepository = true
         errorMessage = nil
         trainingMap = nil
         Task { @MainActor in
@@ -228,10 +279,14 @@ final class MemberStore {
         do {
             let identity = TrackIdentity(sessionID: sessionID, memberID: memberID, recordingID: UUID())
             let files = try recordingFileStore.makeFiles(recordingID: identity.recordingID)
-            try startVideoChunkUploadQueue(identity: identity, files: files)
-            cameraService.onVideoChunkReady = { [weak self] index, url in
-                Task { @MainActor [weak self] in
-                    await self?.enqueueVideoChunk(index: index, url: url)
+            if isDemoMode {
+                cameraService.onVideoChunkReady = nil
+            } else {
+                try startVideoChunkUploadQueue(identity: identity, files: files)
+                cameraService.onVideoChunkReady = { [weak self] index, url in
+                    Task { @MainActor [weak self] in
+                        await self?.enqueueVideoChunk(index: index, url: url)
+                    }
                 }
             }
             try cameraService.startRecording(to: files.videoChunksDirectory,
@@ -251,9 +306,13 @@ final class MemberStore {
             recordingMetadataStarted = false
             recordingMetadataRetryTask?.cancel()
             recordingMarkedFinishing = false
-            uploadStatusMessage = "첫 영상 조각을 준비하고 있습니다."
-            recordingMetadataRetryTask = Task { @MainActor [weak self] in
-                await self?.startRecordingMetadataWithRetries(identity: identity)
+            if isDemoMode {
+                uploadStatusMessage = "데모 영상과 동선을 기기에 기록하고 있습니다."
+            } else {
+                uploadStatusMessage = "첫 영상 조각을 준비하고 있습니다."
+                recordingMetadataRetryTask = Task { @MainActor [weak self] in
+                    await self?.startRecordingMetadataWithRetries(identity: identity)
+                }
             }
         } catch {
             videoChunkUploadQueue = nil
@@ -378,6 +437,7 @@ final class MemberStore {
 
     /// Coalesces readiness changes so an older network write cannot overwrite a newer state.
     private func scheduleReadinessReport() {
+        guard reportsReadinessToRepository else { return }
         shouldReportReadiness = true
         guard readinessReportTask == nil else { return }
         readinessReportTask = Task { @MainActor [weak self] in
@@ -445,10 +505,12 @@ final class MemberStore {
         // 영상 마무리 실패와 동선 저장 실패를 독립적으로 처리한다.
         do {
             savedRecordingURLs = try await cameraService.stopRecording()
-            for (index, url) in savedRecordingURLs.enumerated() {
-                await enqueueVideoChunk(index: index, url: url)
+            if !isDemoMode {
+                for (index, url) in savedRecordingURLs.enumerated() {
+                    await enqueueVideoChunk(index: index, url: url)
+                }
+                try await videoChunkUploadQueue?.setFinalChunkCount(savedRecordingURLs.count)
             }
-            try await videoChunkUploadQueue?.setFinalChunkCount(savedRecordingURLs.count)
         }
         catch { errorMessage = error.localizedDescription }
         rawTrack = RawTrackDocument(identity: identity, floorPlan: map.reference,
@@ -457,7 +519,7 @@ final class MemberStore {
             samples: cameraService.samples)
         cameraService.stop()
         await saveAndCorrect()
-        if filesSaved { startUploading() }
+        if filesSaved, !isDemoMode { startUploading() }
     }
 
     /// 저장 공간 확보 후 재시도해도 동일한 원본 바이트를 보존한다.
@@ -465,7 +527,7 @@ final class MemberStore {
         guard phase == .saved, !filesSaved else { return }
         errorMessage = nil
         await saveAndCorrect()
-        if filesSaved { startUploading() }
+        if filesSaved, !isDemoMode { startUploading() }
     }
 
     private func saveAndCorrect() async {
@@ -502,15 +564,28 @@ final class MemberStore {
     /// 로컬 파일 저장 완료 후 업로드 흐름으로 전환한다.
     func startUploading() {
         guard phase == .saved, filesSaved, !savedRecordingURLs.isEmpty else { return }
-        uploadProgress = Double(uploadedVideoChunkCount) / Double(savedRecordingURLs.count + 1)
+        uploadProgress = isDemoMode
+            ? 0
+            : Double(uploadedVideoChunkCount) / Double(savedRecordingURLs.count + 1)
         isUploadComplete = false
-        if uploadErrorMessage == nil { uploadStatusMessage = "남은 조각과 보정 결과를 업로드하고 있습니다." }
+        if uploadErrorMessage == nil {
+            uploadStatusMessage = isDemoMode
+                ? "데모 결과를 기기 안에서 확인하고 있습니다."
+                : "남은 조각과 보정 결과를 업로드하고 있습니다."
+        }
         phase = .uploading
     }
 
     /// 종료 후 미전송 조각을 재시도하고 보정 결과를 올린 뒤 기록을 완료한다.
     func uploadRecording() async {
-        guard phase == .uploading, !isUploading, !isUploadComplete,
+        guard phase == .uploading, !isUploading, !isUploadComplete else { return }
+
+        if isDemoMode {
+            await completeDemoUpload()
+            return
+        }
+
+        guard
               let identity,
               let correction, let uploadQueue = videoChunkUploadQueue,
               !savedRecordingURLs.isEmpty else { return }
@@ -570,6 +645,28 @@ final class MemberStore {
         }
     }
 
+    private func completeDemoUpload() async {
+        guard filesSaved, correction != nil, !savedRecordingURLs.isEmpty else {
+            uploadErrorMessage = "데모 결과를 확인할 수 없습니다. 데모를 종료한 뒤 다시 시도해주세요."
+            uploadStatusMessage = "데모 처리 실패"
+            return
+        }
+
+        isUploading = true
+        uploadErrorMessage = nil
+        await demoUploadSimulator.run { [weak self] step in
+            guard let self, self.phase == .uploading else { return }
+            self.uploadProgress = step.progress
+            self.uploadStatusMessage = step.message
+        }
+        guard !Task.isCancelled, phase == .uploading, uploadProgress >= 1 else {
+            isUploading = false
+            return
+        }
+        isUploadComplete = true
+        isUploading = false
+    }
+
     private func startVideoChunkUploadQueue(identity: TrackIdentity, files: LocalRecordingFiles) throws {
         let manifest = RecordingUploadManifest(identity: identity)
         try recordingFileStore.saveUploadManifest(manifest, to: files.uploadManifest)
@@ -620,8 +717,8 @@ final class MemberStore {
         errorMessage = nil
     }
 
-    func returnToJoin() {
-        guard (phase == .saved && filesSaved) || (phase == .uploading && isUploadComplete) else { return }
+    /// 화면 구성 해제 시 세션 구독과 카메라를 정리한다. 녹화 중에는 기존 종료 흐름을 먼저 완료해야 한다.
+    func shutdown() {
         sessionObservationTask?.cancel()
         sessionObservationTask = nil
         readinessHeartbeatTask?.cancel()
@@ -631,6 +728,52 @@ final class MemberStore {
         recordingMetadataRetryTask?.cancel()
         recordingMetadataRetryTask = nil
         shouldReportReadiness = false
+        if phase != .recording {
+            cameraService.stop()
+            if isDemoMode { try? recordingFileStore.removeDemoRun() }
+        }
+    }
+
+    func returnToJoin() {
+        guard (phase == .saved && filesSaved) || (phase == .uploading && isUploadComplete) else { return }
+        resetToJoin()
+    }
+
+    /// 완료된 데모 파일만 제거하고 운영 Store로 돌아갈 수 있게 한다.
+    func finishDemo() -> Bool {
+        guard isDemoMode, phase == .uploading, isUploadComplete, !isUploading else { return false }
+        return cleanupDemoAndReset()
+    }
+
+    /// 영상 또는 저장 실패로 완료 흐름을 진행할 수 없을 때 데모 파일을 버린다.
+    func discardFailedDemo() -> Bool {
+        guard isDemoMode, phase == .saved, !isUploading else { return false }
+        return cleanupDemoAndReset()
+    }
+
+    private func cleanupDemoAndReset() -> Bool {
+        do {
+            try recordingFileStore.removeDemoRun()
+            resetToJoin()
+            return true
+        } catch {
+            errorMessage = "데모 파일을 정리하지 못했습니다. 앱을 다시 실행하면 정리를 다시 시도합니다."
+            uploadErrorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    private func resetToJoin() {
+        sessionObservationTask?.cancel()
+        sessionObservationTask = nil
+        readinessHeartbeatTask?.cancel()
+        readinessHeartbeatTask = nil
+        readinessReportTask?.cancel()
+        readinessReportTask = nil
+        recordingMetadataRetryTask?.cancel()
+        recordingMetadataRetryTask = nil
+        shouldReportReadiness = false
+        reportsReadinessToRepository = true
         startRequestedBySession = false
         canRetryRecordingStart = false
         lastSessionStatus = nil

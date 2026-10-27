@@ -2,6 +2,7 @@ import SwiftUI
 import CQBDesignSystem
 
 struct RecordingUploadView: View {
+    var isDemo = false
     /// 0...1 전송 진행률. 완료 여부는 서버 저장 확인 이후 별도로 전달한다.
     let progress: Double
     let isComplete: Bool
@@ -29,7 +30,9 @@ struct RecordingUploadView: View {
                             .accessibilityLabel("데이터 전송 진행률")
                             .padding(.bottom, 8)
                         HStack {
-                            Text(isComplete ? "전송 완료" : "서버로 데이터 보내는 중")
+                            Text(isComplete
+                                ? (isDemo ? "데모 처리 완료" : "전송 완료")
+                                : (isDemo ? "데모 결과 확인 중" : "서버로 데이터 보내는 중"))
                                 .font(DSTypography.h3)
                             Spacer(minLength: 12)
                             Text("\(Int(normalizedProgress * 100))%")
@@ -51,10 +54,12 @@ struct RecordingUploadView: View {
                     }
                     Spacer(minLength: 100)
                     VStack(spacing: 24) {
-                        Text(isComplete ? "완료되었습니다." : "완료되면 종료할 수 있습니다.")
+                        Text(isComplete
+                            ? (isDemo ? "서버에 전송하지 않고 완료했습니다." : "완료되었습니다.")
+                            : "완료되면 종료할 수 있습니다.")
                             .font(DSTypography.bodySmall)
                             .foregroundStyle(DSColor.darkGreen)
-                        ActionButton("홈으로", action: onHome)
+                        ActionButton(isDemo ? "데모 종료" : "홈으로", action: onHome)
                             .disabled(!isComplete)
                     }
                 }
