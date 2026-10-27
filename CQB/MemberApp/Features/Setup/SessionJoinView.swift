@@ -7,6 +7,7 @@ struct SessionJoinView: View {
     @FocusState private var focusedField: Field?
     /// 참가 요청 및 서버 검증은 호출부에서 처리한다.
     var isJoining = false
+    var onStartDemo: (() -> Void)?
     var onJoin: (String, String) -> Void
 
     private enum Field: Hashable { case pin, name }
@@ -58,6 +59,28 @@ struct SessionJoinView: View {
                         onJoin(pin, memberName.trimmingCharacters(in: .whitespacesAndNewlines))
                     }
                     .disabled(!canJoin || isJoining)
+
+                    if let onStartDemo {
+                        HStack(spacing: 12) {
+                            Rectangle().frame(height: 1)
+                            Text("또는").font(DSTypography.caption)
+                            Rectangle().frame(height: 1)
+                        }
+                        .foregroundStyle(DSColor.area3)
+                        .padding(.vertical, 12)
+
+                        Button(action: onStartDemo) {
+                            Label("데모 모드 시작", systemImage: "testtube.2")
+                                .font(DSTypography.body)
+                                .frame(maxWidth: .infinity, minHeight: 52)
+                                .foregroundStyle(DSColor.main)
+                                .background(DSColor.area1)
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                                .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(DSColor.main))
+                        }
+                        .accessibilityHint("PIN과 별도 iPad 없이 Capture의 주요 기능을 체험합니다.")
+                        .accessibilityIdentifier("join.demo")
+                    }
                 }
                 .font(DSTypography.body)
                 .padding(.horizontal, 24)
@@ -74,5 +97,5 @@ struct SessionJoinView: View {
 }
 
 #Preview("세션 참가") {
-    SessionJoinView { pin, name in print("Preview 참가: \(pin), \(name)") }
+    SessionJoinView(onStartDemo: {}) { pin, name in print("Preview 참가: \(pin), \(name)") }
 }

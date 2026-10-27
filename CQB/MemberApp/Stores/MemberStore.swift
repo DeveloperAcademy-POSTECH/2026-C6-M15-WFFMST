@@ -33,6 +33,7 @@ final class MemberStore {
     @ObservationIgnored private var readinessHeartbeatTask: Task<Void, Never>?
     @ObservationIgnored private var readinessReportTask: Task<Void, Never>?
     @ObservationIgnored private var shouldReportReadiness = false
+    @ObservationIgnored private var reportsReadinessToRepository = true
     @ObservationIgnored private var lastSessionStatus: SessionStatus?
     @ObservationIgnored private var startRequestedBySession = false
     @ObservationIgnored private var hasShownSessionStreamError = false
@@ -80,6 +81,33 @@ final class MemberStore {
 
     var isReady: Bool { startPoint != nil && directionPoint != nil && isTrackingReady }
     var canResetPosition: Bool { phase == .waiting && !startRequestedBySession }
+    var isWaitingForTrainingStart: Bool { phase == .waiting && startRequestedBySession }
+
+    /// 데모 Store에서만 사용한다. 번들 지도를 읽고 서버 참가 요청 없이 로컬 세션을 시작한다.
+    func enterDemoSession(session: Session, memberName: String, bundle: Bundle = .main) {
+        guard phase == .join, !isJoining else { return }
+        isJoining = true
+        reportsReadinessToRepository = false
+        errorMessage = nil
+        trainingMap = nil
+        defer { isJoining = false }
+
+        do {
+            let map = try BundledTrainingMapLoader.load(bundle: bundle)
+            guard map.reference == session.floorPlan else {
+                throw SessionFloorPlanLoadFailure()
+            }
+            sessionID = session.id
+            trainingMap = map
+            pin = session.pin
+            self.memberName = memberName
+            lastSessionStatus = session.status
+            phase = .setup
+            observeSession(id: session.id)
+        } catch {
+            errorMessage = "데모 도면을 불러오지 못했습니다. 데모를 종료한 뒤 다시 시도해주세요."
+        }
+    }
 
     #if DEBUG && targetEnvironment(simulator)
     private(set) var isSimulatedReady = false
@@ -113,6 +141,7 @@ final class MemberStore {
               pin.allSatisfy({ $0.isASCII && $0.isNumber }), !name.isEmpty else { return }
 
         isJoining = true
+        reportsReadinessToRepository = true
         errorMessage = nil
         trainingMap = nil
         Task { @MainActor in
@@ -378,6 +407,7 @@ final class MemberStore {
 
     /// Coalesces readiness changes so an older network write cannot overwrite a newer state.
     private func scheduleReadinessReport() {
+        guard reportsReadinessToRepository else { return }
         shouldReportReadiness = true
         guard readinessReportTask == nil else { return }
         readinessReportTask = Task { @MainActor [weak self] in
@@ -618,6 +648,22 @@ final class MemberStore {
 
     func clearRecordingError() {
         errorMessage = nil
+    }
+
+    /// 화면 구성 해제 시 세션 구독과 카메라를 정리한다. 녹화 중에는 기존 종료 흐름을 먼저 완료해야 한다.
+    func shutdown() {
+        sessionObservationTask?.cancel()
+        sessionObservationTask = nil
+        readinessHeartbeatTask?.cancel()
+        readinessHeartbeatTask = nil
+        readinessReportTask?.cancel()
+        readinessReportTask = nil
+        recordingMetadataRetryTask?.cancel()
+        recordingMetadataRetryTask = nil
+        shouldReportReadiness = false
+        if phase != .recording {
+            cameraService.stop()
+        }
     }
 
     func returnToJoin() {
