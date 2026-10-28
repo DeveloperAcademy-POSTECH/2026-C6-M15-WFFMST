@@ -108,10 +108,15 @@ validation에도 학습과 다른 고정 seed의 합성 방해 요소를 넣어 
 ```bash
 python compare_actual_floorplans.py /path/to/floorplans \
   outputs/binary-finetune/BinaryWallSegmentation.safetensors \
-  --output outputs/binary-finetune/actual-comparison.png
+  --output outputs/binary-finetune/actual-comparison.png \
+  --tile-size 1024 --tile-overlap 0.25 --tile-weight 0.75
 ```
 
 일반 아파트 도면 3장은 벽 연속성과 가구·글씨 억제가 뚜렷하게 개선됐다. 반면 세로로
 매우 긴 도면은 512 축소 후 거의 검출되지 않았고, 복잡한 컬러 CAD형 도서관 도면은 곡선
 좌석과 외곽선을 벽으로 오검출했다. 따라서 이진 fine-tuning 방향은 유효하지만, 큰 도면에는
 overlap tile 추론을 함께 적용해야 한다.
+
+비교 스크립트는 전체 이미지를 512로 축소한 확률 맵과, 원본을 1,024px 정사각형으로
+25% 겹쳐 자른 타일 확률 맵을 각각 만든다. 타일 경계는 사인 가중치로 합치고 최종 확률은
+전역 25% + 타일 75%로 결합한다.
