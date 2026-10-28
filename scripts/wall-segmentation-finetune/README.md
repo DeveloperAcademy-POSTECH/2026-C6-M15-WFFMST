@@ -202,3 +202,7 @@ python compare_grid_connectivity.py /path/to/floorplans \
 후보도 동일한 일반 아파트 입력, `blocked/free` 정의, 2px 격자, 사용자 수정량, 동선 벽
 관통 횟수로 비교한 뒤 적용 방식을 결정한다. 비교가 끝나기 전에는 이 실험 브랜치를 제품
 통합 PR로 취급하지 않는다.
+
+생성형 모델 비교의 공통 벽 선분 계약, GPT Responses API 실행기, Apple Foundation Models
+이미지 spike는 [`../wall-segmentation-benchmark/README.md`](../wall-segmentation-benchmark/README.md)에
+정리한다.
