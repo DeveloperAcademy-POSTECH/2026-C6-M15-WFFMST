@@ -84,3 +84,15 @@ LocalFloorPlanImportService
 4. Core ML 출력에서 `LocalObstacleGrid`를 만드는 앱 내부 adapter 구현
 5. V13과 AI 결과를 동일 도면에서 비교
 6. 결과에 따라 타일 추론 또는 모바일용 모델 재학습을 별도 이슈로 분리
+
+## 현재 구현
+
+`LocalAIWallMaskGridBuilder`는 모델 실행과 분리된 순수 변환 경계다.
+
+- RMBG 확률 출력에 임계값을 적용해 이진 벽 마스크를 만든다.
+- U-Net의 channel-major 클래스 logits에 argmax를 적용해 wall 클래스를 선택한다.
+- letterbox padding을 제외한 content 영역을 원본 이미지 좌표로 복원한다.
+- 복원 결과를 기존 2px `LocalObstacleGrid`로 변환한다.
+
+모델 입력용 letterbox 이미지 생성, Core ML 실행과 `MLMultiArray` stride 처리는 실제
+`.mlpackage`의 입출력 shape를 확인한 다음 이 경계 앞에 추가한다.

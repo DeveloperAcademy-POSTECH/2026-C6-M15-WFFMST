@@ -16,7 +16,8 @@ Issue #95에서 비교할 두 공개 모델을 Google Colab에서 내려받아 C
 
 ## Colab 실행
 
-Colab 런타임은 Python 3을 사용한다. GPU는 다운로드와 변환에 필수는 아니지만 RMBG
+Colab 런타임은 Python 3.13과 해당 버전을 지원하는 `coremltools 9.0`을 사용한다.
+GPU는 다운로드와 변환에 필수는 아니지만 RMBG
 TorchScript 검증 시간을 줄이는 데 도움이 된다.
 
 ```python
@@ -39,6 +40,9 @@ TorchScript 검증 시간을 줄이는 데 도움이 된다.
 ```
 
 FP16만 만들려면 `--int8`을 생략한다. 결과는 `outputs/`에 생성된다.
+
+2026-10-28 기준 Colab에서 U-Net 변환 결과의 ZIP 크기는 FP16 약 44MB,
+W8A16 약 20MB였다. 환경에 따라 압축 크기는 조금 달라질 수 있다.
 
 ```text
 outputs/
