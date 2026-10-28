@@ -25,6 +25,7 @@ from binary_wall_data import (
     build_letterboxed_blocked_mask,
     enhance_training_image,
     letterbox_image,
+    native_tile_pair,
 )
 
 
@@ -94,12 +95,16 @@ class CubiCasaBinaryStream(IterableDataset):
         seed: int,
         synthetic_probability: float,
         training: bool,
+        native_tile_probability: float = 0.0,
+        tile_wall_focus_probability: float = 0.75,
     ) -> None:
         self.split = split
         self.max_samples = max_samples
         self.seed = seed
         self.synthetic_probability = synthetic_probability
         self.training = training
+        self.native_tile_probability = native_tile_probability
+        self.tile_wall_focus_probability = tile_wall_focus_probability
 
     def __iter__(self):
         dataset = load_dataset(DATASET_ID, split=self.split, streaming=True)
@@ -120,11 +125,20 @@ class CubiCasaBinaryStream(IterableDataset):
                 image = Image.open(image_record["path"]).convert("RGB")
             else:
                 raise ValueError(f"image bytes/path missing: {sample['file_name']}")
-            mask = build_letterboxed_blocked_mask(
-                sample["width"], sample["height"], sample["annotations"], IMAGE_SIZE
-            )
-            image = letterbox_image(image, IMAGE_SIZE)
             rng = random.Random(self.seed + index)
+            if self.native_tile_probability > 0 and rng.random() < self.native_tile_probability:
+                image, mask, _ = native_tile_pair(
+                    image,
+                    sample["annotations"],
+                    IMAGE_SIZE,
+                    rng,
+                    wall_focus_probability=self.tile_wall_focus_probability,
+                )
+            else:
+                mask = build_letterboxed_blocked_mask(
+                    sample["width"], sample["height"], sample["annotations"], IMAGE_SIZE
+                )
+                image = letterbox_image(image, IMAGE_SIZE)
             distractor_mask = Image.new("L", image.size, 0)
             if rng.random() < self.synthetic_probability:
                 synthetic = add_free_space_distractors(image, mask, rng)
@@ -146,13 +160,53 @@ class CubiCasaBinaryStream(IterableDataset):
             }
 
 
-def binary_loss(logits: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+def _soft_erode(mask: torch.Tensor) -> torch.Tensor:
+    vertical = -torch.nn.functional.max_pool2d(-mask, (3, 1), stride=1, padding=(1, 0))
+    horizontal = -torch.nn.functional.max_pool2d(-mask, (1, 3), stride=1, padding=(0, 1))
+    return torch.minimum(vertical, horizontal)
+
+
+def _soft_open(mask: torch.Tensor) -> torch.Tensor:
+    eroded = _soft_erode(mask)
+    return torch.nn.functional.max_pool2d(eroded, 3, stride=1, padding=1)
+
+
+def soft_skeleton(mask: torch.Tensor, iterations: int = 10) -> torch.Tensor:
+    skeleton = torch.relu(mask - _soft_open(mask))
+    for _ in range(iterations):
+        mask = _soft_erode(mask)
+        delta = torch.relu(mask - _soft_open(mask))
+        skeleton = skeleton + torch.relu(delta - skeleton * delta)
+    return skeleton
+
+
+def soft_cldice_loss(probability: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    predicted_skeleton = soft_skeleton(probability)
+    target_skeleton = soft_skeleton(target)
+    smooth = 1.0
+    topology_precision = (
+        (predicted_skeleton * target).sum(dim=(1, 2, 3)) + smooth
+    ) / (predicted_skeleton.sum(dim=(1, 2, 3)) + smooth)
+    topology_sensitivity = (
+        (target_skeleton * probability).sum(dim=(1, 2, 3)) + smooth
+    ) / (target_skeleton.sum(dim=(1, 2, 3)) + smooth)
+    cldice = (2 * topology_precision * topology_sensitivity) / (
+        topology_precision + topology_sensitivity + 1e-6
+    )
+    return 1 - cldice.mean()
+
+
+def binary_loss(
+    logits: torch.Tensor,
+    target: torch.Tensor,
+    cldice_weight: float = 0.0,
+) -> torch.Tensor:
     bce = torch.nn.functional.binary_cross_entropy_with_logits(logits, target)
     probability = torch.sigmoid(logits)
     intersection = (probability * target).sum(dim=(1, 2, 3))
     denominator = probability.sum(dim=(1, 2, 3)) + target.sum(dim=(1, 2, 3))
     dice_loss = 1 - ((2 * intersection + 1) / (denominator + 1)).mean()
-    return bce + dice_loss
+    return bce + dice_loss + cldice_weight * soft_cldice_loss(probability, target)
 
 
 @dataclass
@@ -202,6 +256,7 @@ def train_epoch(
     loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     device: torch.device,
+    cldice_weight: float,
 ) -> float:
     model.train()
     total_loss = 0.0
@@ -210,7 +265,7 @@ def train_epoch(
         image = batch["image"].to(device)
         target = batch["mask"].to(device)
         optimizer.zero_grad(set_to_none=True)
-        loss = binary_loss(model(image), target)
+        loss = binary_loss(model(image), target, cldice_weight=cldice_weight)
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
@@ -302,10 +357,19 @@ def main() -> None:
     parser.add_argument("--max-train-samples", type=int, default=3_000)
     parser.add_argument("--max-valid-samples", type=int, default=300)
     parser.add_argument("--synthetic-probability", type=float, default=0.75)
+    parser.add_argument("--native-tile-probability", type=float, default=0.0)
+    parser.add_argument("--tile-wall-focus-probability", type=float, default=0.75)
+    parser.add_argument("--cldice-weight", type=float, default=0.0)
     parser.add_argument("--seed", type=int, default=20261028)
     parser.add_argument("--output", type=Path, default=Path("outputs/binary-finetune"))
     parser.add_argument("--export-coreml", action="store_true")
     args = parser.parse_args()
+    if not 0 <= args.native_tile_probability <= 1:
+        parser.error("--native-tile-probability must be between 0 and 1")
+    if not 0 <= args.tile_wall_focus_probability <= 1:
+        parser.error("--tile-wall-focus-probability must be between 0 and 1")
+    if args.cldice_weight < 0:
+        parser.error("--cldice-weight must be nonnegative")
     args.output.mkdir(parents=True, exist_ok=True)
     torch.manual_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -317,6 +381,8 @@ def main() -> None:
         args.seed,
         args.synthetic_probability,
         training=True,
+        native_tile_probability=args.native_tile_probability,
+        tile_wall_focus_probability=args.tile_wall_focus_probability,
     )
     valid_dataset = CubiCasaBinaryStream(
         "valid",
@@ -327,28 +393,66 @@ def main() -> None:
     )
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=0)
     valid_loader = DataLoader(valid_dataset, batch_size=args.batch_size, num_workers=0)
+    valid_tile_loader: DataLoader | None = None
+    if args.native_tile_probability > 0:
+        valid_tile_dataset = CubiCasaBinaryStream(
+            "valid",
+            args.max_valid_samples,
+            args.seed + 200_000,
+            synthetic_probability=1.0,
+            training=False,
+            native_tile_probability=1.0,
+            tile_wall_focus_probability=args.tile_wall_focus_probability,
+        )
+        valid_tile_loader = DataLoader(
+            valid_tile_dataset, batch_size=args.batch_size, num_workers=0
+        )
 
     base_model = load_base_model().to(device).eval()
     binary_model = make_binary_model(base_model).to(device)
     baseline_metrics = evaluate(base_model, valid_loader, device, baseline=True)
     print("baseline", asdict(baseline_metrics))
+    baseline_tile_metrics = None
+    if valid_tile_loader is not None:
+        baseline_tile_metrics = evaluate(base_model, valid_tile_loader, device, baseline=True)
+        print("baseline_native_tile", asdict(baseline_tile_metrics))
 
     optimizer = torch.optim.AdamW(binary_model.parameters(), lr=args.learning_rate)
     best_iou = -1.0
     history: list[dict[str, Any]] = []
     checkpoint = args.output / "BinaryWallSegmentation.safetensors"
     for epoch in range(1, args.epochs + 1):
-        loss = train_epoch(binary_model, train_loader, optimizer, device)
+        loss = train_epoch(
+            binary_model,
+            train_loader,
+            optimizer,
+            device,
+            cldice_weight=args.cldice_weight,
+        )
         metrics = evaluate(binary_model, valid_loader, device, baseline=False)
-        record = {"epoch": epoch, "loss": loss, **asdict(metrics)}
+        record = {
+            "epoch": epoch,
+            "loss": loss,
+            **asdict(metrics),
+        }
+        tile_metrics = None
+        if valid_tile_loader is not None:
+            tile_metrics = evaluate(binary_model, valid_tile_loader, device, baseline=False)
+            record["native_tile"] = asdict(tile_metrics)
         history.append(record)
         print(record)
-        if metrics.iou > best_iou:
-            best_iou = metrics.iou
+        selection_iou = metrics.iou
+        if tile_metrics is not None:
+            selection_iou = 0.5 * (metrics.iou + tile_metrics.iou)
+        if selection_iou > best_iou:
+            best_iou = selection_iou
             save_file({key: value.detach().cpu() for key, value in binary_model.state_dict().items()}, checkpoint)
 
     binary_model.load_state_dict(load_file(checkpoint), strict=True)
     final_metrics = evaluate(binary_model, valid_loader, device, baseline=False)
+    final_tile_metrics = None
+    if valid_tile_loader is not None:
+        final_tile_metrics = evaluate(binary_model, valid_tile_loader, device, baseline=False)
     report = {
         "experiment": "wall+window blocked; door/floor/other free; synthetic free-space distractors",
         "dataset": DATASET_ID,
@@ -358,6 +462,9 @@ def main() -> None:
         "fine_tuned": asdict(final_metrics),
         "history": history,
     }
+    if baseline_tile_metrics is not None and final_tile_metrics is not None:
+        report["baseline_native_tile"] = asdict(baseline_tile_metrics)
+        report["fine_tuned_native_tile"] = asdict(final_tile_metrics)
     (args.output / "metrics.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     save_comparison(base_model, binary_model, valid_loader, device, args.output / "comparison.png")
     if args.export_coreml:

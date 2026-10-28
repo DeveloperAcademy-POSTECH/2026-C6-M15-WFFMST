@@ -117,6 +117,114 @@ def build_letterboxed_blocked_mask(
     return mask
 
 
+def build_cropped_blocked_mask(
+    width: int,
+    height: int,
+    annotations: dict[str, Sequence[object]],
+    crop_box: tuple[int, int, int, int],
+    size: int,
+) -> Image.Image:
+    """Rasterizes a source crop directly at model resolution."""
+
+    left, top, right, bottom = crop_box
+    if width <= 0 or height <= 0 or size <= 0:
+        raise ValueError("source and target dimensions must be positive")
+    if not (0 <= left < right <= width and 0 <= top < bottom <= height):
+        raise ValueError("crop box must be inside source dimensions")
+    category_ids = annotations.get("category_id", [])
+    segmentations = annotations.get("segmentation", [])
+    if len(category_ids) != len(segmentations):
+        raise ValueError("category_id and segmentation counts do not match")
+
+    scale_x = size / (right - left)
+    scale_y = size / (bottom - top)
+
+    def transformed(segmentation: object) -> list[list[float]]:
+        result: list[list[float]] = []
+        for polygon in _iter_polygons(segmentation):
+            result.append(
+                [
+                    (value - (left if index % 2 == 0 else top))
+                    * (scale_x if index % 2 == 0 else scale_y)
+                    for index, value in enumerate(polygon)
+                ]
+            )
+        return result
+
+    blocked: list[object] = []
+    doors: list[object] = []
+    for category_id, segmentation in zip(category_ids, segmentations, strict=True):
+        if int(category_id) in BLOCKED_CATEGORY_IDS:
+            blocked.append(transformed(segmentation))
+        elif int(category_id) == DOOR_CATEGORY_ID:
+            doors.append(transformed(segmentation))
+
+    mask = Image.new("L", (size, size), 0)
+    draw = ImageDraw.Draw(mask)
+    _draw_polygons(draw, blocked, fill=255)
+    _draw_polygons(draw, doors, fill=0)
+    return mask
+
+
+def native_tile_pair(
+    image: Image.Image,
+    annotations: dict[str, Sequence[object]],
+    size: int,
+    rng: random.Random,
+    minimum_source_size: int = 512,
+    maximum_source_size: int = 1024,
+    wall_focus_probability: float = 0.75,
+) -> tuple[Image.Image, Image.Image, tuple[int, int, int, int]]:
+    """Builds a square, source-resolution training view.
+
+    Most positive tiles are centered on a blocked polygon. The remaining random
+    tiles provide native-scale hard negatives such as furniture and labels.
+    """
+
+    if size <= 0 or minimum_source_size <= 0 or maximum_source_size < minimum_source_size:
+        raise ValueError("invalid tile dimensions")
+    if not 0 <= wall_focus_probability <= 1:
+        raise ValueError("wall_focus_probability must be between 0 and 1")
+
+    maximum_extent = min(image.width, image.height, maximum_source_size)
+    minimum_extent = min(minimum_source_size, maximum_extent)
+    extent = rng.randint(minimum_extent, maximum_extent)
+
+    blocked_points: list[tuple[float, float]] = []
+    category_ids = annotations.get("category_id", [])
+    segmentations = annotations.get("segmentation", [])
+    if len(category_ids) != len(segmentations):
+        raise ValueError("category_id and segmentation counts do not match")
+    for category_id, segmentation in zip(category_ids, segmentations, strict=True):
+        if int(category_id) not in BLOCKED_CATEGORY_IDS:
+            continue
+        for polygon in _iter_polygons(segmentation):
+            blocked_points.extend(
+                (polygon[index], polygon[index + 1]) for index in range(0, len(polygon), 2)
+            )
+
+    if blocked_points and rng.random() < wall_focus_probability:
+        center_x, center_y = rng.choice(blocked_points)
+        left = round(center_x - extent / 2)
+        top = round(center_y - extent / 2)
+        left = min(max(0, left), image.width - extent)
+        top = min(max(0, top), image.height - extent)
+    else:
+        left = rng.randint(0, image.width - extent)
+        top = rng.randint(0, image.height - extent)
+
+    crop_box = (left, top, left + extent, top + extent)
+    cropped = image.crop(crop_box).resize((size, size), Image.Resampling.LANCZOS)
+    mask = build_cropped_blocked_mask(
+        image.width,
+        image.height,
+        annotations,
+        crop_box,
+        size,
+    )
+    return cropped, mask, crop_box
+
+
 def letterbox_image(image: Image.Image, size: int, fill: int = 255) -> Image.Image:
     scale = min(size / image.width, size / image.height)
     resized_size = (

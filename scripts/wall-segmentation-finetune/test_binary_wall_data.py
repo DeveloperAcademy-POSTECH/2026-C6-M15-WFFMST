@@ -9,8 +9,10 @@ from PIL import Image
 from binary_wall_data import (
     add_free_space_distractors,
     build_blocked_mask,
+    build_cropped_blocked_mask,
     build_letterboxed_blocked_mask,
     letterbox_pair,
+    native_tile_pair,
 )
 
 
@@ -60,6 +62,35 @@ class BinaryWallDataTests(unittest.TestCase):
         blocked = np.asarray(mask) > 0
         self.assertTrue(distractor.any())
         self.assertFalse(np.logical_and(distractor, blocked).any())
+
+    def test_cropped_mask_keeps_door_free_and_ignores_outside_wall(self) -> None:
+        annotations = {
+            "category_id": [7, 7, 3],
+            "segmentation": [
+                [[100, 100, 500, 100, 500, 180, 100, 180]],
+                [[700, 700, 900, 700, 900, 780, 700, 780]],
+                [[260, 100, 340, 100, 340, 180, 260, 180]],
+            ],
+        }
+        mask = np.asarray(
+            build_cropped_blocked_mask(1000, 1000, annotations, (0, 0, 600, 600), 300)
+        )
+        self.assertEqual(mask[70, 75], 255)
+        self.assertEqual(mask[70, 150], 0)
+        self.assertEqual(mask[250, 250], 0)
+
+    def test_native_tile_is_deterministic_and_model_sized(self) -> None:
+        image = Image.new("RGB", (1600, 1200), "white")
+        annotations = {
+            "category_id": [7],
+            "segmentation": [[[700, 400, 900, 400, 900, 480, 700, 480]]],
+        }
+        first = native_tile_pair(image, annotations, 512, random.Random(9))
+        second = native_tile_pair(image, annotations, 512, random.Random(9))
+        self.assertEqual(first[2], second[2])
+        self.assertEqual(first[0].size, (512, 512))
+        self.assertEqual(first[1].size, (512, 512))
+        self.assertGreater(np.asarray(first[1]).sum(), 0)
 
 
 if __name__ == "__main__":

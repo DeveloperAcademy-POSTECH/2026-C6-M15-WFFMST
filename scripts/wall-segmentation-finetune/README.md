@@ -206,3 +206,28 @@ python compare_grid_connectivity.py /path/to/floorplans \
 생성형 모델 비교의 공통 벽 선분 계약, GPT Responses API 실행기, Apple Foundation Models
 이미지 spike는 [`../wall-segmentation-benchmark/README.md`](../wall-segmentation-benchmark/README.md)에
 정리한다.
+
+## 전역 + native tile 혼합 학습과 clDice 실험
+
+전체 도면을 512로 축소하는 기존 학습은 전역 문맥을 보존하지만 얇은 벽이 사라지고,
+추론에서만 사용하는 원본 해상도 타일과 입력 분포가 달라진다. 다음 실험은 학습 샘플의
+절반을 전체 letterbox, 절반을 512–1,024px 원본 정사각 crop으로 구성한다. native tile의
+75%는 wall/window polygon 주위에서 뽑고 나머지는 글씨·가구가 포함될 수 있는 임의 위치를
+뽑아 hard negative로 사용한다.
+
+벽 연결성을 직접 유도하기 위해 기존 BCE + Dice에 soft clDice를 0.2 가중치로 추가한다.
+기존 명령의 재현성을 위해 두 기능의 기본값은 꺼져 있으며 실험 플래그로만 활성화한다.
+
+```bash
+python train_binary_wall.py \
+  --epochs 2 --max-train-samples 1000 --max-valid-samples 200 --batch-size 4 \
+  --synthetic-probability 0.75 \
+  --native-tile-probability 0.5 \
+  --tile-wall-focus-probability 0.75 \
+  --cldice-weight 0.2 \
+  --output outputs/binary-tile-cldice
+```
+
+보고서에는 동일한 전체 도면 validation과 고정 seed의 native tile validation을 함께 기록한다.
+체크포인트는 두 IoU 평균이 가장 높은 epoch를 선택한다. 이로써 타일 세부 검출 향상이 전역
+문맥 손실과 맞바뀌었는지 분리해서 확인할 수 있다.
