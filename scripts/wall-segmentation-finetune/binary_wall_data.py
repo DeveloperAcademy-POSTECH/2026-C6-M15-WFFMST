@@ -66,6 +66,70 @@ def build_blocked_mask(
     return mask
 
 
+def build_letterboxed_blocked_mask(
+    width: int,
+    height: int,
+    annotations: dict[str, Sequence[object]],
+    size: int,
+) -> Image.Image:
+    """Rasterizes source polygons directly at model resolution.
+
+    CubiCasa contains a few extremely large source images. Drawing their masks at
+    full resolution before shrinking wastes memory without adding target pixels.
+    """
+
+    if width <= 0 or height <= 0:
+        raise ValueError("source dimensions must be positive")
+    category_ids = annotations.get("category_id", [])
+    segmentations = annotations.get("segmentation", [])
+    if len(category_ids) != len(segmentations):
+        raise ValueError("category_id and segmentation counts do not match")
+
+    scale = min(size / width, size / height)
+    resized_width = max(1, round(width * scale))
+    resized_height = max(1, round(height * scale))
+    offset_x = (size - resized_width) // 2
+    offset_y = (size - resized_height) // 2
+
+    def transformed(segmentation: object) -> list[list[float]]:
+        result: list[list[float]] = []
+        for polygon in _iter_polygons(segmentation):
+            result.append(
+                [
+                    value * scale + (offset_x if index % 2 == 0 else offset_y)
+                    for index, value in enumerate(polygon)
+                ]
+            )
+        return result
+
+    blocked: list[object] = []
+    doors: list[object] = []
+    for category_id, segmentation in zip(category_ids, segmentations, strict=True):
+        if int(category_id) in BLOCKED_CATEGORY_IDS:
+            blocked.append(transformed(segmentation))
+        elif int(category_id) == DOOR_CATEGORY_ID:
+            doors.append(transformed(segmentation))
+
+    mask = Image.new("L", (size, size), 0)
+    draw = ImageDraw.Draw(mask)
+    _draw_polygons(draw, blocked, fill=255)
+    _draw_polygons(draw, doors, fill=0)
+    return mask
+
+
+def letterbox_image(image: Image.Image, size: int, fill: int = 255) -> Image.Image:
+    scale = min(size / image.width, size / image.height)
+    resized_size = (
+        max(1, round(image.width * scale)),
+        max(1, round(image.height * scale)),
+    )
+    image = image.resize(resized_size, Image.Resampling.LANCZOS)
+    canvas = Image.new("RGB", (size, size), (fill, fill, fill))
+    origin = ((size - resized_size[0]) // 2, (size - resized_size[1]) // 2)
+    canvas.paste(image.convert("RGB"), origin)
+    return canvas
+
+
 def letterbox_pair(
     image: Image.Image,
     mask: Image.Image,
@@ -75,16 +139,11 @@ def letterbox_pair(
     if image.size != mask.size:
         raise ValueError("image and mask sizes must match")
     scale = min(size / image.width, size / image.height)
-    resized_size = (
-        max(1, round(image.width * scale)),
-        max(1, round(image.height * scale)),
-    )
-    image = image.resize(resized_size, Image.Resampling.LANCZOS)
+    resized_size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
     mask = mask.resize(resized_size, Image.Resampling.NEAREST)
-    canvas = Image.new("RGB", (size, size), (fill, fill, fill))
+    canvas = letterbox_image(image, size, fill)
     mask_canvas = Image.new("L", (size, size), 0)
     origin = ((size - resized_size[0]) // 2, (size - resized_size[1]) // 2)
-    canvas.paste(image.convert("RGB"), origin)
     mask_canvas.paste(mask, origin)
     return canvas, mask_canvas
 

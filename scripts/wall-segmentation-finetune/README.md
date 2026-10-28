@@ -9,6 +9,9 @@ fine-tuning한다. CubiCasa5K COCO polygon에서 `wall + window`는 blocked, `do
 드라이브에 미리 내려받지 않는다. 실행 중인 샘플과 Hub 캐시만 Colab 런타임의 임시
 저장소를 사용하며 런타임을 삭제하면 함께 사라진다.
 
+COCO polygon은 원본 크기의 마스크를 만들지 않고 512×512 letterbox 좌표로 직접
+변환한다. 4천만 픽셀을 넘는 극단적인 원본 outlier는 전처리 병목을 피하기 위해 건너뛴다.
+
 ## Colab 실행
 
 GPU 런타임에서 다음 명령을 실행한다. 저장소 clone URL은 실제 원격 저장소 주소로

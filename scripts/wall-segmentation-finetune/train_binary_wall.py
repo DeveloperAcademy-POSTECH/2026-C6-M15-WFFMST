@@ -20,15 +20,16 @@ from torch.utils.data import DataLoader, IterableDataset
 
 from binary_wall_data import (
     add_free_space_distractors,
-    build_blocked_mask,
+    build_letterboxed_blocked_mask,
     enhance_training_image,
-    letterbox_pair,
+    letterbox_image,
 )
 
 
 DATASET_ID = "phungpx/cubicassa5k-coco"
 BASE_MODEL_ID = "Yytsi/floorplan-to-3d-walls"
 IMAGE_SIZE = 512
+MAX_SOURCE_PIXELS = 40_000_000
 MEAN = torch.tensor([0.485, 0.456, 0.406]).reshape(3, 1, 1)
 STD = torch.tensor([0.229, 0.224, 0.225]).reshape(3, 1, 1)
 
@@ -105,9 +106,14 @@ class CubiCasaBinaryStream(IterableDataset):
         dataset = dataset.take(self.max_samples)
 
         for index, sample in enumerate(dataset):
+            if sample["width"] * sample["height"] > MAX_SOURCE_PIXELS:
+                print(f"skip oversized source: {sample['file_name']} ({sample['width']}x{sample['height']})")
+                continue
             image = sample["image"].convert("RGB")
-            mask = build_blocked_mask(sample["width"], sample["height"], sample["annotations"])
-            image, mask = letterbox_pair(image, mask, IMAGE_SIZE)
+            mask = build_letterboxed_blocked_mask(
+                sample["width"], sample["height"], sample["annotations"], IMAGE_SIZE
+            )
+            image = letterbox_image(image, IMAGE_SIZE)
             rng = random.Random(self.seed + index)
             distractor_mask = Image.new("L", image.size, 0)
             if rng.random() < self.synthetic_probability:

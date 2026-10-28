@@ -6,7 +6,12 @@ import unittest
 import numpy as np
 from PIL import Image
 
-from binary_wall_data import add_free_space_distractors, build_blocked_mask, letterbox_pair
+from binary_wall_data import (
+    add_free_space_distractors,
+    build_blocked_mask,
+    build_letterboxed_blocked_mask,
+    letterbox_pair,
+)
 
 
 class BinaryWallDataTests(unittest.TestCase):
@@ -33,6 +38,18 @@ class BinaryWallDataTests(unittest.TestCase):
         resized_image, resized_mask = letterbox_pair(image, mask, 32)
         self.assertEqual(resized_image.size, (32, 32))
         self.assertEqual(set(np.unique(np.asarray(resized_mask))), {0, 255})
+
+    def test_direct_letterbox_rasterization_preserves_door_precedence(self) -> None:
+        annotations = {
+            "category_id": [7, 3],
+            "segmentation": [
+                [[0, 0, 1000, 0, 1000, 200, 0, 200]],
+                [[400, 0, 600, 0, 600, 200, 400, 200]],
+            ],
+        }
+        mask = np.asarray(build_letterboxed_blocked_mask(1000, 500, annotations, 100))
+        self.assertEqual(mask[30, 10], 255)
+        self.assertEqual(mask[30, 50], 0)
 
     def test_synthetic_distractors_do_not_overlap_blocked_pixels(self) -> None:
         image = Image.new("RGB", (128, 128), "white")
