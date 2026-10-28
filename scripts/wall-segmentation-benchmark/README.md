@@ -33,6 +33,9 @@ python render_vector_result.py /path/to/floorplan.png \
   --title 'GPT API'
 ```
 
+환경 변수 대신 macOS 키체인의 `wffmst-openai-api-key` 항목도 사용할 수 있다. 키 값은
+로그에 출력하지 않는다.
+
 기본 모델은 이미지 입력과 구조화 출력을 지원하는 `gpt-6-astra`다. 응답 JSON과 함께 모델,
 응답 ID, 처리 시간, 토큰 사용량을 별도 metadata JSON에 저장한다.
 
@@ -56,3 +59,35 @@ outputs/foundation-models-wall-spike /path/to/floorplan.png \
 이 비교는 각 접근의 내부 표현을 같게 만드는 실험이 아니다. 최종 이진 장애물 마스크와
 동선 보정 결과를 같게 맞추는 비교다. 생성형 모델의 벽 선분 출력이 도면 곡선이나 복잡한
 벽 형태를 충분히 표현하지 못하면 모델 성능과 별개로 이 계약 자체를 폐기한다.
+
+## 2026-10-28 일반 아파트 3장 1차 결과
+
+Core ML은 앱 후보와 동일한 `crop + high contrast + overlap tile`, threshold 0.5를 사용했다.
+GPT는 `gpt-6-astra`, 이미지 detail `original`, 최대 256개 정규화 벽 선분 계약을 사용했다.
+Foundation Models 이미지 입력은 Xcode 27에서 컴파일했지만 현재 Mac이 macOS 26.7.1이라
+실제 추론에서 제외했다.
+
+| 도면 | Core ML 시간 | GPT 시간 | GPT 선분 | GPT 토큰 | Core ML blocked | GPT blocked |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Apartment A, 3 bedrooms | 0.984초 | 32.245초 | 39 | 4,121 | 8.09% | 6.39% |
+| Apartment B, 2 bedrooms | 0.944초 | 34.966초 | 41 | 3,999 | 7.58% | 6.62% |
+| Apartment C, 3 bedrooms | 0.946초 | 41.852초 | 51 | 4,378 | 7.78% | 8.49% |
+
+시간은 개발 Mac의 1회 측정값이며 Core ML 실기기 성능이나 네트워크 상태의 대표값이 아니다.
+정답 마스크가 없는 실제 도면이므로 blocked 비율은 정확도 지표로 해석하지 않는다.
+
+정성 비교에서 GPT는 문자·가구·치수선을 거의 배제하고 외곽, 주요 내부벽, 문 개구부를
+정돈된 직선으로 표현했다. Core ML은 실제 벽 두께와 짧은 세부 형상을 더 충실히 보존했지만
+치수선과 욕실 내부 요소 일부도 검출했다. GPT 결과는 생성형 선분이므로 곡선·비정형 벽,
+반복 실행 안정성, 좌표 오차를 추가로 확인해야 하며 30초 이상의 네트워크 지연 때문에
+기본 온디바이스 경로를 즉시 대체할 후보는 아니다.
+
+재현용 출력은 Git에 포함하지 않는 `outputs/`에 저장한다.
+
+```text
+outputs/
+├── coreml-vs-gpt-apartments.png
+├── coreml-vs-gpt-metrics.json
+├── coreml/
+└── gpt/
+```

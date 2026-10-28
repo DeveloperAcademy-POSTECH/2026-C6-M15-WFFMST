@@ -8,6 +8,7 @@ import base64
 import json
 import mimetypes
 import os
+import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -50,6 +51,26 @@ SCHEMA = {
 }
 
 
+def load_api_key() -> str:
+    if api_key := os.environ.get("OPENAI_API_KEY"):
+        return api_key
+
+    result = subprocess.run(
+        [
+            "security", "find-generic-password", "-w",
+            "-s", "wffmst-openai-api-key",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip()
+    raise SystemExit(
+        "OPENAI_API_KEY is not set and wffmst-openai-api-key was not found in macOS Keychain"
+    )
+
+
 def image_data_url(path: Path) -> str:
     mime_type = mimetypes.guess_type(path.name)[0] or "image/png"
     encoded = base64.b64encode(path.read_bytes()).decode("ascii")
@@ -73,9 +94,7 @@ def main() -> None:
     parser.add_argument("--model", default="gpt-6-astra")
     args = parser.parse_args()
 
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        raise SystemExit("OPENAI_API_KEY is not set")
+    api_key = load_api_key()
 
     payload = {
         "model": args.model,
