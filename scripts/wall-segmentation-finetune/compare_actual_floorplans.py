@@ -68,7 +68,7 @@ def global_probability(
     offset_y = (512 - resized_height) // 2
     content = probability[offset_y : offset_y + resized_height, offset_x : offset_x + resized_width]
     return np.asarray(
-        Image.fromarray(content.astype(np.float32), mode="F").resize(
+        Image.fromarray(content.astype(np.float32)).resize(
             source.size, Image.Resampling.BILINEAR
         ),
         dtype=np.float32,
@@ -99,7 +99,7 @@ def tiled_probability(
             model_input = tile.resize((512, 512), Image.Resampling.LANCZOS)
             probability = predict_probability(model, model_input, device)
             probability = np.asarray(
-                Image.fromarray(probability.astype(np.float32), mode="F").resize(
+                Image.fromarray(probability.astype(np.float32)).resize(
                     (tile_size, tile_size), Image.Resampling.BILINEAR
                 ),
                 dtype=np.float32,
