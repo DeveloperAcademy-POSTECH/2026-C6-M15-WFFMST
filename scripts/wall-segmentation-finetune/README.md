@@ -137,3 +137,22 @@ overlap tile 추론을 함께 적용해야 한다.
 선도 함께 검출했다. 1,024px 타일은 일반 아파트 결과를 거의 보존했지만 C5 복구 효과는
 작았다. 따라서 타일을 항상 적용하기보다, 종횡비가 크거나 전체 축소율이 큰 도면에만
 작은 타일을 적용하고 일반 도면은 전역 결과를 우선하는 adaptive 정책이 필요하다.
+
+## 확률·불확실성 진단
+
+Attention을 추가하기 전에 모델이 실제 도면의 어느 영역을 확신하거나 애매하게 판단하는지
+확인한다. 아래 명령은 기존 전역+overlap tile 결합 확률을 사용하여 원본, blocked 확률
+히트맵, 0.5 이진 마스크, 진단 오버레이를 한 장에 만든다.
+
+```bash
+python diagnose_actual_floorplans.py /path/to/floorplans \
+  outputs/binary-finetune/BinaryWallSegmentation.safetensors \
+  --output outputs/binary-finetune/actual-diagnostics.png \
+  --tile-size 1024 --tile-overlap 0.25 --tile-weight 0.75
+```
+
+진단 오버레이의 빨강은 blocked로 분류한 영역, 주황은 기본값 기준 확률 0.35–0.65의
+불확실 영역이다. 실제 도면 6장에는 정답 마스크가 없으므로 주황을 오류라고 단정하지 않고,
+벽 누락·가구 오검출 후보를 사람이 빠르게 검토하는 용도로 사용한다. 함께 생성되는 JSON의
+`uncertain_ratio`가 높으면 임계값 조정이나 사용자 확인 UX를 먼저 검토하고, 확신을 가진
+오검출이 반복될 때만 attention 또는 추가 학습 데이터 실험으로 넘어간다.
