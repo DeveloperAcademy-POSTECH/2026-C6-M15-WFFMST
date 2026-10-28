@@ -23,7 +23,10 @@ GPU 런타임에서 다음 명령을 실행한다. 저장소 clone URL은 실제
   https://github.com/DeveloperAcademy-POSTECH/2026-C6-M15-WFFMST.git
 %cd 2026-C6-M15-WFFMST/scripts/wall-segmentation-finetune
 !pip install -r requirements-colab.txt
-!python -m unittest -v test_binary_wall_data.py
+!python -m unittest -v \
+  test_binary_wall_data.py \
+  test_diagnose_actual_floorplans.py \
+  test_grid_connectivity.py
 ```
 
 먼저 64장으로 입출력과 마스크 방향을 확인한다.
@@ -156,3 +159,46 @@ python diagnose_actual_floorplans.py /path/to/floorplans \
 벽 누락·가구 오검출 후보를 사람이 빠르게 검토하는 용도로 사용한다. 함께 생성되는 JSON의
 `uncertain_ratio`가 높으면 임계값 조정이나 사용자 확인 UX를 먼저 검토하고, 확신을 가진
 오검출이 반복될 때만 attention 또는 추가 학습 데이터 실험으로 넘어간다.
+
+## 2px 격자 임계값·연결성 비교
+
+일반 아파트 도면 3장에 동일한 전역 25% + 1,024px overlap tile 75% 확률 맵을 만들고,
+앱과 같은 2px 장애물 격자로 샘플링한 뒤 `0.35 / 0.40 / 0.50` 임계값을 비교했다.
+검정은 blocked, 흰색은 가장 큰 free 연결 성분, 서로 다른 색은 그 성분과 분리된 free
+영역이다. 연결 성분은 상하좌우 4방향으로 계산한다.
+
+```bash
+python compare_grid_connectivity.py /path/to/floorplans \
+  outputs/binary-finetune/BinaryWallSegmentation.safetensors \
+  --include-token 아파트 \
+  --thresholds 0.35 0.40 0.50 \
+  --output outputs/binary-finetune/grid-connectivity.png
+```
+
+| 도면 | 0.35 성분 / 분리 free | 0.40 성분 / 분리 free | 0.50 성분 / 분리 free |
+| --- | ---: | ---: | ---: |
+| 미니멀 3베드룸 | 6 / 36.017% | 5 / 36.050% | 4 / 35.573% |
+| 현대적 2베드룸 | 6 / 21.325% | 6 / 21.356% | 6 / 21.500% |
+| 현대적 3침실 | 3 / 6.035% | 3 / 6.035% | 3 / 6.034% |
+
+세 임계값의 이동 가능 공간 위상은 거의 같았다. `0.35`는 실제 벽 가장자리를 조금 더
+포함했지만 문·통로 연결성을 개선하지 않았고 첫 도면에서는 유의미한 연결 성분이 오히려
+늘었다. 따라서 앱 기본값은 `0.50`을 유지한다. 이 분석에는 사용자 외곽선이 없으므로 가장
+큰 free 성분에 도면 바깥이 포함될 수 있다. 절대 분리 비율을 품질 점수로 사용하지 않고,
+임계값 사이의 상대 변화와 색상으로 표시한 연결 위상만 비교한다.
+
+문이라는 의미 클래스는 현재 blocked/free 장애물 격자에 필수적이지 않다. 문과 벽의
+개구부는 모두 free로 열려 있으면 충분하다. 향후 동선 보정에서 방 전환 제약이 필요할 때만
+두 공간을 잇는 `portal`을 별도 개념으로 검토한다. Grad-CAM·CBAM attention보다 실기기에서
+처리 시간, 메모리, 사용자 수정량, 동선의 벽 관통 횟수를 먼저 측정한다.
+
+초기 임시 Swift 시각화에는 타일 crop Y좌표와 최종 확률 맵의 중복 상하 반전 오류가
+있었으므로 해당 이미지는 결과에서 제외한다. 위 표와 재현 스크립트는 좌표 정합을 수정한
+최종 확률 맵을 기준으로 한다.
+
+## 현재 비교 단계
+
+이 모델은 최종 채택 모델이 아니라 Core ML 후보의 벤치마크다. Foundation Model과 GPT API
+후보도 동일한 일반 아파트 입력, `blocked/free` 정의, 2px 격자, 사용자 수정량, 동선 벽
+관통 횟수로 비교한 뒤 적용 방식을 결정한다. 비교가 끝나기 전에는 이 실험 브랜치를 제품
+통합 PR로 취급하지 않는다.
