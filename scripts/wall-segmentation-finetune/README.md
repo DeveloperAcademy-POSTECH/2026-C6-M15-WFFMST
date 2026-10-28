@@ -99,3 +99,19 @@ validation에도 학습과 다른 고정 seed의 합성 방해 요소를 넣어 
 모양이 학습과 같은 생성 규칙을 사용하므로 실제 예상 도면에 대한 일반화가 입증된 것은
 아니다. 다음 판단은 학습에 사용하지 않은 실제 도면 6장의 정성 비교와 사용자 수정 셀 수로
 내린다.
+
+## 실제 도면 6장 비교
+
+학습 데이터 밖의 도면 폴더는 다음 명령으로 기존 모델과 fine-tuned 모델을 같은
+512×512 letterbox 입력과 0.5 임계값에서 비교한다.
+
+```bash
+python compare_actual_floorplans.py /path/to/floorplans \
+  outputs/binary-finetune/BinaryWallSegmentation.safetensors \
+  --output outputs/binary-finetune/actual-comparison.png
+```
+
+일반 아파트 도면 3장은 벽 연속성과 가구·글씨 억제가 뚜렷하게 개선됐다. 반면 세로로
+매우 긴 도면은 512 축소 후 거의 검출되지 않았고, 복잡한 컬러 CAD형 도서관 도면은 곡선
+좌석과 외곽선을 벽으로 오검출했다. 따라서 이진 fine-tuning 방향은 유효하지만, 큰 도면에는
+overlap tile 추론을 함께 적용해야 한다.
