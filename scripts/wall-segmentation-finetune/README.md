@@ -82,3 +82,20 @@ files.download("outputs/binary-finetune/BinaryWallSegmentation-FP16.mlpackage.zi
   학습에 넣지 않고 최종 비교용으로 유지한다.
 - 데이터셋은 CubiCasa5K 연구용 라이선스를 따른다. 제품 채택 전 원본 라이선스를 다시
   검토한다.
+
+## 2026-10-28 축소 실험 결과
+
+T4 GPU에서 train 1,000장, validation 200장, 2 epochs로 방향성 검증을 실행했다.
+validation에도 학습과 다른 고정 seed의 합성 방해 요소를 넣어 해당 영역의 오검출률을
+측정했다.
+
+| 모델 | wall IoU | Precision | Recall | 방해 요소 FP rate |
+| --- | ---: | ---: | ---: | ---: |
+| 기존 4-class baseline | 0.3407 | 0.5368 | 0.4825 | 0.4865 |
+| binary fine-tuned | 0.6302 | 0.7394 | 0.8102 | 0.0453 |
+
+이 축소 실험에서는 앱의 blocked/free 목적함수와 합성 음성 샘플이 모든 지표를 개선했고,
+방해 요소 FP rate는 약 90.7% 상대 감소했다. 단, validation도 CubiCasa5K이며 합성 요소의
+모양이 학습과 같은 생성 규칙을 사용하므로 실제 예상 도면에 대한 일반화가 입증된 것은
+아니다. 다음 판단은 학습에 사용하지 않은 실제 도면 6장의 정성 비교와 사용자 수정 셀 수로
+내린다.
