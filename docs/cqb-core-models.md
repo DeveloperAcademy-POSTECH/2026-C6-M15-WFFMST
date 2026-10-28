@@ -199,6 +199,25 @@ public struct TrackIdentity: Codable, Hashable, Sendable {
 - 대원 앱은 조각별 성공 여부를 로컬에서 관리하고 실패한 조각을 재시도한다.
 - 교관 앱은 `Recording.state == .done`과 `videoChunkCount`를 사용해 AAR 준비 여부를 확인한다.
 
+#### 소리 트랙
+
+조각 하나에는 영상 트랙 1개와 소리 트랙 0~1개가 들어 있다. 소리는 교관 앱이 총성을 판정하는 데 사용한다.
+
+| 항목 | 값 |
+| --- | --- |
+| 코덱 | AAC-LC |
+| 채널 | 모노 |
+| 비트레이트 | 64kbps |
+| 샘플레이트 | 입력 장치 값을 그대로 쓴다 |
+
+- 소리 트랙의 0초는 같은 조각 영상 트랙의 0초와 같다. 두 트랙은 기록 내부 시간축을 함께 쓴다.
+- 소리 트랙이 없는 조각을 허용한다. 마이크 권한이 없거나 녹음이 시작되지 않은 경우다.
+- 조각 중간의 소리 공백을 허용한다. 전화 등으로 녹음이 끊긴 경우다.
+- 읽는 쪽은 소리 트랙 유무와 공백을 확인하고, 소리가 없는 구간은 판정하지 않는다.
+- 소리 트랙이 없는 기존 기록도 유효하다.
+- 20MB 조각 크기 제한은 소리를 포함한 크기다.
+- 소리 유무를 나타내는 Firestore 필드는 두지 않는다.
+
 ## 데이터 배치 기준
 
 | 데이터 성격 | 타입 정의 위치 | 값을 소유하는 곳 | 예시 |
@@ -262,3 +281,7 @@ public struct TrackIdentity: Codable, Hashable, Sendable {
 - `FloorPlanReference.revisionID`와 Storage의 `revisions/` 계층을 제거한다.
 - 기록당 하나의 `result.json`만 사용하고 `resultID`, `selectedResultID`를 제거한다.
 - 기록 시작 offset은 `Recording.startedAt - Session.startedAt`으로 계산하고 별도로 저장하지 않는다.
+
+2026년 10월 28일 (#98):
+
+- 영상 조각(`chunk_NNNN.mp4`)에 총성 판정용 소리 트랙(AAC-LC, 모노, 64kbps)을 추가한다. 경로, Firestore 문서, Core 모델은 바꾸지 않는다.

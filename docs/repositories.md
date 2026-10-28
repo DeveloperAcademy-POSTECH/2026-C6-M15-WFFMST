@@ -295,7 +295,8 @@ do {
 
 ### VideoChunkRepository
 
-- `upload`: 파일 하나가 20MB를 넘으면 `RepositoryError.fileTooLarge`. 조각 길이와 화질은 이 제한 안에 들어오게 정한다.
+- `upload`: 파일 하나가 20MB를 넘으면 `RepositoryError.fileTooLarge`. 조각 길이와 화질은 소리 트랙을 포함해 이 제한 안에 들어오게 정한다.
+- 조각에는 소리 트랙이 있을 수도, 없을 수도 있다. Repository는 파일 내용을 해석하지 않는다. 형식은 [데이터 계약](cqb-core-models.md#소리-트랙)을 따른다.
 - `downloadVideo`: 조각을 하나씩 순서대로 받는다. 하나라도 없으면 `RepositoryError.notFound`. `chunkCount`는 `Recording.videoChunkCount`를 넘긴다.
 - `deleteVideo`: AAR이 끝나면 부른다. 이미 없는 조각은 건너뛴다. 실패해도 AAR 종료를 막지 않는다. 남은 영상은 수명 주기 규칙이 켜져 있으면 1일 뒤 지워진다.
   - 지금은 UT 영상을 남기려고 교관 앱이 AAR 종료 시 부르지 않고(#66), 수명 주기 규칙도 꺼 두었다. 영상은 지워지지 않는다.
