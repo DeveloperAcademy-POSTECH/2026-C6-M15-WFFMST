@@ -94,5 +94,18 @@ LocalFloorPlanImportService
 - letterbox padding을 제외한 content 영역을 원본 이미지 좌표로 복원한다.
 - 복원 결과를 기존 2px `LocalObstacleGrid`로 변환한다.
 
-모델 입력용 letterbox 이미지 생성, Core ML 실행과 `MLMultiArray` stride 처리는 실제
-`.mlpackage`의 입출력 shape를 확인한 다음 이 경계 앞에 추가한다.
+`FloorPlanWallSegmentation.mlpackage`를 InstructorApp 리소스에 추가했다. Mac의
+`coremlcompiler`로 확인한 실제 계약은 다음과 같다.
+
+- 입력: `image`, 512×512 RGB 이미지
+- 출력: `classLogits`, `[1, 4, 512, 512]` Float16
+- 클래스: floor(0), wall(1), door(2), window(3)
+- 앱 장애물 처리: wall과 window를 막고 floor와 door를 연다.
+
+`LocalAIWallDetector`는 원본 비율을 유지한 letterbox 입력을 만들고, 학습 설정과 동일한
+ImageNet 평균 RGB로 여백을 채운다. Core ML 추론 결과의 실제 stride를 사용해 argmax한 뒤
+`LocalAIWallMaskGridBuilder`를 통해 기존 2px 격자로 복원한다. Import 서비스는 V13 대신
+이 모델을 사용하며 manifest의 추출 버전은 `unet-resnet34-fp16-v1`이다.
+
+모델 원본은 `Yytsi/floorplan-to-3d-walls`이고 MIT 라이선스다. 변환한 FP16 패키지 ZIP의
+SHA-256은 `c596e3b73252d1ac53ff6c2ec59f83de547826a590e002b0b15efb3b8a9c83fe`다.

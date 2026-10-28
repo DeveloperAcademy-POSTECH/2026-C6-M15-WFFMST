@@ -51,7 +51,7 @@ nonisolated enum LocalFloorPlanFileBuilder {
                 outsideIsBlocked: true,
                 maskSHA256: sha256(mask)
             ),
-            extractionAlgorithmVersion: "v13-wall-detector",
+            extractionAlgorithmVersion: "unet-resnet34-fp16-v1",
             rasterizationVersion: 2,
             manuallyReviewed: true
         )

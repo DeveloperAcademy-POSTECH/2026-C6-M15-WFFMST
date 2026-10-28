@@ -4,9 +4,12 @@ import ImageIO
 import OSLog
 import UniformTypeIdentifiers
 
-/// PoC V13 추출기를 사용하는 앱 내부 입력 경계. paleWalls 프로필은 이번 이관에서 제외한다.
+/// Core ML 벽 분할 모델을 사용하는 앱 내부 입력 경계.
 struct LocalFloorPlanImportService: FloorPlanImporting {
-    private static let logger = Logger(subsystem: "com.wffmst.cqb", category: "FloorPlanImport")
+    nonisolated private static let logger = Logger(
+        subsystem: "com.wffmst.cqb",
+        category: "FloorPlanImport"
+    )
 
     nonisolated init() {}
 
@@ -92,8 +95,12 @@ struct LocalFloorPlanImportService: FloorPlanImporting {
         logDuration("normalization", since: normalizationStart)
         try Task.checkCancellation()
         let extractionStart = ContinuousClock.now
-        let grid = try LocalV13WallDetector.grid(rgba: pixels, width: width, height: height)
-        logDuration("wall-extraction", since: extractionStart)
+        let grid = try LocalAIWallDetector.grid(
+            image: image,
+            sourceWidth: width,
+            sourceHeight: height
+        )
+        logDuration("ai-wall-extraction", since: extractionStart)
         logDuration("service-total", since: totalStart)
         return LocalExtractionResult(
             image: LocalImportedImage(pngData: output as Data, width: width, height: height, fileName: url.lastPathComponent),
