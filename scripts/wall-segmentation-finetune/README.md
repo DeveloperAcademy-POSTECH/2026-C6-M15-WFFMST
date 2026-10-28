@@ -11,6 +11,7 @@ fine-tuning한다. CubiCasa5K COCO polygon에서 `wall + window`는 blocked, `do
 
 COCO polygon은 원본 크기의 마스크를 만들지 않고 512×512 letterbox 좌표로 직접
 변환한다. 4천만 픽셀을 넘는 극단적인 원본 outlier는 전처리 병목을 피하기 위해 건너뛴다.
+Hugging Face image column도 lazy decode하여 outlier는 원본 이미지를 열기 전에 제외한다.
 
 ## Colab 실행
 

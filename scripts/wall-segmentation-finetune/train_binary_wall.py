@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import random
 import shutil
@@ -12,6 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import segmentation_models_pytorch as smp
 import torch
+from datasets import Image as DatasetImage
 from datasets import load_dataset
 from huggingface_hub import hf_hub_download
 from PIL import Image
@@ -101,6 +103,8 @@ class CubiCasaBinaryStream(IterableDataset):
 
     def __iter__(self):
         dataset = load_dataset(DATASET_ID, split=self.split, streaming=True)
+        # Inspect source dimensions before PIL decodes rare 90MP outliers.
+        dataset = dataset.cast_column("image", DatasetImage(decode=False))
         if self.training:
             dataset = dataset.shuffle(seed=self.seed, buffer_size=min(512, self.max_samples))
         dataset = dataset.take(self.max_samples)
@@ -109,7 +113,13 @@ class CubiCasaBinaryStream(IterableDataset):
             if sample["width"] * sample["height"] > MAX_SOURCE_PIXELS:
                 print(f"skip oversized source: {sample['file_name']} ({sample['width']}x{sample['height']})")
                 continue
-            image = sample["image"].convert("RGB")
+            image_record = sample["image"]
+            if image_record.get("bytes") is not None:
+                image = Image.open(io.BytesIO(image_record["bytes"])).convert("RGB")
+            elif image_record.get("path") is not None:
+                image = Image.open(image_record["path"]).convert("RGB")
+            else:
+                raise ValueError(f"image bytes/path missing: {sample['file_name']}")
             mask = build_letterboxed_blocked_mask(
                 sample["width"], sample["height"], sample["annotations"], IMAGE_SIZE
             )
