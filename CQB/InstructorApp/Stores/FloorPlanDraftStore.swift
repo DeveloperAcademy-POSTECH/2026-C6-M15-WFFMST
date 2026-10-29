@@ -152,7 +152,7 @@ final class FloorPlanDraftStore {
                 let preparation = Task.detached(priority: .userInitiated) {
                     var cache = try LocalFloorPlanReplayCache(base: result.baseGrid,
                         width: result.image.width, height: result.image.height)
-                    let grid = try cache.resolve(edits: [], outline: [])
+                    let grid = try cache.resolve(edits: [], outline: result.suggestedOutline)
                     try Task.checkCancellation()
                     let png = try LocalFloorPlanMaskRenderer.pngData(grid: grid)
                     return (cache, grid, png)
@@ -168,6 +168,7 @@ final class FloorPlanDraftStore {
                 self.image = result.image
                 self.baseGrid = result.baseGrid
                 self.resolvedGrid = grid
+                self.outline = result.suggestedOutline
                 self.maskPNGData = png
                 self.replayCache = cache
 #if canImport(UIKit)

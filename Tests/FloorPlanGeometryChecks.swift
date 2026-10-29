@@ -78,7 +78,49 @@ enum FloorPlanGeometryChecks {
         check(image.width == 50 && image.height == 50, "mask PNG dimensions")
         check(try resolve(base, [diagonal]) == thin, "preview/final deterministic replay")
         try cachedReplayMatchesFull()
-        print("PASS: 도면 격자 순서·얇은 획·외곽·축척·입력 검증·PNG 생성")
+        try automaticBlockedRegionSuggestion()
+        print("PASS: 도면 격자 순서·얇은 획·자동 이동 불가 영역·축척·입력 검증·PNG 생성")
+    }
+
+    static func automaticBlockedRegionSuggestion() throws {
+        let width = 120, height = 80
+        let base = grid(width: width, height: height)
+        let closedWithSmallGap = rgba(width: width, height: height) { x, y in
+            let horizontal = (y == 10 || y == 69) && (10...109).contains(x)
+            let vertical = (x == 10 || x == 109) && (10...69).contains(y)
+            let gap = y == 10 && (56...63).contains(x)
+            return (horizontal || vertical) && !gap
+        }
+        let suggestion = try LocalBlockedRegionAutoFill.suggest(
+            base: base,
+            rgba: closedWithSmallGap,
+            width: width,
+            height: height
+        )
+        let proposed = try require(suggestion, "a small exterior gap should be closed")
+        check((3...128).contains(proposed.outline.count), "automatic outline must stay editable")
+        check(proposed.confidence >= 0.45, "accepted outline must meet the confidence floor")
+        try LocalFloorPlanGeometry.validateOutline(proposed.outline)
+        let resolved = try LocalFloorPlanGeometry.resolve(
+            base: base,
+            width: width,
+            height: height,
+            strokes: [],
+            outline: proposed.outline
+        )
+        check(resolved.blocked[0] == 1, "automatic outline must block the image exterior")
+        check(resolved.blocked[20 * base.columns + 30] == 0, "automatic outline must preserve interior free space")
+
+        let openShape = rgba(width: width, height: height) { x, y in
+            ((x == 10 || x == 109) && (10...69).contains(y))
+                || (y == 69 && (10...109).contains(x))
+        }
+        check(try LocalBlockedRegionAutoFill.suggest(
+            base: base,
+            rgba: openShape,
+            width: width,
+            height: height
+        ) == nil, "a widely open shape must fall back to manual editing")
     }
 
     static func cachedReplayMatchesFull() throws {
@@ -122,6 +164,22 @@ enum FloorPlanGeometryChecks {
     }
     static func resolve(_ base: LocalObstacleGrid, _ strokes: [LocalEditStroke]) throws -> LocalObstacleGrid {
         try LocalFloorPlanGeometry.resolve(base: base, width: 100, height: 100, strokes: strokes, outline: [])
+    }
+    static func rgba(width: Int, height: Int, isLine: (Int, Int) -> Bool) -> [UInt8] {
+        var result = [UInt8](repeating: 255, count: width * height * 4)
+        for y in 0..<height {
+            for x in 0..<width where isLine(x, y) {
+                let offset = (y * width + x) * 4
+                result[offset] = 0
+                result[offset + 1] = 0
+                result[offset + 2] = 0
+            }
+        }
+        return result
+    }
+    static func require<T>(_ value: T?, _ message: String) throws -> T {
+        guard let value else { throw LocalFloorPlanError.invalid(message) }
+        return value
     }
     static func check(_ condition: Bool, _ message: String) {
         if !condition { fatalError("FAIL: \(message)") }
