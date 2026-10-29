@@ -6,10 +6,13 @@ public struct WorldMapReference: Codable, Hashable, Sendable {
     public let worldMapID: UUID
     /// `setup.json` 바이트의 SHA-256이다.
     public let setupSHA256: String
+    /// 이 스캔의 대응점과 변환을 계산한 도면이다. `WorldMapSetup.floorPlan`과 같아야 한다.
+    public let floorPlan: FloorPlanReference
 
-    public init(worldMapID: UUID, setupSHA256: String) {
+    public init(worldMapID: UUID, setupSHA256: String, floorPlan: FloorPlanReference) {
         self.worldMapID = worldMapID
         self.setupSHA256 = setupSHA256
+        self.floorPlan = floorPlan
     }
 }
 
@@ -142,6 +145,14 @@ public struct WorldMapSetup: Codable, Equatable, Sendable {
         self.compression = compression
         self.worldMapSHA256 = worldMapSHA256
         self.worldMapBytes = worldMapBytes
+    }
+}
+
+extension WorldMapSetup {
+    /// 이 setup.json이 참조가 가리키는 스캔 묶음이고, 같은 도면에서 계산한 것인지 확인한다.
+    /// 해시는 파일이 깨지지 않았는지만 보장하므로 조합은 이 검사로 확인한다.
+    public func matches(_ reference: WorldMapReference) -> Bool {
+        worldMapID == reference.worldMapID && floorPlan == reference.floorPlan
     }
 }
 

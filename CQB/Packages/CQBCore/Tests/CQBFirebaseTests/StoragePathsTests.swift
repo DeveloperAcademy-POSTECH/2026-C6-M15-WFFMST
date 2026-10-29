@@ -23,7 +23,8 @@ func floorPlanPaths() {
 func worldMapPaths() {
     let worldMap = WorldMapReference(
         worldMapID: UUID(uuidString: "00000000-0000-0000-0000-000000000705")!,
-        setupSHA256: "setup-sha"
+        setupSHA256: "setup-sha",
+        floorPlan: reference
     )
     let base = "worldMaps/00000000-0000-0000-0000-000000000705"
     #expect(StoragePaths.worldMapArchive(worldMap) == "\(base)/world-map.arexperience")

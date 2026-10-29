@@ -6,7 +6,7 @@ public enum RepositoryError: Error, Equatable, Sendable {
     case notFound
     /// 이미 다른 세션이 쓰고 있는 PIN
     case pinTaken
-    /// 올릴 파일이 크기 제한(스캔 파일 50MB, 나머지 20MB)을 넘는다.
+    /// 올릴 파일이 크기 제한(스캔 파일 50MB, 스캔 setup.json 1MB, 나머지 20MB)을 넘는다.
     case fileTooLarge
     /// 받은 도면·스캔 파일이 참조의 SHA-256과 맞지 않는다.
     case integrityMismatch
