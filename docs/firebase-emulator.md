@@ -71,6 +71,21 @@ python3 scripts/seed-aar-emulator.py --instructor-uid <교관 앱 uid>
 - 영상 조각은 ffmpeg(`brew install ffmpeg`)로 만든다. 없거나 `--no-video`를 주면 영상 없이 넣는다.
 - 만든 세션 ID와 대원별 기록 ID를 출력한다. 에뮬레이터를 끄면 사라진다.
 
+## 보안 규칙 테스트
+
+`firebase/firestore.rules`, `firebase/storage.rules`가 지켜야 할 약속(교관만 세션 상태를 바꾼다, 도면은 한 번만 올린다 등)을 `firebase/tests/`에서 테스트한다. 에뮬레이터를 따로 켜 두지 않아도 된다. 명령이 에뮬레이터를 켜고, 테스트를 돌리고, 끈다.
+
+```bash
+cd firebase/tests
+npm ci                    # 처음 한 번
+npm run test:emulators
+```
+
+- Node.js와 Java 21 이상이 필요하다. 설치는 위 "설치"와 같다.
+- `demo-cqb-rules` 프로젝트 ID로 실행해서 운영 Firebase에 연결하지 않는다. 앱 실행용 에뮬레이터 데이터와도 섞이지 않는다.
+- 규칙을 바꾸면 이 테스트도 함께 고친다. 새 경로나 조건을 추가하면 허용되는 경우와 거부되는 경우를 모두 적는다.
+- `firebase/` 아래 파일이 바뀐 PR에서는 GitHub Actions(`.github/workflows/rules.yml`)가 같은 테스트를 돌리고 결과를 PR 댓글로 남긴다.
+
 ## 앱을 에뮬레이터에 붙이기
 
 ### 시뮬레이터
