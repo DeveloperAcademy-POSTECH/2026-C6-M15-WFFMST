@@ -20,6 +20,14 @@ enum StoragePaths {
         "\(floorPlan(reference))/navigation-map.json"
     }
 
+    static func worldMapArchive(_ reference: WorldMapReference) -> String {
+        "\(worldMap(reference))/world-map.arexperience"
+    }
+
+    static func worldMapSetup(_ reference: WorldMapReference) -> String {
+        "\(worldMap(reference))/setup.json"
+    }
+
     static func trackResult(_ identity: TrackIdentity) -> String {
         "\(recording(identity))/result.json"
     }
@@ -35,6 +43,10 @@ enum StoragePaths {
 
     private static func floorPlan(_ reference: FloorPlanReference) -> String {
         "floorPlans/\(reference.floorPlanID.uuidString)"
+    }
+
+    private static func worldMap(_ reference: WorldMapReference) -> String {
+        "worldMaps/\(reference.worldMapID.uuidString)"
     }
 
     private static func recording(_ identity: TrackIdentity) -> String {

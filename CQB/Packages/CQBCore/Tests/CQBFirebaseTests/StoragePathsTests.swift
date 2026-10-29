@@ -19,6 +19,17 @@ func floorPlanPaths() {
     #expect(StoragePaths.floorPlanNavigationMap(reference) == "\(base)/navigation-map.json")
 }
 
+@Test("스캔 파일 2개는 worldMaps/{worldMapID}/ 아래에 있다")
+func worldMapPaths() {
+    let worldMap = WorldMapReference(
+        worldMapID: UUID(uuidString: "00000000-0000-0000-0000-000000000705")!,
+        setupSHA256: "setup-sha"
+    )
+    let base = "worldMaps/00000000-0000-0000-0000-000000000705"
+    #expect(StoragePaths.worldMapArchive(worldMap) == "\(base)/world-map.arexperience")
+    #expect(StoragePaths.worldMapSetup(worldMap) == "\(base)/setup.json")
+}
+
 @Test("보정 결과는 기록당 하나의 result.json이다")
 func trackResultPath() {
     #expect(StoragePaths.trackResult(identity)
