@@ -41,6 +41,7 @@ Store는 `CQBCore`의 프로토콜만 안다. Firebase 구현을 아는 곳은 �
 | `MemberRepository` | `observeMembers` | `join`, `updateReadiness` |
 | `RecordingRepository` | `observeRecordings` | `startRecording`, `updateRecording` |
 | `FloorPlanFileRepository` | `upload` | `download` |
+| `WorldMapFileRepository` | `upload` | `download` |
 | `TrackResultRepository` | `download` | `upload` |
 | `VideoChunkRepository` | `downloadVideo`, `deleteVideo` | `upload` |
 
@@ -287,6 +288,12 @@ do {
 ### FloorPlanFileRepository
 
 - `upload`, `download`: `navigation-map.json`의 SHA-256이 `FloorPlanReference.navigationSHA256`과 다르면 `RepositoryError.integrityMismatch`. 받을 때 이 에러가 나면 도면이 바뀌었거나 깨진 것이다.
+
+### WorldMapFileRepository
+
+- `upload`, `download`: `setup.json`의 SHA-256이 `WorldMapReference.setupSHA256`과 다르거나, 스캔 파일의 SHA-256이 `WorldMapSetup.worldMapSHA256`과 다르면 `RepositoryError.integrityMismatch`.
+- `upload`: 스캔 파일이 50MB를 넘으면 `RepositoryError.fileTooLarge`. 이미 올라간 스캔은 덮어쓰지 않는다.
+- `download`: 세션의 `worldMap`이 `nil`이면 부르지 않는다.
 
 ### TrackResultRepository
 
