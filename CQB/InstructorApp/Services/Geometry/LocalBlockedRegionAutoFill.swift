@@ -1,6 +1,6 @@
 import Foundation
 
-/// 벽 격자와 원본의 무채색 선을 이용해 이동 가능 영역의 경계를 제안합니다.
+/// 벽 격자와 원본 도면선을 이용해 이동 가능 영역의 경계를 제안합니다.
 /// 원본 선은 외곽 추론에만 사용하며 최종 장애물 마스크에는 추가하지 않습니다.
 enum LocalBlockedRegionAutoFill {
     private static let maximumWorkingDimension = 512
@@ -43,7 +43,9 @@ enum LocalBlockedRegionAutoFill {
                 let green = Int(rgba[offset + 1])
                 let blue = Int(rgba[offset + 2])
                 let gray = (red * 77 + green * 150 + blue * 29) >> 8
-                if gray < 237, max(red, green, blue) - min(red, green, blue) < 70 {
+                // CAD 도면은 외벽이 초록·파랑 등으로 표현되기도 한다. 이 선은
+                // 외곽 추론에만 사용하고 최종 벽 마스크에는 합치지 않는다.
+                if gray < 237 {
                     let column = min(columns - 1, x / pixelsPerWorkingCell)
                     let row = min(rows - 1, y / pixelsPerWorkingCell)
                     sourceLine[row * columns + column] = 1
@@ -70,8 +72,12 @@ enum LocalBlockedRegionAutoFill {
             }
             let coverage = Double(coveredEvidence) / Double(evidenceCount)
             let enclosureGain = Double(area) / Double(evidenceCount)
-            let plausible = (0.05...0.80).contains(areaRatio) && enclosureGain >= 2
-            var score = coverage + min(enclosureGain / 8, 1) - Double(radius) * 0.004
+            // 실제 도면은 방 안의 가구·치수·주석선 때문에 선 픽셀 밀도가 높다.
+            // 내부 면적이 선 근거의 1.5배 이상이면 닫힌 공간 후보로 인정한다.
+            let plausible = (0.05...0.80).contains(areaRatio) && enclosureGain >= 1.5
+            // 큰 closing 반경은 치수선·축척선까지 본체에 붙일 수 있으므로,
+            // 비슷한 품질의 후보라면 작은 보정을 우선한다.
+            var score = coverage + min(enclosureGain / 8, 1) - Double(radius) * 0.012
             if !plausible { score -= 1.25 }
             let candidate = Candidate(
                 component: component,
@@ -96,7 +102,9 @@ enum LocalBlockedRegionAutoFill {
         do { try LocalFloorPlanGeometry.validateOutline(outline) }
         catch { return nil }
 
-        let confidence = min(1, max(0, (best.score - 0.9) / 1.1))
+        // 0.45는 실제 도면에서 관찰된 score 약 1.1을 통과시키되,
+        // 열린 도형이나 작은 폐곡선 후보는 계속 거부하는 수준이다.
+        let confidence = min(1, max(0, (best.score - 0.75) / 0.75))
         guard confidence >= 0.45 else { return nil }
         return LocalBlockedRegionSuggestion(
             outline: outline,

@@ -121,6 +121,39 @@ enum FloorPlanGeometryChecks {
             width: width,
             height: height
         ) == nil, "a widely open shape must fall back to manual editing")
+
+        let denseDrawing = rgba(width: width, height: height) { x, y in
+            let outer = ((y == 8 || y == 71) && (8...111).contains(x))
+                || ((x == 8 || x == 111) && (8...71).contains(y))
+            let furniture = (16...103).contains(x) && (16...63).contains(y)
+                && (x.isMultiple(of: 8) || y.isMultiple(of: 8))
+            return outer || furniture
+        }
+        check(try LocalBlockedRegionAutoFill.suggest(
+            base: base,
+            rgba: denseDrawing,
+            width: width,
+            height: height
+        ) != nil, "dense interior annotations must not suppress a valid outer boundary")
+
+        var coloredDrawing = rgba(width: width, height: height) { _, _ in false }
+        for y in 0..<height {
+            for x in 0..<width {
+                let outer = ((y == 8 || y == 71) && (8...111).contains(x))
+                    || ((x == 8 || x == 111) && (8...71).contains(y))
+                guard outer else { continue }
+                let offset = (y * width + x) * 4
+                coloredDrawing[offset] = 0
+                coloredDrawing[offset + 1] = 190
+                coloredDrawing[offset + 2] = 60
+            }
+        }
+        check(try LocalBlockedRegionAutoFill.suggest(
+            base: base,
+            rgba: coloredDrawing,
+            width: width,
+            height: height
+        ) != nil, "colored CAD outlines must remain valid boundary evidence")
     }
 
     static func cachedReplayMatchesFull() throws {
