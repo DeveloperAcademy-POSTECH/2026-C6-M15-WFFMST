@@ -73,6 +73,7 @@ public struct Session: Codable, Sendable, Identifiable {
 - 세션 시작 전에는 `startedAt == nil`이다.
 - `floorPlan`은 세션 생성 시 확정하고 세션 도중 변경하지 않는다.
 - `worldMap`은 세션이 쓰는 훈련장 스캔이다. 세션 생성 시 확정하고 세션 도중 변경하지 않는다.
+- `worldMap`이 있으면 `worldMap.floorPlan == floorPlan`이어야 한다. 다른 도면에서 만든 스캔의 변환을 적용하지 않기 위해서다. Firestore 규칙이 세션 생성 때 거부하고, Core는 `Session.worldMapMatchesFloorPlan`으로 확인한다.
 - `worldMap == nil`이면 스캔하지 않은 훈련장이다. 대원은 지금처럼 출발 위치를 직접 정한다. 이 필드가 없는 기존 세션 문서도 `nil`로 읽는다.
 - 세션 상태 전이와 권한 검사는 저장소 구현에서 담당한다.
 
@@ -197,17 +198,20 @@ public struct FloorPlanReference: Codable, Hashable, Sendable {
 public struct WorldMapReference: Codable, Hashable, Sendable {
     public let worldMapID: UUID
     public let setupSHA256: String
+    public let floorPlan: FloorPlanReference
 }
 ```
 
 - `setupSHA256`은 `setup.json` 바이트의 SHA-256이다. `setup.json`의 `worldMapSHA256`이 다시 스캔 파일을 검증한다. 도면의 `navigationSHA256` → `imageSHA256`, `maskSHA256`과 같은 구조다.
+- `floorPlan`은 이 스캔의 대응점과 변환을 계산한 도면이다. 세션 문서만 보고 스캔을 받기 전에 도면과 짝이 맞는지 확인할 수 있다.
+- 해시는 파일이 깨지지 않았는지만 보장한다. 조합이 맞는지는 `WorldMapSetup.matches(reference)`로 확인한다. `setup.worldMapID`와 `setup.floorPlan`이 참조와 같아야 한다.
 - 스캔한 파일은 덮어쓰지 않는다. 현장이 바뀌어 다시 스캔하면 새로운 `worldMapID`를 생성한다.
 - 도면 하나에 날짜별 스캔이 여러 개 있을 수 있다. 그래서 도면 파일 묶음과 분리된 경로에 둔다.
 - 도면 이미지는 `setup.json`에 넣지 않고 `floorPlan`으로 참조한다.
 - `alignment`는 교관 앱이 대응점으로 한 번 계산해 저장한다. 대원 앱은 다시 계산하지 않고 이 값을 그대로 쓴다. 계산 방법을 바꾸면 저장된 대응점으로 다시 계산해 새 스캔 묶음으로 올린다.
 - `alignment`는 AR 월드 좌표 `(x, z)`(미터)를 도면 이미지 좌표(픽셀)로 바꾼다. θ = `rotationDegrees`, s = `pixelsPerMeter`일 때 `imageX = translation.x + s(cos θ·x − sin θ·z)`, `imageY = translation.y + s(sin θ·x + cos θ·z)`다. 대원 앱 보정의 `rotationDegrees`, `pixelsPerMeter`와 같은 규칙이다.
 - 도면 위 점(`planPoint`, `directionPoint`)은 0~1 비율 좌표(`NormalizedPoint`)다.
-- 스캔 파일은 50MB까지 올릴 수 있다. 다른 Storage 파일의 제한은 20MB 그대로다.
+- `worldMaps/{worldMapID}/`에는 `world-map.arexperience`(`application/octet-stream`, 50MB 이하)와 `setup.json`(`application/json`, 1MB 이하)만 올릴 수 있다. 다른 Storage 파일의 제한은 20MB 그대로다.
 
 ### 동선 보정 결과
 
@@ -327,4 +331,5 @@ public struct TrackIdentity: Codable, Hashable, Sendable {
 - 훈련장 스캔(ARWorldMap)을 `worldMaps/{worldMapID}/`에 스캔 파일과 `setup.json`으로 저장한다.
 - `Session.worldMap`(선택)을 추가한다. 없으면 대원이 출발 위치를 직접 정한다.
 - AR → 도면 좌표 변환은 교관 앱이 계산해 `setup.json`에 저장하고 대원 앱은 그대로 쓴다.
-- 스캔 경로의 Storage 파일 크기 제한을 50MB로 둔다.
+- 스캔 경로에는 계약한 두 파일만 받는다. 스캔 파일 50MB, `setup.json` 1MB까지 허용한다.
+- `WorldMapReference`에 스캔을 만든 도면(`floorPlan`)을 포함하고, 세션 도면과 같아야 한다 (PR #101 리뷰).

@@ -292,7 +292,9 @@ do {
 ### WorldMapFileRepository
 
 - `upload`, `download`: `setup.json`의 SHA-256이 `WorldMapReference.setupSHA256`과 다르거나, 스캔 파일의 SHA-256이 `WorldMapSetup.worldMapSHA256`과 다르면 `RepositoryError.integrityMismatch`.
-- `upload`: 스캔 파일이 50MB를 넘으면 `RepositoryError.fileTooLarge`. 이미 올라간 스캔은 덮어쓰지 않는다.
+- `upload`, `download`: `WorldMapSetup.matches(reference)`가 false면 `RepositoryError.integrityMismatch`. 스캔 ID나 도면이 참조와 다른 조합이다.
+- `upload`: 스캔 파일은 `application/octet-stream`으로 50MB까지, `setup.json`은 `application/json`으로 1MB까지 올린다. 넘으면 `RepositoryError.fileTooLarge`. 이미 올라간 스캔은 덮어쓰지 않는다.
+- 세션을 만들 때 `Session.worldMapMatchesFloorPlan`이 false인 조합은 만들지 않는다. Firestore 규칙도 거부한다.
 - `download`: 세션의 `worldMap`이 `nil`이면 부르지 않는다.
 
 ### TrackResultRepository
