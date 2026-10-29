@@ -19,6 +19,14 @@ service firebase.storage {
       allow create: if signedIn() && resource == null && underSizeLimit();
     }
 
+    // 훈련장 스캔: 로그인 사용자가 읽고, 처음 한 번만 올린다. 덮어쓰기·삭제는 막는다.
+    // 스캔 파일은 20MB를 넘을 수 있어 이 경로만 50MB까지 허용한다.
+    match /worldMaps/{worldMapID}/{fileName} {
+      allow read: if signedIn();
+      allow create: if signedIn() && resource == null
+        && request.resource.size <= 50 * 1024 * 1024;
+    }
+
     // 보정 결과와 영상: 기록 주인(대원)이 올리고, 그 세션의 교관이 받고 지운다.
     match /sessions/{sessionID}/recordings/{recordingID}/{allPaths=**} {
       function isInstructor() {
