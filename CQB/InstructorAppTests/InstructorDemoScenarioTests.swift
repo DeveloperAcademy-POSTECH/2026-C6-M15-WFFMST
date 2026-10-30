@@ -25,6 +25,14 @@ final class InstructorDemoScenarioTests: XCTestCase {
         XCTAssertEqual(store.phase, .home)
         XCTAssertEqual(store.floorPlans.map(\.name), ["데모 훈련장"])
         XCTAssertNotNil(store.selectedFloorPlan?.registeredPlan)
+        XCTAssertEqual(
+            store.selectedFloorPlan?.registeredPlan.flatMap { UIImage(data: $0.image.pngData)?.cgImage?.width },
+            1_200
+        )
+        XCTAssertEqual(
+            store.selectedFloorPlan?.registeredPlan.flatMap { UIImage(data: $0.image.pngData)?.cgImage?.height },
+            800
+        )
         XCTAssertEqual(store.trainingName, "TestFlight 데모 훈련")
 
         store.openSessionCreation()

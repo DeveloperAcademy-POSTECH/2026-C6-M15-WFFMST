@@ -138,7 +138,13 @@ enum InstructorDemoScenario {
 
     @MainActor
     private static func makeFloorPlanPNG(width: Int, height: Int) -> Data {
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: width, height: height))
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(
+            size: CGSize(width: width, height: height),
+            format: format
+        )
         let image = renderer.image { context in
             let bounds = CGRect(x: 0, y: 0, width: width, height: height)
             UIColor(red: 0.94, green: 0.93, blue: 0.89, alpha: 1).setFill()
