@@ -50,6 +50,13 @@ nonisolated struct LocalImportedImage: Equatable, Sendable {
 nonisolated struct LocalExtractionResult: Sendable {
     var image: LocalImportedImage
     var baseGrid: LocalObstacleGrid
+    var suggestedOutline: [LocalPlanPoint]
+}
+
+nonisolated struct LocalBlockedRegionSuggestion: Equatable, Sendable {
+    var outline: [LocalPlanPoint]
+    var confidence: Double
+    var closingRadiusCells: Int
 }
 
 nonisolated struct LocalRegisteredFloorPlan: Equatable, Sendable {

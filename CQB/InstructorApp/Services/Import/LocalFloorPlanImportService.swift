@@ -93,11 +93,18 @@ struct LocalFloorPlanImportService: FloorPlanImporting {
         try Task.checkCancellation()
         let extractionStart = ContinuousClock.now
         let grid = try LocalV13WallDetector.grid(rgba: pixels, width: width, height: height)
+        let suggestion = try LocalBlockedRegionAutoFill.suggest(
+            base: grid,
+            rgba: pixels,
+            width: width,
+            height: height
+        )
         logDuration("wall-extraction", since: extractionStart)
         logDuration("service-total", since: totalStart)
         return LocalExtractionResult(
             image: LocalImportedImage(pngData: output as Data, width: width, height: height, fileName: url.lastPathComponent),
-            baseGrid: grid)
+            baseGrid: grid,
+            suggestedOutline: suggestion?.outline ?? [])
     }
 
     nonisolated private static func logDuration(_ stage: String, since start: ContinuousClock.Instant) {

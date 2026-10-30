@@ -431,11 +431,10 @@ private final class LocalFloorPlanMarkersView: UIView {
             for point in outline.dropFirst() { context.addLine(to: cg(point)) }
             if outline.count >= 3 { context.closePath() }
             context.strokePath()
-            for (index, point) in outline.enumerated() {
-                marker(point, label: String(index + 1), color: .systemPurple, unit: unit, context: context)
-            }
         }
 
+        // Applied outlines are not directly editable, so only the boundary is shown.
+        // Temporary selection points remain numbered until the user applies them.
         if let first = selection.first {
             context.setStrokeColor(UIColor.systemOrange.cgColor)
             context.move(to: cg(first))

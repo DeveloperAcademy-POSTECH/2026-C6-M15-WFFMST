@@ -13,7 +13,7 @@ private actor ControlledImporter: FloorPlanImporting {
 
     func has(_ name: String) -> Bool { pending[name] != nil }
 
-    func succeed(_ name: String) {
+    func succeed(_ name: String, suggestedOutline: [LocalPlanPoint] = []) {
         pending.removeValue(forKey: name)?.resume(returning: LocalExtractionResult(
             image: LocalImportedImage(
                 pngData: Data([1, 2, 3]),
@@ -26,7 +26,8 @@ private actor ControlledImporter: FloorPlanImporting {
                 rows: 40,
                 cellSizePixels: 2,
                 blocked: [UInt8](repeating: 0, count: 2_000)
-            )
+            ),
+            suggestedOutline: suggestedOutline
         ))
     }
 
@@ -199,9 +200,10 @@ enum FloorPlanRegistrationChecks {
 
         draft.importImage(from: URL(fileURLWithPath: "/virtual/original.png"))
         try await wait { await importer.has("original.png") }
-        await importer.succeed("original.png")
+        await importer.succeed("original.png", suggestedOutline: outline)
         try await wait { !draft.isProcessing }
         precondition(draft.image?.fileName == "original.png")
+        precondition(draft.outline == outline, "자동 제안 영역을 첫 미리보기에 적용해야 한다")
         draft.setEditorMode(.brush)
         let pendingStroke = LocalEditStroke(mode: .block,
             points: [LocalPlanPoint(x: 0.2, y: 0.2), LocalPlanPoint(x: 0.4, y: 0.4)],

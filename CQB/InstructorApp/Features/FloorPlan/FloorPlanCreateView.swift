@@ -237,11 +237,11 @@ struct FloorPlanCreateView: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("벽 편집")
+                    Text("이동 불가 영역 편집")
                         .font(DSTypography.h2)
                         .foregroundStyle(InstructorColor.textPrimary)
 
-                    Text("인식되지 않은 부분을 추가하거나 지우세요")
+                    Text("자동으로 표시된 결과에서 잘못된 부분을 추가하거나 지우세요")
                         .font(DSTypography.bodySmall)
                         .foregroundStyle(InstructorColor.textSecondary)
                         .padding(.top, 8)
@@ -322,14 +322,18 @@ struct FloorPlanCreateView: View {
 
     private var penControls: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("필요한 영역을 점으로 찍어 선택하세요")
+            Text("수정할 영역을 점으로 찍어 선택하세요")
                 .font(DSTypography.bodySmall)
                 .foregroundStyle(InstructorColor.textPrimary)
 
-            panelButton("외곽 추가하기", enabled: store.canApplySelection, action: store.applyOutlineSelection)
+            panelButton(
+                store.outline.isEmpty ? "이동 가능 영역 지정" : "이동 가능 영역 다시 지정",
+                enabled: store.canApplySelection,
+                action: store.applyOutlineSelection
+            )
                 .padding(.top, 24)
 
-            Text("선택영역의 외부를 통과 불가 영역으로 지정합니다")
+            Text("선택한 영역의 바깥을 이동 불가로 지정합니다")
                 .font(DSTypography.caption)
                 .foregroundStyle(InstructorColor.textSecondary)
                 .padding(.top, 12)
