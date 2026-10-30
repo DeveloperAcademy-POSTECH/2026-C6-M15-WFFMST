@@ -16,6 +16,7 @@ enum FloorPlanImportChecks {
         }
         let png = try write(plan, to: directory.appendingPathComponent("asymmetric.png"), type: .png)
         let imported = try await service.process(url: png)
+        precondition(imported.extractionAlgorithm == .v13, "missing standalone model must use V13 fallback")
         precondition(imported.image.width == 102 && imported.image.height == 82)
         precondition(imported.baseGrid.columns == 51 && imported.baseGrid.rows == 41)
         checkPadding(imported, source: plan)
@@ -80,7 +81,7 @@ enum FloorPlanImportChecks {
         do { _ = try await detector.value; fatalError("running detector must cooperate with cancellation") }
         catch is CancellationError {}
         precondition(started.duration(to: .now) < .seconds(3), "cancellation must be bounded")
-        print("PASS: Import PNG/JPEG, orientation, alpha, downsample, V13 doors, cell-aligned padding, errors, cancellation")
+        print("PASS: Import PNG/JPEG, AI-to-V13 fallback, orientation, alpha, downsample, V13 doors, cell-aligned padding, errors, cancellation")
     }
 
     static func checkPadding(_ result: LocalExtractionResult, source: CGImage) {

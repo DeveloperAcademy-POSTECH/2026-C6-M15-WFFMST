@@ -1,0 +1,51 @@
+MIT License
+
+Copyright (c) 2026 Tuukka Yildirim
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Model provenance
+----------------
+
+This package was initialized from Yytsi/floorplan-to-3d-walls and fine-tuned
+for binary wall segmentation using phungpx/cubicassa5k-coco, a repackaging of
+the CubiCasa5K dataset.
+
+CubiCasa5K is licensed under the Creative Commons Attribution-NonCommercial
+4.0 International License (CC BY-NC 4.0). This fine-tuned package is provided
+in this repository for non-commercial research and educational use only.
+
+Dataset: https://github.com/CubiCasa/CubiCasa5k
+License: https://creativecommons.org/licenses/by-nc/4.0/
+Repackaging: https://huggingface.co/datasets/phungpx/cubicassa5k-coco
+
+Modifications
+-------------
+
+- Converted the source annotations into binary blocked/free labels
+- Treated wall and window as blocked, and floor, door, and other as free
+- Fine-tuned the segmentation model for the binary task
+- Converted the trained weights to an FP16 Core ML package
+
+Citation
+--------
+
+Kalervo, Ahti, Juha Ylioinas, Markus Haikio, Antti Karhu, and Juho Kannala.
+"CubiCasa5K: A Dataset and an Improved Multi-Task Model for Floorplan Image
+Analysis." Scandinavian Conference on Image Analysis (SCIA), 2019.
