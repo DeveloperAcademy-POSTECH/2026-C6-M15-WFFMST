@@ -65,6 +65,7 @@ final class DemoFloorPlanCatalogRepository: FloorPlanCatalogRepository {
     private var stored: [InstructorFloorPlan]
     var fetchError: Error?
     var saveError: Error?
+    var deleteError: Error?
 
     init(floorPlans: [InstructorFloorPlan] = []) {
         stored = floorPlans
@@ -82,6 +83,11 @@ final class DemoFloorPlanCatalogRepository: FloorPlanCatalogRepository {
         } else {
             stored.append(floorPlan)
         }
+    }
+
+    func delete(id: String) throws {
+        if let deleteError { throw deleteError }
+        stored.removeAll { $0.id == id }
     }
 }
 

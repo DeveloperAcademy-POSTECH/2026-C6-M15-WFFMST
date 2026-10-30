@@ -76,4 +76,15 @@ nonisolated final class SwiftDataFloorPlanCatalogRepository: FloorPlanCatalogRep
         }
         try context.save()
     }
+
+    func delete(id: String) throws {
+        let catalogID = id
+        let descriptor = FetchDescriptor<StoredFloorPlan>(
+            predicate: #Predicate { $0.catalogID == catalogID }
+        )
+        if let stored = try context.fetch(descriptor).first {
+            context.delete(stored)
+            try context.save()
+        }
+    }
 }

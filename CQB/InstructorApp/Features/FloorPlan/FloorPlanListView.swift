@@ -14,13 +14,13 @@ struct FloorPlanListView: View {
             InstructorBackButton(action: store.goBack)
                 .padding(.bottom, 4)
 
-            Text("훈련 도면")
+            Text("도면 관리")
                 .font(DSTypography.h1)
                 .foregroundStyle(InstructorColor.textPrimary)
                 .frame(height: 48, alignment: .leading)
                 .padding(.bottom, 16)
 
-            Text("훈련 세션을 만들 때 등록된 도면 중 하나를 선택합니다.")
+            Text("등록된 도면을 확인하고 마스크를 수정하거나 목록에서 삭제할 수 있습니다.")
                 .font(DSTypography.body)
                 .foregroundStyle(InstructorColor.textSecondary)
                 .frame(height: 24, alignment: .leading)
@@ -138,6 +138,12 @@ struct FloorPlanListView: View {
                     .frame(height: 21, alignment: .leading)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+
+            ActionButton("상세보기", tone: .secondary, density: .compact) {
+                store.openFloorPlanDetail(floorPlan.id)
+            }
+            .frame(width: 128, height: 44)
+            .accessibilityIdentifier("floorPlan.detail.\(floorPlan.id)")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 32)
@@ -148,7 +154,7 @@ struct FloorPlanListView: View {
             RoundedRectangle(cornerRadius: 4)
                 .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 
 }

@@ -63,16 +63,18 @@ struct FloorPlanCreateView: View {
                 .lineLimit(1)
                 .frame(maxWidth: .infinity)
 
-            ActionButton(
-                store.image == nil ? "파일 첨부" : "파일 변경",
-                tone: .secondary,
-                density: .file
-            ) {
-                importer.request { focusedField = nil }
+            if !app.isEditingFloorPlan {
+                ActionButton(
+                    store.image == nil ? "파일 첨부" : "파일 변경",
+                    tone: .secondary,
+                    density: .file
+                ) {
+                    importer.request { focusedField = nil }
+                }
+                .disabled(isImportInteractionActive || store.isProcessing || store.isDrawing
+                    || app.isUploadingFloorPlan || app.floorPlanUploadError != nil)
+                .accessibilityIdentifier("floorPlan.import")
             }
-            .disabled(isImportInteractionActive || store.isProcessing || store.isDrawing
-                || app.isUploadingFloorPlan || app.floorPlanUploadError != nil)
-            .accessibilityIdentifier("floorPlan.import")
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 22)
@@ -258,10 +260,17 @@ struct FloorPlanCreateView: View {
                 .padding(.bottom, 20)
             }
 
-            ActionButton("다음", fillsWidth: true, action: store.continueToScale)
+            ActionButton(
+                app.isEditingFloorPlan
+                    ? (app.isUploadingFloorPlan ? "수정본 업로드 중" : "수정 완료")
+                    : "다음",
+                fillsWidth: true,
+                action: app.isEditingFloorPlan ? app.saveFloorPlanMaskEdit : store.continueToScale
+            )
                 .frame(height: 52)
-                .disabled(!store.canContinueEditing)
-                .accessibilityIdentifier("floorPlan.next.scale")
+                .disabled(app.isEditingFloorPlan ? !store.canSaveMaskEdit : !store.canContinueEditing)
+                .accessibilityIdentifier(app.isEditingFloorPlan
+                    ? "floorPlan.edit.save" : "floorPlan.next.scale")
                 .padding(.horizontal, 24)
                 .padding(.top, 12)
                 .padding(.bottom, 32)
@@ -326,17 +335,19 @@ struct FloorPlanCreateView: View {
                 .font(DSTypography.bodySmall)
                 .foregroundStyle(InstructorColor.textPrimary)
 
-            panelButton(
-                store.outline.isEmpty ? "이동 가능 영역 지정" : "이동 가능 영역 다시 지정",
-                enabled: store.canApplySelection,
-                action: store.applyOutlineSelection
-            )
-                .padding(.top, 24)
+            if !app.isEditingFloorPlan {
+                panelButton(
+                    store.outline.isEmpty ? "이동 가능 영역 지정" : "이동 가능 영역 다시 지정",
+                    enabled: store.canApplySelection,
+                    action: store.applyOutlineSelection
+                )
+                    .padding(.top, 24)
 
-            Text("선택한 영역의 바깥을 이동 불가로 지정합니다")
-                .font(DSTypography.caption)
-                .foregroundStyle(InstructorColor.textSecondary)
-                .padding(.top, 12)
+                Text("선택한 영역의 바깥을 이동 불가로 지정합니다")
+                    .font(DSTypography.caption)
+                    .foregroundStyle(InstructorColor.textSecondary)
+                    .padding(.top, 12)
+            }
 
             panelButton("선택영역 추가하기", enabled: store.canApplySelection) {
                 store.applySelection(.block)
@@ -497,7 +508,9 @@ struct FloorPlanCreateView: View {
                 if app.isUploadingFloorPlan {
                     HStack {
                         ProgressView()
-                        Text("도면 파일 3개를 Storage에 업로드하는 중")
+                        Text(app.isEditingFloorPlan
+                            ? "수정된 마스크를 새 도면 버전으로 업로드하는 중"
+                            : "도면 파일 3개를 Storage에 업로드하는 중")
                     }
                     .accessibilityIdentifier("floorPlan.uploading")
                 }

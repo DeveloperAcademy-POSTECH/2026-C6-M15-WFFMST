@@ -102,8 +102,36 @@ final class FloorPlanDraftStore {
     }
     var hasValidScale: Bool { canContinueEditing && pixelsPerMeter != nil }
     var canRegister: Bool { step == .scaling && hasValidScale && hasName }
+    var canSaveMaskEdit: Bool { step == .editing && hasValidScale && hasName }
 
     func begin() { reset() }
+    func beginMaskEditing(_ snapshot: LocalFloorPlanSnapshot) {
+        invalidateWork()
+        clearImageState()
+        let registration = snapshot.registration
+        name = registration.name
+        image = registration.image
+        baseGrid = registration.resolvedGrid
+        resolvedGrid = registration.resolvedGrid
+        outline = registration.outline
+        scaleA = registration.scale.a
+        scaleB = registration.scale.b
+        distanceText = String(registration.scale.meters)
+        extractionAlgorithm = registration.extractionAlgorithm
+        maskPNGData = snapshot.maskPNGData
+        step = .editing
+        editorMode = .pen
+        tool = .pen
+#if canImport(UIKit)
+        previewImage = UIImage(data: registration.image.pngData)
+        maskImage = UIImage(
+            data: snapshot.maskPNGData,
+            scale: 1 / CGFloat(registration.resolvedGrid.cellSizePixels)
+        )
+#endif
+        errorMessage = nil
+    }
+
     func reset() {
         invalidateWork()
         name = ""
@@ -355,6 +383,21 @@ final class FloorPlanDraftStore {
         return LocalRegisteredFloorPlan(id: UUID(), name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             image: image, baseGrid: baseGrid, edits: edits, outline: outline, scale: scale,
             resolvedGrid: resolvedGrid, extractionAlgorithm: extractionAlgorithm)
+    }
+
+    func maskEditingRegistration() -> LocalRegisteredFloorPlan? {
+        guard canSaveMaskEdit, let image, let baseGrid, let resolvedGrid, let scale else { return nil }
+        return LocalRegisteredFloorPlan(
+            id: UUID(),
+            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+            image: image,
+            baseGrid: baseGrid,
+            edits: edits,
+            outline: outline,
+            scale: scale,
+            resolvedGrid: resolvedGrid,
+            extractionAlgorithm: extractionAlgorithm
+        )
     }
 
     // Outline/image changes must not display a previously confirmed boundary.

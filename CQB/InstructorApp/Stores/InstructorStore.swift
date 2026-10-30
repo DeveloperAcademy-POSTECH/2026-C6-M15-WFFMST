@@ -18,6 +18,11 @@ final class InstructorStore {
         case failed(String)
     }
 
+    enum FloorPlanDetailState: Equatable {
+        case idle, loading, loaded
+        case failed(String)
+    }
+
     private enum FloorPlanRegistrationError: Error, Equatable {
         case localSave
     }
@@ -32,6 +37,7 @@ final class InstructorStore {
     @ObservationIgnored private let memberRepository: any MemberRepository
     @ObservationIgnored private let pinGenerator: () -> String
     @ObservationIgnored private var floorPlanUploadTask: Task<Void, Never>?
+    @ObservationIgnored private var floorPlanDetailTask: Task<Void, Never>?
     @ObservationIgnored private var sessionCreationTask: Task<Void, Never>?
     @ObservationIgnored private var memberObservationTask: Task<Void, Never>?
     @ObservationIgnored private var sessionEndTask: Task<Void, Never>?
@@ -42,10 +48,15 @@ final class InstructorStore {
     @ObservationIgnored private var sessionObservationID: UUID?
 #if canImport(UIKit)
     private(set) var selectedPlanImage: UIImage?
+    private(set) var floorPlanDetailImage: UIImage?
+    private(set) var floorPlanDetailMaskImage: UIImage?
 #endif
     private(set) var phase: InstructorPhase = .home
     private(set) var floorPlans: [InstructorFloorPlan]
     private(set) var floorPlanCatalogState: FloorPlanCatalogState
+    private(set) var floorPlanDetailState: FloorPlanDetailState = .idle
+    private(set) var viewedFloorPlanID: String?
+    private(set) var floorPlanDeletionError: String?
     private(set) var trainingName = "샘플 훈련"
     private(set) var selectedFloorPlanID: String?
     private(set) var participants: [InstructorParticipant] = []
@@ -70,6 +81,9 @@ final class InstructorStore {
     private(set) var sessionObservationError: String?
     private(set) var trainingParticipants: [InstructorParticipant] = []
     private var failedFloorPlanRegistration: LocalRegisteredFloorPlan?
+    private var failedReplacementFloorPlanID: String?
+    private var floorPlanDetailSnapshot: LocalFloorPlanSnapshot?
+    private var editingFloorPlanID: String?
 
     let playbackDuration = 2172.0
     let maximumVideoCount = 4
@@ -111,6 +125,8 @@ final class InstructorStore {
     }
 
     var selectedFloorPlan: InstructorFloorPlan? { floorPlans.first { $0.id == selectedFloorPlanID } }
+    var viewedFloorPlan: InstructorFloorPlan? { floorPlans.first { $0.id == viewedFloorPlanID } }
+    var isEditingFloorPlan: Bool { phase == .floorPlanEditing }
     var canOpenSessionCreation: Bool { floorPlanCatalogState == .loaded && !floorPlans.isEmpty }
     var isLoadingFloorPlans: Bool { floorPlanCatalogState == .loading }
     var floorPlanCatalogError: String? {
@@ -135,7 +151,8 @@ final class InstructorStore {
     }
     var requiresUnreadyExclusionConfirmation: Bool { canRequestTrainingStart && unreadyCount > 0 }
     var canGoBack: Bool {
-        [.floorPlanList, .floorPlanCreation, .sessionCreation, .teamReadiness].contains(phase)
+        [.floorPlanList, .floorPlanDetail, .floorPlanCreation, .floorPlanEditing,
+         .sessionCreation, .teamReadiness].contains(phase)
             && !isUploadingFloorPlan && !isCreatingSession && !isEndingSession && !isStartingTraining
     }
     var canFinishTraining: Bool { phase == .trainingInProgress && !isFinishingTraining }
@@ -189,6 +206,62 @@ final class InstructorStore {
         loadFloorPlans()
     }
 
+    func openFloorPlanDetail(_ id: String) {
+        guard floorPlanCatalogState == .loaded,
+              let plan = floorPlans.first(where: { $0.id == id }) else { return }
+        cancelFloorPlanDetailLoad()
+        viewedFloorPlanID = id
+        floorPlanDeletionError = nil
+        floorPlanDetailState = .loading
+        phase = .floorPlanDetail
+        loadFloorPlanDetail(plan)
+    }
+
+    func retryFloorPlanDetailLoad() {
+        guard phase == .floorPlanDetail,
+              case .failed = floorPlanDetailState,
+              let plan = viewedFloorPlan else { return }
+        floorPlanDetailState = .loading
+        loadFloorPlanDetail(plan)
+    }
+
+    func beginFloorPlanMaskEditing() {
+        guard phase == .floorPlanDetail,
+              floorPlanDetailState == .loaded,
+              let snapshot = floorPlanDetailSnapshot,
+              let viewedFloorPlanID else { return }
+        editingFloorPlanID = viewedFloorPlanID
+        floorPlanDraft.beginMaskEditing(snapshot)
+        floorPlanUploadError = nil
+        phase = .floorPlanEditing
+    }
+
+    func saveFloorPlanMaskEdit() {
+        guard phase == .floorPlanEditing, !isUploadingFloorPlan,
+              let editingFloorPlanID,
+              let target = floorPlans.first(where: { $0.id == editingFloorPlanID }),
+              let registration = floorPlanDraft.maskEditingRegistration() else { return }
+        uploadFloorPlan(registration, replacing: target)
+    }
+
+    func deleteViewedFloorPlan() {
+        guard phase == .floorPlanDetail, !isUploadingFloorPlan,
+              let id = viewedFloorPlanID else { return }
+        floorPlanDeletionError = nil
+        do {
+            try floorPlanCatalogRepository.delete(id: id)
+            floorPlans.removeAll { $0.id == id }
+            if selectedFloorPlanID == id {
+                selectFloorPlan(floorPlans.first?.id)
+            }
+            clearFloorPlanDetail()
+            phase = .floorPlanList
+        } catch {
+            Self.logger.error("도면 목록 삭제 실패: \(error.localizedDescription, privacy: .private)")
+            floorPlanDeletionError = "도면을 목록에서 삭제하지 못했습니다. 잠시 후 다시 시도해주세요."
+        }
+    }
+
     func openFloorPlanCreation() {
         guard floorPlanCatalogState == .loaded else { return }
         floorPlanDraft.begin()
@@ -204,9 +277,13 @@ final class InstructorStore {
         uploadFloorPlan(registration)
     }
     func retryFloorPlanUpload() {
-        guard phase == .floorPlanCreation, !isUploadingFloorPlan,
+        guard (phase == .floorPlanCreation || phase == .floorPlanEditing),
+              !isUploadingFloorPlan,
               let registration = failedFloorPlanRegistration else { return }
-        uploadFloorPlan(registration)
+        let replacement = failedReplacementFloorPlanID.flatMap { id in
+            floorPlans.first { $0.id == id }
+        }
+        uploadFloorPlan(registration, replacing: replacement)
     }
     func setTrainingName(_ value: String) {
         guard !isCreatingSession else { return }
@@ -368,6 +445,7 @@ final class InstructorStore {
 
     /// 화면 트리에서 Store를 제거하기 전에 진행 중인 앱 내부 작업을 모두 정리한다.
     func shutdown() {
+        cancelFloorPlanDetailLoad()
         clearFloorPlanUpload()
         floorPlanDraft.reset()
         returnHome()
@@ -377,6 +455,10 @@ final class InstructorStore {
         guard !isUploadingFloorPlan, !isCreatingSession, !isEndingSession, !isStartingTraining else { return }
         switch phase {
         case .floorPlanList: phase = .home
+        case .floorPlanDetail:
+            cancelFloorPlanDetailLoad()
+            clearFloorPlanDetail()
+            phase = .floorPlanList
         case .sessionCreation:
             cancelSessionCreation()
             phase = .home
@@ -388,6 +470,11 @@ final class InstructorStore {
                 floorPlanDraft.reset()
                 phase = .floorPlanList
             }
+        case .floorPlanEditing:
+            clearFloorPlanUpload()
+            floorPlanDraft.reset()
+            editingFloorPlanID = nil
+            phase = .floorPlanDetail
         case .teamReadiness:
             endCurrentSession()
         default: break
@@ -658,6 +745,88 @@ final class InstructorStore {
     }
 #endif
 
+    private func loadFloorPlanDetail(_ plan: InstructorFloorPlan) {
+        floorPlanDetailTask?.cancel()
+        let repository = floorPlanFileRepository
+        floorPlanDetailTask = Task { [weak self] in
+            do {
+                let snapshot: LocalFloorPlanSnapshot
+                if let registeredPlan = plan.registeredPlan {
+                    let preparation = Task.detached(priority: .userInitiated) {
+                        try LocalFloorPlanFileLoader.snapshot(from: registeredPlan)
+                    }
+                    snapshot = try await withTaskCancellationHandler {
+                        try await preparation.value
+                    } onCancel: { preparation.cancel() }
+                } else {
+                    let files = try await repository.download(plan.reference)
+                    try Task.checkCancellation()
+                    let preparation = Task.detached(priority: .userInitiated) {
+                        try LocalFloorPlanFileLoader.load(
+                            files: files,
+                            reference: plan.reference,
+                            catalog: plan
+                        )
+                    }
+                    snapshot = try await withTaskCancellationHandler {
+                        try await preparation.value
+                    } onCancel: { preparation.cancel() }
+                }
+                try Task.checkCancellation()
+                guard let self, self.phase == .floorPlanDetail,
+                      self.viewedFloorPlanID == plan.id else { return }
+                self.applyFloorPlanDetail(snapshot, for: plan.id)
+                self.floorPlanDetailTask = nil
+            } catch {
+                guard let self, !(error is CancellationError),
+                      self.phase == .floorPlanDetail,
+                      self.viewedFloorPlanID == plan.id else { return }
+                let failure = error as NSError
+                Self.logger.error("도면 상세 복원 실패: domain=\(failure.domain, privacy: .public) code=\(failure.code) description=\(failure.localizedDescription, privacy: .private)")
+                self.floorPlanDetailTask = nil
+                self.floorPlanDetailState = .failed(
+                    "도면 상세 정보를 불러오지 못했습니다. 네트워크 연결을 확인한 뒤 다시 시도해주세요."
+                )
+            }
+        }
+    }
+
+    private func applyFloorPlanDetail(_ snapshot: LocalFloorPlanSnapshot, for id: String) {
+        guard viewedFloorPlanID == id else { return }
+#if canImport(UIKit)
+        guard let image = UIImage(data: snapshot.registration.image.pngData),
+              let mask = UIImage(
+                data: snapshot.maskPNGData,
+                scale: 1 / CGFloat(snapshot.registration.resolvedGrid.cellSizePixels)
+              ) else {
+            floorPlanDetailState = .failed("도면 미리보기를 표시하지 못했습니다.")
+            return
+        }
+        floorPlanDetailImage = image
+        floorPlanDetailMaskImage = mask
+#endif
+        floorPlanDetailSnapshot = snapshot
+        floorPlanDetailState = .loaded
+    }
+
+    private func cancelFloorPlanDetailLoad() {
+        floorPlanDetailTask?.cancel()
+        floorPlanDetailTask = nil
+    }
+
+    private func clearFloorPlanDetail() {
+        cancelFloorPlanDetailLoad()
+        viewedFloorPlanID = nil
+        floorPlanDetailSnapshot = nil
+        floorPlanDetailState = .idle
+        floorPlanDeletionError = nil
+        editingFloorPlanID = nil
+#if canImport(UIKit)
+        floorPlanDetailImage = nil
+        floorPlanDetailMaskImage = nil
+#endif
+    }
+
     private static func sessionCreationMessage(for error: Error) -> String {
         if error as? RepositoryError == .pinTaken {
             return "사용 가능한 PIN을 만들지 못했습니다. 다시 시도해주세요."
@@ -665,12 +834,17 @@ final class InstructorStore {
         return "세션을 만들지 못했습니다. 네트워크 연결을 확인한 뒤 다시 시도해주세요."
     }
 
-    private func uploadFloorPlan(_ registration: LocalRegisteredFloorPlan) {
+    private func uploadFloorPlan(
+        _ registration: LocalRegisteredFloorPlan,
+        replacing existingPlan: InstructorFloorPlan? = nil
+    ) {
         isUploadingFloorPlan = true
         floorPlanUploadError = nil
         failedFloorPlanRegistration = registration
+        failedReplacementFloorPlanID = existingPlan?.id
         let repository = floorPlanFileRepository
         let catalogRepository = floorPlanCatalogRepository
+        let expectedPhase: InstructorPhase = existingPlan == nil ? .floorPlanCreation : .floorPlanEditing
         let preparation = Task.detached(priority: .userInitiated) {
             try LocalFloorPlanFileBuilder.build(from: registration)
         }
@@ -686,12 +860,12 @@ final class InstructorStore {
                 try Task.checkCancellation()
                 let now = Date.now
                 let plan = InstructorFloorPlan(
-                    id: upload.registration.id.uuidString,
-                    name: upload.registration.name,
-                    fileName: upload.registration.image.fileName,
-                    referenceDistance: upload.registration.scale.meters,
+                    id: existingPlan?.id ?? upload.registration.id.uuidString,
+                    name: existingPlan?.name ?? upload.registration.name,
+                    fileName: existingPlan?.fileName ?? upload.registration.image.fileName,
+                    referenceDistance: existingPlan?.referenceDistance ?? upload.registration.scale.meters,
                     reference: upload.reference,
-                    createdAt: now,
+                    createdAt: existingPlan?.createdAt ?? now,
                     updatedAt: now,
                     registeredPlan: upload.registration
                 )
@@ -703,7 +877,7 @@ final class InstructorStore {
                     throw FloorPlanRegistrationError.localSave
                 }
                 try Task.checkCancellation()
-                guard let self, self.phase == .floorPlanCreation else { return }
+                guard let self, self.phase == expectedPhase else { return }
                 if let index = self.floorPlans.firstIndex(where: { $0.id == plan.id }) {
                     self.floorPlans[index] = plan
                 } else {
@@ -712,9 +886,19 @@ final class InstructorStore {
                 self.floorPlans.sort { ($0.createdAt, $0.id) < ($1.createdAt, $1.id) }
                 self.floorPlanCatalogState = .loaded
                 self.selectFloorPlan(plan.id)
+                let detailSnapshot = self.floorPlanDraft.maskPNGData.map {
+                    LocalFloorPlanSnapshot(registration: upload.registration, maskPNGData: $0)
+                }
                 self.clearFloorPlanUpload()
                 self.floorPlanDraft.reset()
-                self.phase = .floorPlanList
+                if let detailSnapshot, existingPlan != nil {
+                    self.viewedFloorPlanID = plan.id
+                    self.editingFloorPlanID = nil
+                    self.applyFloorPlanDetail(detailSnapshot, for: plan.id)
+                    self.phase = .floorPlanDetail
+                } else {
+                    self.phase = .floorPlanList
+                }
             } catch {
                 guard let self, !(error is CancellationError) else { return }
                 self.isUploadingFloorPlan = false
@@ -730,6 +914,7 @@ final class InstructorStore {
         isUploadingFloorPlan = false
         floorPlanUploadError = nil
         failedFloorPlanRegistration = nil
+        failedReplacementFloorPlanID = nil
     }
 
     private static func floorPlanUploadMessage(for error: Error) -> String {
