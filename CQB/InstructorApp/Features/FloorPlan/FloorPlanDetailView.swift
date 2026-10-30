@@ -127,7 +127,7 @@ struct FloorPlanDetailView: View {
                     .dateTime
                         .year().month(.twoDigits).day(.twoDigits)
                         .hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)
-                        .locale(Locale(identifier: "ko_KR"))
+                        .locale(Locale(identifier: "ko_KR@hours=h23"))
                 ))
                 .font(DSTypography.body)
                 .foregroundStyle(InstructorColor.textSecondary)
