@@ -52,6 +52,8 @@
 				"docs/issue-56-implementation.md",
 				"docs/issue-80-implementation.md",
 				"docs/issue-82-implementation.md",
+				"docs/issue-95-ai-wall-segmentation.md",
+				"docs/issue-97-binary-wall-coreml.md",
 				"docs/issue-102-blocked-region-autofill.md",
 				docs/README.md,
 			);

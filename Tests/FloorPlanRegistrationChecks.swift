@@ -286,7 +286,8 @@ enum FloorPlanRegistrationChecks {
             width: image.width, height: image.height, edits: [], outline: outline)
         let scale = LocalPlanScale(a: .init(x: 0.2, y: 0.2), b: .init(x: 0.8, y: 0.2), meters: 10)
         let registration = LocalRegisteredFloorPlan(id: UUID(), name: "홀수 도면", image: image,
-            baseGrid: imported.baseGrid, edits: [], outline: outline, scale: scale, resolvedGrid: resolved)
+            baseGrid: imported.baseGrid, edits: [], outline: outline, scale: scale, resolvedGrid: resolved,
+            extractionAlgorithm: imported.extractionAlgorithm)
         let upload = try LocalFloorPlanFileBuilder.build(from: registration)
         let manifest = try JSONDecoder().decode(FloorPlanManifest.self, from: upload.files.navigationMapJSON)
         let grid = manifest.navigationGrid
@@ -302,13 +303,14 @@ enum FloorPlanRegistrationChecks {
         precondition(manifest.imageSHA256 == LocalFloorPlanFileBuilder.sha256(upload.files.imagePNG))
         precondition(grid.maskSHA256 == LocalFloorPlanFileBuilder.sha256(upload.files.resolvedMask))
         precondition(upload.reference.navigationSHA256 == LocalFloorPlanFileBuilder.sha256(upload.files.navigationMapJSON))
+        precondition(manifest.extractionAlgorithmVersion == imported.extractionAlgorithm.rawValue)
 
         var unalignedImage = image
         unalignedImage.width = 101
         unalignedImage.height = 81
         let unaligned = LocalRegisteredFloorPlan(id: registration.id, name: registration.name,
             image: unalignedImage, baseGrid: imported.baseGrid, edits: [], outline: outline,
-            scale: scale, resolvedGrid: resolved)
+            scale: scale, resolvedGrid: resolved, extractionAlgorithm: imported.extractionAlgorithm)
         do {
             _ = try LocalFloorPlanFileBuilder.build(from: unaligned)
             fatalError("an unaligned image must be rejected before upload")

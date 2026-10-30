@@ -131,7 +131,8 @@ enum InstructorDemoScenario {
                 b: LocalPlanPoint(x: 0.35, y: 0.9),
                 meters: 10
             ),
-            resolvedGrid: grid
+            resolvedGrid: grid,
+            extractionAlgorithm: .v13
         )
     }
 

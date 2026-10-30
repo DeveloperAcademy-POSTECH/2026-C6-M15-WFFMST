@@ -47,10 +47,16 @@ nonisolated struct LocalImportedImage: Equatable, Sendable {
     var fileName: String
 }
 
+nonisolated enum LocalWallExtractionAlgorithm: String, Equatable, Sendable {
+    case v13 = "v13-wall-detector"
+    case binaryCoreML = "unet-resnet34-binary-fp16-v1"
+}
+
 nonisolated struct LocalExtractionResult: Sendable {
     var image: LocalImportedImage
     var baseGrid: LocalObstacleGrid
     var suggestedOutline: [LocalPlanPoint]
+    var extractionAlgorithm: LocalWallExtractionAlgorithm = .v13
 }
 
 nonisolated struct LocalBlockedRegionSuggestion: Equatable, Sendable {
@@ -68,6 +74,7 @@ nonisolated struct LocalRegisteredFloorPlan: Equatable, Sendable {
     let outline: [LocalPlanPoint]
     let scale: LocalPlanScale
     let resolvedGrid: LocalObstacleGrid
+    let extractionAlgorithm: LocalWallExtractionAlgorithm
 }
 
 nonisolated enum LocalCanvasTool: String, CaseIterable, Sendable {

@@ -49,6 +49,7 @@ final class FloorPlanDraftStore {
     private(set) var isDrawing = false
     private(set) var errorMessage: String?
     private(set) var maskPNGData: Data?
+    private(set) var extractionAlgorithm: LocalWallExtractionAlgorithm = .v13
 #if canImport(UIKit)
     private(set) var previewImage: UIImage?
     private(set) var maskImage: UIImage?
@@ -167,6 +168,7 @@ final class FloorPlanDraftStore {
                 self.clearImageState()
                 self.image = result.image
                 self.baseGrid = result.baseGrid
+                self.extractionAlgorithm = result.extractionAlgorithm
                 self.resolvedGrid = grid
                 self.outline = result.suggestedOutline
                 self.maskPNGData = png
@@ -351,7 +353,8 @@ final class FloorPlanDraftStore {
     func registration() -> LocalRegisteredFloorPlan? {
         guard canRegister, let image, let baseGrid, let resolvedGrid, let scale else { return nil }
         return LocalRegisteredFloorPlan(id: UUID(), name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-            image: image, baseGrid: baseGrid, edits: edits, outline: outline, scale: scale, resolvedGrid: resolvedGrid)
+            image: image, baseGrid: baseGrid, edits: edits, outline: outline, scale: scale,
+            resolvedGrid: resolvedGrid, extractionAlgorithm: extractionAlgorithm)
     }
 
     // Outline/image changes must not display a previously confirmed boundary.
@@ -428,6 +431,7 @@ final class FloorPlanDraftStore {
         step = .information
         image = nil
         baseGrid = nil
+        extractionAlgorithm = .v13
         resolvedGrid = nil
         edits = []
         outline = []

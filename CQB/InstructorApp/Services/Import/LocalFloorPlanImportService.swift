@@ -4,9 +4,12 @@ import ImageIO
 import OSLog
 import UniformTypeIdentifiers
 
-/// PoC V13 추출기를 사용하는 앱 내부 입력 경계. paleWalls 프로필은 이번 이관에서 제외한다.
+/// Core ML 벽 분할 모델을 사용하는 앱 내부 입력 경계.
 struct LocalFloorPlanImportService: FloorPlanImporting {
-    private static let logger = Logger(subsystem: "com.wffmst.cqb", category: "FloorPlanImport")
+    nonisolated private static let logger = Logger(
+        subsystem: "com.wffmst.cqb",
+        category: "FloorPlanImport"
+    )
 
     nonisolated init() {}
 
@@ -92,19 +95,37 @@ struct LocalFloorPlanImportService: FloorPlanImporting {
         logDuration("normalization", since: normalizationStart)
         try Task.checkCancellation()
         let extractionStart = ContinuousClock.now
-        let grid = try LocalV13WallDetector.grid(rgba: pixels, width: width, height: height)
+        let grid: LocalObstacleGrid
+        let extractionAlgorithm: LocalWallExtractionAlgorithm
+        do {
+            grid = try LocalAIWallDetector.grid(
+                image: image,
+                sourceWidth: width,
+                sourceHeight: height
+            )
+            extractionAlgorithm = .binaryCoreML
+            logDuration("ai-wall-extraction", since: extractionStart)
+        } catch let error as CancellationError {
+            throw error
+        } catch {
+            logger.error("AI wall extraction failed; using V13 fallback: \(error.localizedDescription, privacy: .public)")
+            try Task.checkCancellation()
+            grid = try LocalV13WallDetector.grid(rgba: pixels, width: width, height: height)
+            extractionAlgorithm = .v13
+            logDuration("v13-wall-extraction-fallback", since: extractionStart)
+        }
         let suggestion = try LocalBlockedRegionAutoFill.suggest(
             base: grid,
             rgba: pixels,
             width: width,
             height: height
         )
-        logDuration("wall-extraction", since: extractionStart)
         logDuration("service-total", since: totalStart)
         return LocalExtractionResult(
             image: LocalImportedImage(pngData: output as Data, width: width, height: height, fileName: url.lastPathComponent),
             baseGrid: grid,
-            suggestedOutline: suggestion?.outline ?? [])
+            suggestedOutline: suggestion?.outline ?? [],
+            extractionAlgorithm: extractionAlgorithm)
     }
 
     nonisolated private static func logDuration(_ stage: String, since start: ContinuousClock.Instant) {
