@@ -23,13 +23,18 @@ public struct Session: Codable, Sendable, Identifiable {
     /// 세션 생성 시 고정한다. 다른 도면을 사용하려면 새 세션을 생성한다.
     public let floorPlan: FloorPlanReference
 
+    /// 세션 생성 시 고정한다. 스캔하지 않은 훈련장이면 nil이고, 대원이 출발 위치를 직접 정한다.
+    /// 값이 있으면 `worldMap.floorPlan == floorPlan`이어야 한다. 세션을 만드는 쪽과 Firestore 규칙이 확인한다.
+    public let worldMap: WorldMapReference?
+
     public init(
         id: UUID,
         pin: String,
         name: String,
         status: SessionStatus,
         startedAt: Date? = nil,
-        floorPlan: FloorPlanReference
+        floorPlan: FloorPlanReference,
+        worldMap: WorldMapReference? = nil
     ) {
         self.id = id
         self.pin = pin
@@ -37,5 +42,11 @@ public struct Session: Codable, Sendable, Identifiable {
         self.status = status
         self.startedAt = startedAt
         self.floorPlan = floorPlan
+        self.worldMap = worldMap
+    }
+
+    /// 스캔이 없거나, 스캔이 이 세션의 도면에서 만들어졌으면 true다.
+    public var worldMapMatchesFloorPlan: Bool {
+        worldMap.map { $0.floorPlan == floorPlan } ?? true
     }
 }

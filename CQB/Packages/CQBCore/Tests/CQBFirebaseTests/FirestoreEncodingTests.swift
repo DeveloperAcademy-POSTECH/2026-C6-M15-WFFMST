@@ -40,6 +40,27 @@ func sessionData() throws {
     #expect(floorPlan["floorPlanID"] as? String == floorPlanID.uuidString)
     #expect(floorPlan["navigationSHA256"] as? String == "nav-sha")
     #expect(data["instructorUid"] as? String == "instructor-uid")
+    #expect(data["worldMap"] == nil)
+}
+
+@Test("Session의 스캔 참조는 맵으로 저장된다")
+func sessionWorldMapData() throws {
+    let worldMapID = UUID(uuidString: "00000000-0000-0000-0000-000000000903")!
+    let floorPlan = FloorPlanReference(floorPlanID: floorPlanID, navigationSHA256: "nav-sha")
+    let session = Session(
+        id: sessionID, pin: "123456", name: "스캔 훈련", status: .waiting,
+        floorPlan: floorPlan,
+        worldMap: WorldMapReference(worldMapID: worldMapID, setupSHA256: "setup-sha", floorPlan: floorPlan)
+    )
+
+    let data = try FirestoreEncoding.session(session, instructorUid: "instructor-uid")
+    let worldMap = try #require(data["worldMap"] as? [String: Any])
+
+    #expect(worldMap["worldMapID"] as? String == worldMapID.uuidString)
+    #expect(worldMap["setupSHA256"] as? String == "setup-sha")
+    let worldMapFloorPlan = try #require(worldMap["floorPlan"] as? [String: Any])
+    #expect(worldMapFloorPlan["floorPlanID"] as? String == floorPlanID.uuidString)
+    #expect(worldMapFloorPlan["navigationSHA256"] as? String == "nav-sha")
 }
 
 @Test("훈련을 시작할 때만 Session.startedAt이 서버 시각이 된다")
