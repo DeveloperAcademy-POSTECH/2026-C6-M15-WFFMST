@@ -33,7 +33,10 @@ struct FloorPlanCreateView: View {
         .background(InstructorColor.canvas.ignoresSafeArea())
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .toolbar(.hidden, for: .navigationBar)
-        .background(FloorPlanInputAnchor(presentation: importer).frame(width: 0, height: 0))
+        .background(
+            FloorPlanInputAnchor(presentation: importer) { focusedField = nil }
+                .frame(width: 0, height: 0)
+        )
         .fileImporter(
             isPresented: Binding(
                 get: { importer.isPresented },
@@ -415,7 +418,7 @@ struct FloorPlanCreateView: View {
                             text: Binding(get: { store.distanceText }, set: store.setDistance)
                         )
                         .focused($focusedField, equals: .distance)
-                        .keyboardType(.decimalPad)
+                        .keyboardType(.numbersAndPunctuation)
                         .multilineTextAlignment(.center)
                         .font(DSTypography.body)
                         .foregroundStyle(InstructorColor.textPrimary)
@@ -445,6 +448,7 @@ struct FloorPlanCreateView: View {
                         prompt: Text("훈련장 A").foregroundStyle(InstructorColor.textSecondary)
                     )
                     .focused($focusedField, equals: .name)
+                    .keyboardType(.default)
                     .font(DSTypography.body)
                     .foregroundStyle(InstructorColor.textPrimary)
                     .tint(InstructorColor.actionPrimary)
