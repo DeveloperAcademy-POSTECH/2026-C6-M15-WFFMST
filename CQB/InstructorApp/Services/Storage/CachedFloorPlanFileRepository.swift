@@ -39,6 +39,7 @@ actor CachedFloorPlanFileRepository: FloorPlanFileRepository {
         static let image = "original.png"
         static let navigationMap = "navigation-map.json"
         static let mask = "resolved-mask.bin"
+        static let stagingPrefix = ".staging-"
     }
 
     private let remote: any FloorPlanFileRepository
@@ -59,7 +60,7 @@ actor CachedFloorPlanFileRepository: FloorPlanFileRepository {
     }
 
     func upload(_ files: FloorPlanFiles, for reference: FloorPlanReference) async throws {
-        try Self.validate(files, reference: reference)
+        _ = try LocalFloorPlanFileValidator.validate(files: files, reference: reference)
         try await remote.upload(files, for: reference)
         storeInMemory(files, key: Self.cacheKey(for: reference))
         try? storeOnDisk(files, reference: reference)
@@ -82,7 +83,7 @@ actor CachedFloorPlanFileRepository: FloorPlanFileRepository {
             let remote = remote
             let task = Task.detached {
                 let files = try await remote.download(reference)
-                try Self.validate(files, reference: reference)
+                _ = try LocalFloorPlanFileValidator.validate(files: files, reference: reference)
                 return files
             }
             request = InFlight(id: UUID(), task: task)
@@ -132,10 +133,11 @@ actor CachedFloorPlanFileRepository: FloorPlanFileRepository {
     }
 
     private func loadFromDisk(reference: FloorPlanReference, key: String) -> FloorPlanFiles? {
+        try? removeAbandonedStagingDirectories()
         let directory = configuration.directory.appendingPathComponent(key, isDirectory: true)
         do {
             let files = try Self.readFiles(at: directory)
-            try Self.validate(files, reference: reference)
+            _ = try LocalFloorPlanFileValidator.validate(files: files, reference: reference)
             try? fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: directory.path)
             return files
         } catch {
@@ -147,17 +149,21 @@ actor CachedFloorPlanFileRepository: FloorPlanFileRepository {
     private func storeOnDisk(_ files: FloorPlanFiles, reference: FloorPlanReference) throws {
         let root = configuration.directory
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+        try removeAbandonedStagingDirectories()
 
         let key = Self.cacheKey(for: reference)
         let destination = root.appendingPathComponent(key, isDirectory: true)
-        let staging = root.appendingPathComponent(".staging-\(UUID().uuidString)", isDirectory: true)
+        let staging = root.appendingPathComponent("\(FileName.stagingPrefix)\(UUID().uuidString)", isDirectory: true)
         defer { try? fileManager.removeItem(at: staging) }
 
         try fileManager.createDirectory(at: staging, withIntermediateDirectories: false)
         try files.imagePNG.write(to: staging.appendingPathComponent(FileName.image), options: .atomic)
         try files.navigationMapJSON.write(to: staging.appendingPathComponent(FileName.navigationMap), options: .atomic)
         try files.resolvedMask.write(to: staging.appendingPathComponent(FileName.mask), options: .atomic)
-        try Self.validate(Self.readFiles(at: staging), reference: reference)
+        _ = try LocalFloorPlanFileValidator.validate(
+            files: Self.readFiles(at: staging),
+            reference: reference
+        )
 
         if fileManager.fileExists(atPath: destination.path) {
             _ = try fileManager.replaceItemAt(destination, withItemAt: staging)
@@ -173,7 +179,7 @@ actor CachedFloorPlanFileRepository: FloorPlanFileRepository {
         let directories = try fileManager.contentsOfDirectory(
             at: root,
             includingPropertiesForKeys: Array(keys),
-            options: [.skipsHiddenFiles]
+            options: []
         ).compactMap { url -> (url: URL, date: Date, size: Int)? in
             guard let values = try? url.resourceValues(forKeys: keys), values.isDirectory == true else { return nil }
             return (url, values.contentModificationDate ?? .distantPast, Self.directorySize(at: url))
@@ -196,50 +202,25 @@ actor CachedFloorPlanFileRepository: FloorPlanFileRepository {
         }
     }
 
+    private func removeAbandonedStagingDirectories() throws {
+        let root = configuration.directory
+        guard fileManager.fileExists(atPath: root.path) else { return }
+        let children = try fileManager.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: []
+        )
+        for child in children where child.lastPathComponent.hasPrefix(FileName.stagingPrefix) {
+            try fileManager.removeItem(at: child)
+        }
+    }
+
     private static func readFiles(at directory: URL) throws -> FloorPlanFiles {
         FloorPlanFiles(
             imagePNG: try Data(contentsOf: directory.appendingPathComponent(FileName.image)),
             navigationMapJSON: try Data(contentsOf: directory.appendingPathComponent(FileName.navigationMap)),
             resolvedMask: try Data(contentsOf: directory.appendingPathComponent(FileName.mask))
         )
-    }
-
-    private static func validate(_ files: FloorPlanFiles, reference: FloorPlanReference) throws {
-        guard sha256(files.navigationMapJSON) == reference.navigationSHA256.lowercased(),
-              let manifest = try? JSONDecoder().decode(FloorPlanManifest.self, from: files.navigationMapJSON),
-              manifest.schemaVersion == 1,
-              manifest.floorPlanID == reference.floorPlanID,
-              manifest.coordinateSystem == "image-pixel-top-left",
-              manifest.imageWidth > 0,
-              manifest.imageHeight > 0,
-              manifest.navigationGrid.columns > 0,
-              manifest.navigationGrid.rows > 0,
-              manifest.navigationGrid.cellSizePixels > 0,
-              manifest.navigationGrid.encoding == "uint8-row-major",
-              manifest.navigationGrid.freeValue == 0,
-              manifest.navigationGrid.blockedValue == 1 else {
-            throw RepositoryError.integrityMismatch
-        }
-
-        let (imageWidth, widthOverflow) = manifest.navigationGrid.columns.multipliedReportingOverflow(
-            by: manifest.navigationGrid.cellSizePixels
-        )
-        let (imageHeight, heightOverflow) = manifest.navigationGrid.rows.multipliedReportingOverflow(
-            by: manifest.navigationGrid.cellSizePixels
-        )
-        let (maskByteCount, maskOverflow) = manifest.navigationGrid.columns.multipliedReportingOverflow(
-            by: manifest.navigationGrid.rows
-        )
-        guard !widthOverflow,
-              !heightOverflow,
-              !maskOverflow,
-              manifest.imageWidth == imageWidth,
-              manifest.imageHeight == imageHeight,
-              files.resolvedMask.count == maskByteCount,
-              sha256(files.imagePNG) == manifest.imageSHA256.lowercased(),
-              sha256(files.resolvedMask) == manifest.navigationGrid.maskSHA256.lowercased() else {
-            throw RepositoryError.integrityMismatch
-        }
     }
 
     static func cacheKey(for reference: FloorPlanReference) -> String {
@@ -259,7 +240,7 @@ actor CachedFloorPlanFileRepository: FloorPlanFileRepository {
         guard let enumerator = FileManager.default.enumerator(
             at: directory,
             includingPropertiesForKeys: [.totalFileAllocatedSizeKey, .fileAllocatedSizeKey],
-            options: [.skipsHiddenFiles]
+            options: []
         ) else { return 0 }
         return enumerator.compactMap { item -> Int? in
             guard let url = item as? URL,
