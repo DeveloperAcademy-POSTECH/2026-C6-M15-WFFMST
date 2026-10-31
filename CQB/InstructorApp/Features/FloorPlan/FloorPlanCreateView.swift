@@ -164,7 +164,6 @@ struct FloorPlanCreateView: View {
                 mask: store.maskImage,
                 tool: store.tool,
                 normalizedDiameter: store.normalizedDiameter,
-                outline: store.outline,
                 selection: store.selection,
                 pendingBrushStrokes: store.pendingBrushStrokes,
                 scaleA: app.isEditingFloorPlan ? nil : store.scaleA,

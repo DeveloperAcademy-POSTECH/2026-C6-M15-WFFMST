@@ -99,7 +99,6 @@ struct FloorPlanDetailView: View {
                 mask: store.floorPlanDetailMaskImage,
                 tool: .move,
                 normalizedDiameter: 0.006,
-                outline: [],
                 layers: layers,
                 onStroke: { _ in },
                 onPoint: { _ in }
