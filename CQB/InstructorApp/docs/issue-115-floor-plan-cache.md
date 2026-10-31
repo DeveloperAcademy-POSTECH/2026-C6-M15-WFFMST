@@ -10,6 +10,8 @@
 
 캐시 키는 `floorPlanID`와 소문자로 정규화한 `navigationSHA256`을 함께 해시해 만든다. 따라서 도면 수정으로 새 `FloorPlanReference`가 생기면 이전 파일과 섞이지 않는다. 동일 키의 동시 다운로드는 하나의 작업을 공유한다.
 
+`InstructorApp`은 앱 프로세스 범위에서 `CachedFloorPlanFileRepository`를 한 번만 생성한다. 모든 `WindowGroup`의 `AppContainer`와 각 컨테이너의 `InstructorStore`, `AARStore`가 이 인스턴스를 공유하므로 메모리 캐시, 진행 중인 다운로드, staging 정리가 하나의 actor에서 직렬화된다.
+
 ## 무결성과 기록 방식
 
 세 파일을 사용하기 전에 다음 항목을 모두 검증한다.

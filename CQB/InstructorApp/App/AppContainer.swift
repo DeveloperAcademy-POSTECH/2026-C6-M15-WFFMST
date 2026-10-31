@@ -1,3 +1,4 @@
+import CQBCore
 import CQBFirebase
 import SwiftUI
 
@@ -8,11 +9,11 @@ struct AppContainer: View {
 
     @MainActor
     init(
+        floorPlanFileRepository: any FloorPlanFileRepository,
         floorPlanCatalogRepository: (any FloorPlanCatalogRepository)? = nil
     ) {
-        let floorPlanFiles = CachedFloorPlanFileRepository(remote: StorageFloorPlanFileRepository())
         _store = State(initialValue: InstructorStore(
-            floorPlanFileRepository: floorPlanFiles,
+            floorPlanFileRepository: floorPlanFileRepository,
             floorPlanCatalogRepository: floorPlanCatalogRepository,
             sessionRepository: FirestoreSessionRepository(),
             memberRepository: FirestoreMemberRepository(),
@@ -23,7 +24,7 @@ struct AppContainer: View {
             memberRepository: FirestoreMemberRepository(),
             recordingRepository: FirestoreRecordingRepository(),
             trackResultRepository: StorageTrackResultRepository(),
-            floorPlanFileRepository: floorPlanFiles,
+            floorPlanFileRepository: floorPlanFileRepository,
             videoChunkRepository: StorageVideoChunkRepository()
         ))
     }
