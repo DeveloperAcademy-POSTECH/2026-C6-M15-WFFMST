@@ -64,10 +64,10 @@ enum LocalFloorPlanGeometry {
         edits: [LocalEditAction], outline: [LocalPlanPoint]
     ) throws -> LocalObstacleGrid {
         try validateInput(base: base, width: width, height: height)
-        var result = try replay(base: base, width: width, height: height, edits: edits)
+        var initial = base
         let outside = try outsideMask(base: base, width: width, height: height, outline: outline)
-        try applyOutside(outside, to: &result)
-        return result
+        try applyOutside(outside, to: &initial)
+        return try replay(base: initial, width: width, height: height, edits: edits)
     }
 
     nonisolated static func resolve(
@@ -271,8 +271,8 @@ enum LocalFloorPlanGeometry {
     }
 }
 
-/// Bounded, image-scoped cache. Keeps edits BEFORE outline clipping so changing
-/// the boundary can reveal prior open/block edits correctly. No per-stroke grids.
+/// Bounded, image-scoped cache. The generated outside mask is the initial
+/// obstacle state, and explicit user edits are replayed after it. No per-stroke grids.
 nonisolated struct LocalFloorPlanReplayCache: Sendable {
     private let base: LocalObstacleGrid
     private let width: Int
@@ -280,7 +280,6 @@ nonisolated struct LocalFloorPlanReplayCache: Sendable {
     private var edited: LocalObstacleGrid
     private var appliedEdits: [LocalEditAction] = []
     private var appliedOutline: [LocalPlanPoint]?
-    private var outside: [UInt8] = []
 
     init(base: LocalObstacleGrid, width: Int, height: Int) throws {
         try LocalFloorPlanGeometry.validateInput(base: base, width: width, height: height)
@@ -292,19 +291,30 @@ nonisolated struct LocalFloorPlanReplayCache: Sendable {
 
     mutating func resolve(edits: [LocalEditAction], outline: [LocalPlanPoint]) throws -> LocalObstacleGrid {
         try LocalFloorPlanGeometry.validateEdits(edits)
-        let isAppend = edits.count >= appliedEdits.count && edits.starts(with: appliedEdits)
-        let pending = isAppend ? Array(edits.dropFirst(appliedEdits.count)) : edits
+        let canAppend = appliedOutline == outline
+            && edits.count >= appliedEdits.count
+            && edits.starts(with: appliedEdits)
+        let pending = canAppend ? Array(edits.dropFirst(appliedEdits.count)) : edits
         // Work in local values: cancellation/errors must not partially advance the cache.
-        let nextEdited = try LocalFloorPlanGeometry.replay(base: isAppend ? edited : base,
-            width: width, height: height, edits: pending)
-        let nextOutside = appliedOutline == outline ? outside :
-            try LocalFloorPlanGeometry.outsideMask(base: base, width: width, height: height, outline: outline)
-        var result = nextEdited
-        try LocalFloorPlanGeometry.applyOutside(nextOutside, to: &result)
-        edited = nextEdited
+        var initial = canAppend ? edited : base
+        if !canAppend {
+            let nextOutside = try LocalFloorPlanGeometry.outsideMask(
+                base: base,
+                width: width,
+                height: height,
+                outline: outline
+            )
+            try LocalFloorPlanGeometry.applyOutside(nextOutside, to: &initial)
+        }
+        let result = try LocalFloorPlanGeometry.replay(
+            base: initial,
+            width: width,
+            height: height,
+            edits: pending
+        )
+        edited = result
         appliedEdits = edits
         appliedOutline = outline
-        outside = nextOutside
         return result
     }
 

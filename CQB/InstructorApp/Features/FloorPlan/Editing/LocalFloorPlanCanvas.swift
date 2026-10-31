@@ -10,7 +10,6 @@ struct LocalFloorPlanCanvas: UIViewRepresentable {
     var mask: UIImage?
     var tool: LocalCanvasTool
     var normalizedDiameter: Double
-    var outline: [LocalPlanPoint]
     var selection: [LocalPlanPoint] = []
     var pendingBrushStrokes: [LocalEditStroke] = []
     var scaleA: LocalPlanPoint?
@@ -36,7 +35,7 @@ struct LocalFloorPlanCanvas: UIViewRepresentable {
         view.onScaleMarkerMoved = onScaleMarkerMoved
         view.onEditingChanged = onEditingChanged
         view.update(image: image, mask: mask, tool: tool,
-                    normalizedDiameter: normalizedDiameter, outline: outline, selection: selection,
+                    normalizedDiameter: normalizedDiameter, selection: selection,
                     pendingBrushStrokes: pendingBrushStrokes,
                     scaleA: scaleA, scaleB: scaleB, scaleLabel: scaleLabel, layers: layers)
     }
@@ -99,7 +98,7 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
     }
 
     func update(image: UIImage, mask: UIImage?, tool: LocalCanvasTool,
-                normalizedDiameter: Double, outline: [LocalPlanPoint], selection: [LocalPlanPoint],
+                normalizedDiameter: Double, selection: [LocalPlanPoint],
                 pendingBrushStrokes: [LocalEditStroke],
                 scaleA: LocalPlanPoint?, scaleB: LocalPlanPoint?, scaleLabel: String?,
                 layers: FloorPlanLayerDisplay = FloorPlanLayerDisplay()) {
@@ -128,7 +127,7 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
         let diameter = normalizedDiameter.isFinite ? max(0.0001, normalizedDiameter) : 0.01
         let diameterChanged = self.normalizedDiameter != diameter
         self.normalizedDiameter = diameter
-        markersView.update(outline: outline, selection: selection, pendingBrushStrokes: pendingBrushStrokes,
+        markersView.update(selection: selection, pendingBrushStrokes: pendingBrushStrokes,
                            brushDiameter: diameter, scaleA: scaleA, scaleB: scaleB, scaleLabel: scaleLabel)
         if toolChanged || imageChanged { updateInteraction() }
         else if diameterChanged { updateInkTool() }
@@ -394,7 +393,6 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
 }
 
 private final class LocalFloorPlanMarkersView: UIView {
-    var outline: [LocalPlanPoint] = []
     var selection: [LocalPlanPoint] = []
     var pendingBrushStrokes: [LocalEditStroke] = []
     var brushDiameter = 0.006
@@ -403,13 +401,12 @@ private final class LocalFloorPlanMarkersView: UIView {
     var scaleLabel: String?
     var viewScale: CGFloat = 1 { didSet { if viewScale != oldValue { setNeedsDisplay() } } }
 
-    func update(outline: [LocalPlanPoint], selection: [LocalPlanPoint],
+    func update(selection: [LocalPlanPoint],
                 pendingBrushStrokes: [LocalEditStroke], brushDiameter: Double,
                 scaleA: LocalPlanPoint?, scaleB: LocalPlanPoint?, scaleLabel: String?) {
-        guard self.outline != outline || self.selection != selection
+        guard self.selection != selection
                 || self.pendingBrushStrokes != pendingBrushStrokes || self.brushDiameter != brushDiameter
                 || self.scaleA != scaleA || self.scaleB != scaleB || self.scaleLabel != scaleLabel else { return }
-        self.outline = outline
         self.selection = selection
         self.pendingBrushStrokes = pendingBrushStrokes
         self.brushDiameter = brushDiameter
@@ -425,15 +422,6 @@ private final class LocalFloorPlanMarkersView: UIView {
         context.setLineWidth(2 * unit)
         context.setLineCap(.round)
         context.setLineJoin(.round)
-        context.setStrokeColor(UIColor.systemPurple.cgColor)
-        if let first = outline.first {
-            context.move(to: cg(first))
-            for point in outline.dropFirst() { context.addLine(to: cg(point)) }
-            if outline.count >= 3 { context.closePath() }
-            context.strokePath()
-        }
-
-        // Applied outlines are not directly editable, so only the boundary is shown.
         // Temporary selection points remain numbered until the user applies them.
         if let first = selection.first {
             context.setStrokeColor(UIColor.systemOrange.cgColor)

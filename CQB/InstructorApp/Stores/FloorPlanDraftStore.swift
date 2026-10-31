@@ -7,7 +7,6 @@ import UIKit
 
 private enum LocalFloorPlanHistoryEntry: Sendable {
     case edit(LocalEditAction)
-    case outline(previous: [LocalPlanPoint], next: [LocalPlanPoint])
 }
 
 enum FloorPlanProcessingStage: Equatable {
@@ -85,7 +84,7 @@ final class FloorPlanDraftStore {
         processingStage == .analyzingImage || processingStage == .preparingPreview
     }
     var activity: String { processingStage.message ?? "" }
-    // Only same-image edit replay retains a preview; import/outline/retry work stays visible.
+    // Only same-image edit replay retains a preview; import/retry work stays visible.
     var isReplayingEdits: Bool { processingStage == .replayingEdits && maskPNGData != nil }
     var canContinueEditing: Bool {
         image != nil && resolvedGrid != nil && !outline.isEmpty && !isProcessing && !isDrawing
@@ -102,8 +101,36 @@ final class FloorPlanDraftStore {
     }
     var hasValidScale: Bool { canContinueEditing && pixelsPerMeter != nil }
     var canRegister: Bool { step == .scaling && hasValidScale && hasName }
+    var canSaveMaskEdit: Bool { step == .editing && hasValidScale && hasName }
 
     func begin() { reset() }
+    func beginMaskEditing(_ snapshot: LocalFloorPlanSnapshot) {
+        invalidateWork()
+        clearImageState()
+        let registration = snapshot.registration
+        name = registration.name
+        image = registration.image
+        baseGrid = registration.resolvedGrid
+        resolvedGrid = registration.resolvedGrid
+        outline = registration.outline
+        scaleA = registration.scale.a
+        scaleB = registration.scale.b
+        distanceText = String(registration.scale.meters)
+        extractionAlgorithm = registration.extractionAlgorithm
+        maskPNGData = snapshot.maskPNGData
+        step = .editing
+        editorMode = .pen
+        tool = .pen
+#if canImport(UIKit)
+        previewImage = UIImage(data: registration.image.pngData)
+        maskImage = UIImage(
+            data: snapshot.maskPNGData,
+            scale: 1 / CGFloat(registration.resolvedGrid.cellSizePixels)
+        )
+#endif
+        errorMessage = nil
+    }
+
     func reset() {
         invalidateWork()
         name = ""
@@ -148,12 +175,15 @@ final class FloorPlanDraftStore {
 
                 self.processingStage = .preparingPreview
                 let previewStart = ContinuousClock.now
+                let outline = result.suggestedOutline.isEmpty
+                    ? Self.fullImageOutline
+                    : result.suggestedOutline
                 // Prepare the complete replacement off-main, including its first preview.
                 // The old draft remains usable if any of these steps fail or are cancelled.
                 let preparation = Task.detached(priority: .userInitiated) {
                     var cache = try LocalFloorPlanReplayCache(base: result.baseGrid,
                         width: result.image.width, height: result.image.height)
-                    let grid = try cache.resolve(edits: [], outline: result.suggestedOutline)
+                    let grid = try cache.resolve(edits: [], outline: outline)
                     try Task.checkCancellation()
                     let png = try LocalFloorPlanMaskRenderer.pngData(grid: grid)
                     return (cache, grid, png)
@@ -170,7 +200,7 @@ final class FloorPlanDraftStore {
                 self.baseGrid = result.baseGrid
                 self.extractionAlgorithm = result.extractionAlgorithm
                 self.resolvedGrid = grid
-                self.outline = result.suggestedOutline
+                self.outline = outline
                 self.maskPNGData = png
                 self.replayCache = cache
 #if canImport(UIKit)
@@ -239,20 +269,6 @@ final class FloorPlanDraftStore {
         } catch { errorMessage = error.localizedDescription }
     }
 
-    func applyOutlineSelection() {
-        guard canApplySelection else { return }
-        do {
-            try LocalFloorPlanGeometry.validateOutline(selection)
-            let previous = outline
-            let next = selection
-            outline = next
-            selection = []
-            history.append(.outline(previous: previous, next: next))
-            redoHistory = []
-            refreshMask()
-        } catch { errorMessage = error.localizedDescription }
-    }
-
     func undo() {
         guard !isDrawing, !isProcessing else { return }
         if !selection.isEmpty {
@@ -268,8 +284,6 @@ final class FloorPlanDraftStore {
         switch entry {
         case .edit:
             _ = edits.popLast()
-        case .outline(let previous, _):
-            outline = previous
         }
         recomputeMask(preservingPreview: true)
     }
@@ -281,8 +295,6 @@ final class FloorPlanDraftStore {
         switch entry {
         case .edit(let edit):
             edits.append(edit)
-        case .outline(_, let next):
-            outline = next
         }
         recomputeMask(preservingPreview: true)
     }
@@ -292,10 +304,7 @@ final class FloorPlanDraftStore {
         edits = []
         pendingBrushStrokes = []
         selection = []
-        history.removeAll { entry in
-            if case .edit = entry { return true }
-            return false
-        }
+        history = []
         redoHistory = []
         recomputeMask(preservingPreview: true)
     }
@@ -321,24 +330,6 @@ final class FloorPlanDraftStore {
         }
     }
 
-    func resetOutline() {
-        guard !outline.isEmpty else { return }
-        let previous = outline
-        outline = []
-        history.append(.outline(previous: previous, next: []))
-        redoHistory = []
-        refreshMask()
-    }
-
-    func undoOutlinePoint() {
-        guard !selection.isEmpty else { return }
-        selection.removeLast()
-    }
-
-    func confirmOutline() {
-        applyOutlineSelection()
-    }
-
     func continueToScale() {
         guard canContinueEditing else { return }
         step = .scaling
@@ -357,9 +348,19 @@ final class FloorPlanDraftStore {
             resolvedGrid: resolvedGrid, extractionAlgorithm: extractionAlgorithm)
     }
 
-    // Outline/image changes must not display a previously confirmed boundary.
-    func refreshMask() {
-        recomputeMask(preservingPreview: false)
+    func maskEditingRegistration() -> LocalRegisteredFloorPlan? {
+        guard canSaveMaskEdit, let image, let baseGrid, let resolvedGrid, let scale else { return nil }
+        return LocalRegisteredFloorPlan(
+            id: UUID(),
+            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+            image: image,
+            baseGrid: baseGrid,
+            edits: edits,
+            outline: outline,
+            scale: scale,
+            resolvedGrid: resolvedGrid,
+            extractionAlgorithm: extractionAlgorithm
+        )
     }
 
     // During stroke replay, retain only the last visual preview to prevent flashing.
@@ -426,6 +427,7 @@ final class FloorPlanDraftStore {
         logger.debug("stage=\(stage, privacy: .public) duration_ms=\(milliseconds, privacy: .public)")
 #endif
     }
+
     private func clearImageState() {
         replayCache = nil
         step = .information
@@ -451,4 +453,11 @@ final class FloorPlanDraftStore {
         maskImage = nil
 #endif
     }
+
+    private static let fullImageOutline = [
+        LocalPlanPoint(x: 0, y: 0),
+        LocalPlanPoint(x: 1, y: 0),
+        LocalPlanPoint(x: 1, y: 1),
+        LocalPlanPoint(x: 0, y: 1),
+    ]
 }

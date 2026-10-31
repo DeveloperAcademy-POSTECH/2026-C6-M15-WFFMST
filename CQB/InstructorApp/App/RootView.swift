@@ -60,7 +60,9 @@ struct RootView: View {
         [
             .home,
             .floorPlanList,
+            .floorPlanDetail,
             .floorPlanCreation,
+            .floorPlanEditing,
             .sessionCreation,
             .teamReadiness,
             .trainingInProgress,
@@ -75,7 +77,9 @@ struct RootView: View {
         switch store.phase {
         case .home: HomeView()
         case .floorPlanList: FloorPlanListView()
+        case .floorPlanDetail: FloorPlanDetailView()
         case .floorPlanCreation: FloorPlanCreateView()
+        case .floorPlanEditing: FloorPlanCreateView()
         case .sessionCreation: TrainingSessionCreateView()
         case .teamReadiness: TeamReadinessView()
         case .trainingInProgress: TrainingInProgressView()
