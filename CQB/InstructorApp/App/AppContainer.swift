@@ -10,8 +10,9 @@ struct AppContainer: View {
     init(
         floorPlanCatalogRepository: (any FloorPlanCatalogRepository)? = nil
     ) {
+        let floorPlanFiles = CachedFloorPlanFileRepository(remote: StorageFloorPlanFileRepository())
         _store = State(initialValue: InstructorStore(
-            floorPlanFileRepository: StorageFloorPlanFileRepository(),
+            floorPlanFileRepository: floorPlanFiles,
             floorPlanCatalogRepository: floorPlanCatalogRepository,
             sessionRepository: FirestoreSessionRepository(),
             memberRepository: FirestoreMemberRepository(),
@@ -22,7 +23,7 @@ struct AppContainer: View {
             memberRepository: FirestoreMemberRepository(),
             recordingRepository: FirestoreRecordingRepository(),
             trackResultRepository: StorageTrackResultRepository(),
-            floorPlanFileRepository: StorageFloorPlanFileRepository(),
+            floorPlanFileRepository: floorPlanFiles,
             videoChunkRepository: StorageVideoChunkRepository()
         ))
     }
