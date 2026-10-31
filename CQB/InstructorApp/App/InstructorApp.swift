@@ -6,9 +6,13 @@ import SwiftUI
 @main
 struct InstructorApp: App {
     private static let logger = Logger(subsystem: "com.wffmst.cqb", category: "InstructorApp")
+    private let floorPlanFileRepository: CachedFloorPlanFileRepository
     private let floorPlanCatalogRepository: any FloorPlanCatalogRepository
 
     init() {
+        floorPlanFileRepository = CachedFloorPlanFileRepository(
+            remote: StorageFloorPlanFileRepository()
+        )
         do {
             let container = try ModelContainer(for: StoredFloorPlan.self)
             floorPlanCatalogRepository = SwiftDataFloorPlanCatalogRepository(container: container)
@@ -28,7 +32,10 @@ struct InstructorApp: App {
 
     var body: some Scene {
         WindowGroup {
-            AppContainer(floorPlanCatalogRepository: floorPlanCatalogRepository)
+            AppContainer(
+                floorPlanFileRepository: floorPlanFileRepository,
+                floorPlanCatalogRepository: floorPlanCatalogRepository
+            )
         }
     }
 }

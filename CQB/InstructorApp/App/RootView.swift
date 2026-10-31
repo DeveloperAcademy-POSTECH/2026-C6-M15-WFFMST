@@ -91,5 +91,5 @@ struct RootView: View {
 }
 
 #Preview {
-    AppContainer()
+    AppContainer(floorPlanFileRepository: DemoFloorPlanFileRepository())
 }

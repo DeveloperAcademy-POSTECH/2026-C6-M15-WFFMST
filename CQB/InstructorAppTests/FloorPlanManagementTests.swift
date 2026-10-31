@@ -43,6 +43,49 @@ final class FloorPlanManagementTests: XCTestCase {
         }
     }
 
+    func testRestoredDetailUsesDiskCacheOfflineAfterRelaunch() async throws {
+        let registration = try makeRegistration()
+        let upload = try LocalFloorPlanFileBuilder.build(from: registration)
+        let restoredPlan = InstructorFloorPlan(
+            id: "restored-plan",
+            name: registration.name,
+            fileName: registration.image.fileName,
+            referenceDistance: registration.scale.meters,
+            reference: upload.reference,
+            createdAt: Date(timeIntervalSince1970: 10),
+            updatedAt: Date(timeIntervalSince1970: 10)
+        )
+        let cacheDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FloorPlanDetailCacheTests-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: cacheDirectory) }
+
+        let online = FloorPlanDetailRemoteStub(result: .success(upload.files))
+        let firstStore = InstructorStore(
+            floorPlans: [restoredPlan],
+            floorPlanFileRepository: makeCache(remote: online, directory: cacheDirectory)
+        )
+        firstStore.openFloorPlanList()
+        firstStore.openFloorPlanDetail(restoredPlan.id)
+
+        let didLoadOnline = await waitUntil { firstStore.floorPlanDetailState == .loaded }
+        let onlineDownloadCount = await online.downloadCount
+        XCTAssertTrue(didLoadOnline)
+        XCTAssertEqual(onlineDownloadCount, 1)
+
+        let offline = FloorPlanDetailRemoteStub(result: .failure(FloorPlanDetailTestError.offline))
+        let relaunchedStore = InstructorStore(
+            floorPlans: [restoredPlan],
+            floorPlanFileRepository: makeCache(remote: offline, directory: cacheDirectory)
+        )
+        relaunchedStore.openFloorPlanList()
+        relaunchedStore.openFloorPlanDetail(restoredPlan.id)
+
+        let didLoadOffline = await waitUntil { relaunchedStore.floorPlanDetailState == .loaded }
+        let offlineDownloadCount = await offline.downloadCount
+        XCTAssertTrue(didLoadOffline)
+        XCTAssertEqual(offlineDownloadCount, 0)
+    }
+
     func testMaskEditReplacesReferenceWithoutDuplicatingCatalogEntry() async throws {
         let registration = try makeRegistration()
         let originalReference = FloorPlanReference(
@@ -188,6 +231,20 @@ final class FloorPlanManagementTests: XCTestCase {
         )
     }
 
+    private func makeCache(
+        remote: FloorPlanDetailRemoteStub,
+        directory: URL
+    ) -> CachedFloorPlanFileRepository {
+        CachedFloorPlanFileRepository(
+            remote: remote,
+            configuration: .init(
+                directory: directory,
+                diskLimitBytes: 10 * 1_024 * 1_024,
+                memoryLimitBytes: 10 * 1_024 * 1_024
+            )
+        )
+    }
+
     private func waitUntil(
         attempts: Int = 200,
         condition: @escaping @MainActor () -> Bool
@@ -198,6 +255,26 @@ final class FloorPlanManagementTests: XCTestCase {
         }
         return condition()
     }
+}
+
+private actor FloorPlanDetailRemoteStub: FloorPlanFileRepository {
+    private(set) var downloadCount = 0
+    private let result: Result<FloorPlanFiles, Error>
+
+    init(result: Result<FloorPlanFiles, Error>) {
+        self.result = result
+    }
+
+    func upload(_ files: FloorPlanFiles, for reference: FloorPlanReference) async throws {}
+
+    func download(_ reference: FloorPlanReference) async throws -> FloorPlanFiles {
+        downloadCount += 1
+        return try result.get()
+    }
+}
+
+private enum FloorPlanDetailTestError: Error {
+    case offline
 }
 
 private actor FloorPlanUploadRecorder {
