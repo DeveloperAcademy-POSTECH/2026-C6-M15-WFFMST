@@ -228,6 +228,8 @@ enum FloorPlanRegistrationChecks {
         await importer.succeed("latest.png")
         try await wait { !draft.isProcessing }
         precondition(draft.image?.fileName == "latest.png")
+        precondition(draft.outline == fullImageOutline,
+                     "자동 외곽이 없으면 도면 전체를 기본 범위로 사용해야 한다")
         precondition(draft.pendingBrushStrokes.isEmpty, "성공한 교체만 새 작업본을 적용해야 한다")
 
         let pickerCancellation = NSError(domain: NSCocoaErrorDomain, code: NSUserCancelledError)
@@ -241,9 +243,7 @@ enum FloorPlanRegistrationChecks {
         try await wait { await importer.has("original.png") }
         await importer.succeed("original.png")
         try await wait { !draft.isProcessing }
-        for point in outline { draft.placePoint(point) }
-        draft.confirmOutline()
-        try await wait { !draft.isProcessing }
+        precondition(draft.outline == fullImageOutline)
         let stroke = LocalEditStroke(
             mode: .block,
             points: [LocalPlanPoint(x: 0.3, y: 0.3), LocalPlanPoint(x: 0.6, y: 0.3)],
@@ -266,6 +266,13 @@ enum FloorPlanRegistrationChecks {
         LocalPlanPoint(x: 0.9, y: 0.1),
         LocalPlanPoint(x: 0.9, y: 0.9),
         LocalPlanPoint(x: 0.1, y: 0.9)
+    ]
+
+    private static let fullImageOutline = [
+        LocalPlanPoint(x: 0, y: 0),
+        LocalPlanPoint(x: 1, y: 0),
+        LocalPlanPoint(x: 1, y: 1),
+        LocalPlanPoint(x: 0, y: 1),
     ]
 
     private static func checkOddImageUpload() async throws {

@@ -334,20 +334,6 @@ struct FloorPlanCreateView: View {
                 .font(DSTypography.bodySmall)
                 .foregroundStyle(InstructorColor.textPrimary)
 
-            if !app.isEditingFloorPlan {
-                panelButton(
-                    store.outline.isEmpty ? "이동 가능 영역 지정" : "이동 가능 영역 다시 지정",
-                    enabled: store.canApplySelection,
-                    action: store.applyOutlineSelection
-                )
-                    .padding(.top, 24)
-
-                Text("선택한 영역의 바깥을 이동 불가로 지정합니다")
-                    .font(DSTypography.caption)
-                    .foregroundStyle(InstructorColor.textSecondary)
-                    .padding(.top, 12)
-            }
-
             panelButton("선택영역 추가하기", enabled: store.canApplySelection) {
                 store.applySelection(.block)
             }
