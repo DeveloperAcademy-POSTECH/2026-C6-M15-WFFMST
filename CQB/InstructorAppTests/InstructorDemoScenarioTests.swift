@@ -126,7 +126,7 @@ final class InstructorDemoScenarioTests: XCTestCase {
             if case .ready = state { return true }
             return false
         })
-        XCTAssertEqual(aarStore.playbackDuration, 12, accuracy: 0.001)
+        XCTAssertEqual(aarStore.playbackDuration, 30, accuracy: 0.001)
 
         aarStore.setPlaybackPosition(6)
         let positions = participantIDs.compactMap { aarStore.position(for: $0)?.point }
@@ -159,7 +159,7 @@ final class InstructorDemoScenarioTests: XCTestCase {
             }
         }.joined(separator: ", ")
         XCTAssertTrue(didLoadVideos, videoDiagnostics)
-        XCTAssertEqual(aarStore.playbackDuration, 12, accuracy: 0.1)
+        XCTAssertEqual(aarStore.playbackDuration, 30, accuracy: 0.1)
         XCTAssertTrue(selectedParticipantIDs.allSatisfy { id in
             if case .playing? = aarStore.videoFrame(for: id) { return true }
             return false
@@ -208,6 +208,59 @@ final class InstructorDemoScenarioTests: XCTestCase {
         XCTAssertTrue(aarStore.videos.isEmpty)
     }
 
+    func testDemoPlaybackSkipsTenSecondsWithinBoundsAndKeepsPlaybackState() async {
+        let environment = InstructorDemoScenario.makeEnvironment(processingDelay: .milliseconds(20))
+        let store = environment.store
+        let aarStore = environment.aarStore
+
+        store.openSessionCreation()
+        store.createSession()
+        let didCreateSession = await waitUntil {
+            store.phase == .teamReadiness && store.canStartTraining
+        }
+        XCTAssertTrue(didCreateSession)
+        store.startTraining()
+        let didStartTraining = await waitUntil { store.phase == .trainingInProgress }
+        XCTAssertTrue(didStartTraining)
+        store.finishTraining()
+        let didEnterAAR = await waitUntil { store.phase == .aar }
+        XCTAssertTrue(didEnterAAR)
+
+        guard let session = store.currentSession else {
+            return XCTFail("데모 세션이 유지되어야 합니다.")
+        }
+        await aarStore.load(
+            session: session,
+            participantIDs: store.participants.map(\.id),
+            localFloorPlan: store.selectedFloorPlan?.registeredPlan
+        )
+        XCTAssertEqual(aarStore.playbackDuration, 30, accuracy: 0.001)
+
+        aarStore.setPlaybackPosition(5)
+        aarStore.skipPlayback(by: -10)
+        XCTAssertEqual(aarStore.playbackPosition, 0, accuracy: 0.001)
+        XCTAssertFalse(aarStore.isPlaying)
+
+        aarStore.skipPlayback(by: 10)
+        XCTAssertEqual(aarStore.playbackPosition, 10, accuracy: 0.001)
+        aarStore.setPlaybackPosition(25)
+        aarStore.skipPlayback(by: 10)
+        XCTAssertEqual(aarStore.playbackPosition, 30, accuracy: 0.001)
+        aarStore.skipPlayback(by: 10)
+        XCTAssertEqual(aarStore.playbackPosition, 30, accuracy: 0.001)
+
+        aarStore.setPlaybackPosition(15)
+        aarStore.togglePlayback()
+        aarStore.skipPlayback(by: 10)
+        XCTAssertTrue(aarStore.isPlaying)
+        XCTAssertEqual(aarStore.playbackPosition, 25, accuracy: 0.2)
+        aarStore.togglePlayback()
+        XCTAssertFalse(aarStore.isPlaying)
+
+        store.shutdown()
+        aarStore.reset()
+    }
+
     func testBundledDemoVideosContainMonoAACAudio() async throws {
         for memberNumber in 1...6 {
             guard let url = Bundle.main.url(
@@ -219,7 +272,7 @@ final class InstructorDemoScenarioTests: XCTestCase {
 
             let asset = AVURLAsset(url: url)
             let duration = try await asset.load(.duration).seconds
-            XCTAssertEqual(duration, 12, accuracy: 0.1)
+            XCTAssertEqual(duration, 30, accuracy: 0.1)
             let audioTracks = try await asset.loadTracks(withMediaType: .audio)
             XCTAssertEqual(audioTracks.count, 1)
             let audioTrack = try XCTUnwrap(
@@ -252,7 +305,7 @@ final class InstructorDemoScenarioTests: XCTestCase {
         generator.requestedTimeToleranceAfter = .zero
 
         var frames: [Data] = []
-        for second in [1.0, 6.0, 11.0] {
+        for second in [1.0, 15.0, 29.0] {
             let (image, _) = try await generator.image(
                 at: CMTime(seconds: second, preferredTimescale: 600)
             )

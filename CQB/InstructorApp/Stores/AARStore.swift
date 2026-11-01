@@ -177,6 +177,10 @@ final class AARStore {
         syncVideos(seek: true)
     }
 
+    func skipPlayback(by seconds: Double) {
+        setPlaybackPosition(playbackPosition + seconds)
+    }
+
     /// AAR을 마치고 나갈 때 이 세션의 영상을 Storage와 기기 캐시에서 지운다.
     /// 지금은 영상을 남기기로 해 부르지 않는다(#66).
     /// 삭제가 실패해도 나가는 것을 막지 않는다. 남은 영상은 Storage 수명 주기 규칙이 켜져 있으면 1일 뒤 지워진다.
