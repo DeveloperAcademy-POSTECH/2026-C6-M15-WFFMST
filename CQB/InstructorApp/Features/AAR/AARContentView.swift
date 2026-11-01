@@ -29,47 +29,30 @@ private struct AARVideoPanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 8) {
-                HStack(spacing: 12) {
-                    Text("선택 영상")
+            HStack(spacing: 12) {
+                Text("선택 영상")
+                    .font(.headline)
+                    .foregroundStyle(InstructorColor.textPrimary)
+
+                Spacer()
+
+                Button(action: store.openAARVideoScreen) {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
                         .font(.headline)
-                        .foregroundStyle(InstructorColor.textPrimary)
-
-                    Spacer()
-
-                    Button(action: store.openAARVideoScreen) {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right")
-                            .font(.headline)
-                            .foregroundStyle(store.canOpenAARVideoScreen
-                                ? InstructorColor.textPrimary
-                                : InstructorColor.actionDisabled)
-                            .frame(width: 44, height: 44)
-                            .contentShape(.rect)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!store.canOpenAARVideoScreen)
-                    .accessibilityLabel("영상 화면으로 확대")
-                    .accessibilityIdentifier("aar.openVideoScreen")
+                        .foregroundStyle(store.canOpenAARVideoScreen
+                            ? InstructorColor.textPrimary
+                            : InstructorColor.actionDisabled)
+                        .frame(width: 44, height: 44)
+                        .contentShape(.rect)
                 }
-
-                MultiSelectionPicker(
-                    title: "대원 선택",
-                    options: store.aarParticipants,
-                    selectedIDs: Set(store.selectedParticipantIDs),
-                    optionTitle: \.displayName,
-                    canToggle: store.canToggleParticipant,
-                    onToggle: store.toggleParticipantSelection,
-                    selectedSummary: store.selectionSummary,
-                    fieldBackground: InstructorColor.surfaceBase,
-                    menuFillsFieldWidth: true
-                )
-                .frame(maxWidth: .infinity)
-                .accessibilityIdentifier("aar.participants")
+                .buttonStyle(.plain)
+                .disabled(!store.canOpenAARVideoScreen)
+                .accessibilityLabel("영상 화면으로 확대")
+                .accessibilityIdentifier("aar.openVideoScreen")
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, 12)
+            .frame(height: 52)
             .background(InstructorColor.surfaceRaised)
-            .zIndex(1)
 
             VStack(spacing: 1) {
                 ForEach(0..<store.maximumVideoCount, id: \.self) { index in

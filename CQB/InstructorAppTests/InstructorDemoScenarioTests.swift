@@ -92,37 +92,6 @@ final class InstructorDemoScenarioTests: XCTestCase {
         restartedStore.shutdown()
     }
 
-    func testAARParticipantCanBeSelectedBeforeTrackPositionIsAvailable() async {
-        let environment = InstructorDemoScenario.makeEnvironment(processingDelay: .milliseconds(20))
-        let store = environment.store
-        let aarStore = environment.aarStore
-
-        store.openSessionCreation()
-        store.createSession()
-        let didCreateSession = await waitUntil { store.phase == .teamReadiness && store.canStartTraining }
-        XCTAssertTrue(didCreateSession)
-
-        store.startTraining()
-        let didStartTraining = await waitUntil { store.phase == .trainingInProgress }
-        XCTAssertTrue(didStartTraining)
-        store.finishTraining()
-        let didEnterAAR = await waitUntil { store.phase == .aar }
-        XCTAssertTrue(didEnterAAR)
-
-        guard let participant = store.aarParticipants.first else {
-            return XCTFail("AAR 선택 대상 대원이 있어야 합니다.")
-        }
-        XCTAssertNil(aarStore.position(for: participant.id))
-
-        store.toggleParticipantSelection(participant.id)
-
-        XCTAssertEqual(store.selectedParticipantIDs, [participant.id])
-        XCTAssertTrue(store.canOpenAARVideoScreen)
-
-        store.shutdown()
-        aarStore.reset()
-    }
-
     func testDemoScenarioLoadsFiveTracksAndFourSelectedVideosInAAR() async {
         let environment = InstructorDemoScenario.makeEnvironment(processingDelay: .milliseconds(20))
         let store = environment.store
