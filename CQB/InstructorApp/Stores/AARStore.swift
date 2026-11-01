@@ -114,8 +114,11 @@ final class AARStore {
         }
         startRequestedVideoLoads()
         // 기존 영상까지 다시 seek하면 선택·해제할 때 재생 중인 모든 소리가 순간적으로 끊긴다.
-        // 캐시에 있어 즉시 표시되는 새 영상만 현재 타임라인 위치로 맞춘다.
+        // 캐시에 있어 즉시 표시되는 새 영상은 기본 음소거를 먼저 적용한 뒤 현재 위치로 맞춘다.
         for participantID in participantIDs where !previouslyRequestedIDs.contains(participantID) {
+            if case .ready(let player, _) = videos[participantID] {
+                player.isMuted = true
+            }
             syncVideo(participantID, seek: true)
         }
     }

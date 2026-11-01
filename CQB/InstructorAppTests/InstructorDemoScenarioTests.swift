@@ -165,27 +165,39 @@ final class InstructorDemoScenarioTests: XCTestCase {
             return false
         })
 
+        let reselectedParticipantID = selectedParticipantIDs[3]
         guard case .ready(let uninterruptedPlayer, _)? = aarStore.videos[selectedParticipantIDs[0]],
+              case .ready(let reselectedPlayer, _)? = aarStore.videos[reselectedParticipantID],
               let uninterruptedItem = uninterruptedPlayer.currentItem
         else {
-            return XCTFail("기존 영상 플레이어가 준비되어야 합니다.")
+            return XCTFail("기존 영상과 재선택할 영상 플레이어가 준비되어야 합니다.")
         }
         let didReachPlaybackPosition = await waitUntil(attempts: 100) {
             abs(uninterruptedPlayer.currentTime().seconds - 6) < 0.1
         }
         XCTAssertTrue(didReachPlaybackPosition)
 
+        store.toggleParticipantMute(selectedParticipantIDs[0])
+        store.toggleParticipantMute(reselectedParticipantID)
+        uninterruptedPlayer.isMuted = false
+        reselectedPlayer.isMuted = false
+        aarStore.togglePlayback()
+        XCTAssertTrue(aarStore.isPlaying)
+
         let unexpectedTimeJump = expectation(
             forNotification: .AVPlayerItemTimeJumped,
             object: uninterruptedItem
         )
         unexpectedTimeJump.isInverted = true
-        store.toggleParticipantSelection(selectedParticipantIDs[3])
+        store.toggleParticipantSelection(reselectedParticipantID)
         aarStore.showVideos(for: store.selectedParticipantIDs)
         await fulfillment(of: [unexpectedTimeJump], timeout: 0.2)
 
-        aarStore.togglePlayback()
-        XCTAssertTrue(aarStore.isPlaying)
+        store.toggleParticipantSelection(reselectedParticipantID)
+        aarStore.showVideos(for: store.selectedParticipantIDs)
+        XCTAssertTrue(reselectedPlayer.isMuted)
+        XCTAssertFalse(uninterruptedPlayer.isMuted)
+
         aarStore.togglePlayback()
         XCTAssertFalse(aarStore.isPlaying)
 
