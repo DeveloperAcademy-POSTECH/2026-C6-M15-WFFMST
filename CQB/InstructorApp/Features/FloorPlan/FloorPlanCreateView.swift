@@ -561,7 +561,7 @@ struct FloorPlanCreateView: View {
                         }
                         .padding(.top, 12)
                     } else if let index = store.currentScanCheckpointIndex {
-                        Text("도면에서 노란색으로 표시된 체크포인트 \(index + 1)로 이동해 주변을 천천히 비춘 뒤 기록하세요.")
+                        Text("도면에서 노란색으로 표시된 체크포인트 \(index + 1)의 실제 위치로 이동해 주변을 천천히 비춘 뒤 기록하세요.")
                             .font(DSTypography.bodySmall)
                             .foregroundStyle(InstructorColor.textSecondary)
                             .padding(.top, 16)
