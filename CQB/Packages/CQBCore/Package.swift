@@ -83,5 +83,12 @@ let package = Package(
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],
         ),
+        .testTarget(
+            name: "CQBDesignSystemTests",
+            dependencies: ["CQBDesignSystem"],
+            swiftSettings: [
+                .enableUpcomingFeature("ApproachableConcurrency"),
+            ],
+        ),
     ]
 )
