@@ -164,7 +164,7 @@ struct FloorPlanCreateView: View {
         if let image = store.previewImage {
             LocalFloorPlanCanvas(
                 image: image,
-                mask: store.maskImage,
+                mask: store.step == .editing ? store.maskImage : nil,
                 tool: store.tool,
                 normalizedDiameter: store.normalizedDiameter,
                 selection: store.selection,
@@ -537,7 +537,7 @@ struct FloorPlanCreateView: View {
 
     @ViewBuilder
     private var statusOverlay: some View {
-        if (store.isProcessing && !store.isReplayingEdits)
+        if (store.step == .editing && store.isProcessing && !store.isReplayingEdits)
             || importer.isPreparing || store.errorMessage != nil || importer.message != nil
             || app.isUploadingFloorPlan || app.floorPlanUploadError != nil {
             VStack(alignment: .leading, spacing: 8) {
@@ -557,7 +557,7 @@ struct FloorPlanCreateView: View {
                     }
                     .accessibilityIdentifier("floorPlan.uploading")
                 }
-                if store.isProcessing && !store.isReplayingEdits {
+                if store.step == .editing && store.isProcessing && !store.isReplayingEdits {
                     HStack {
                         ProgressView()
                         Text(store.activity)

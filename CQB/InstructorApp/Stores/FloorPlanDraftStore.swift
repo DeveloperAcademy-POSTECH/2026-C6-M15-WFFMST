@@ -486,10 +486,9 @@ final class FloorPlanDraftStore {
             )
             worldMapScanner.stop()
             errorMessage = nil
+            finishCreationIfReady()
             if maskExtractionState == .failed {
                 extractFallbackMask()
-            } else {
-                finishCreationIfReady()
             }
         } catch { errorMessage = error.localizedDescription }
     }
@@ -576,8 +575,7 @@ final class FloorPlanDraftStore {
     }
 
     private func finishCreationIfReady() {
-        guard worldMapDraft != nil, maskExtractionState == .succeeded,
-              resolvedGrid != nil, !outline.isEmpty else { return }
+        guard worldMapDraft != nil else { return }
         step = .editing
         editorMode = .pen
         tool = .pen
