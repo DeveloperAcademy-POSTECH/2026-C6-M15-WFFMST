@@ -784,6 +784,7 @@
 		};
 		788A10D8307697FA003DEA3E /* CQBCore */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = 788A10D7307697FA003DEA3E /* XCLocalSwiftPackageReference "Packages/CQBCore" */;
 			productName = CQBCore;
 		};
 		788A10EF30769F19003DEA3E /* CQBFixtures */ = {

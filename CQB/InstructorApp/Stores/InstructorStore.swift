@@ -180,7 +180,7 @@ final class InstructorStore {
     }
     var requiresUnreadyExclusionConfirmation: Bool { canRequestTrainingStart && unreadyCount > 0 }
     var canGoBack: Bool {
-        [.floorPlanList, .floorPlanDetail, .floorPlanCreation, .floorPlanEditing,
+        [.trainingHistory, .floorPlanList, .floorPlanDetail, .floorPlanCreation, .floorPlanEditing,
          .sessionCreation, .teamReadiness].contains(phase)
             && !isUploadingFloorPlan && !isCreatingSession && !isEndingSession && !isStartingTraining
     }
@@ -219,6 +219,7 @@ final class InstructorStore {
         return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
     }
 
+    func openTrainingHistory() { phase = .trainingHistory }
     func openFloorPlanList() { phase = .floorPlanList }
     func loadFloorPlans() {
         guard floorPlanCatalogState == .idle || floorPlanCatalogError != nil else { return }
@@ -552,6 +553,8 @@ final class InstructorStore {
     func goBack() {
         guard !isUploadingFloorPlan, !isCreatingSession, !isEndingSession, !isStartingTraining else { return }
         switch phase {
+        case .trainingHistory:
+            phase = .home
         case .floorPlanList:
             clearFloorPlanListPreview()
             phase = .home
