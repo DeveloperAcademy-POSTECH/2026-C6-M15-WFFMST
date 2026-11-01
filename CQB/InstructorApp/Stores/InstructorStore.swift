@@ -72,6 +72,8 @@ final class InstructorStore {
     private(set) var selectedFloorPlanID: String?
     private(set) var participants: [InstructorParticipant] = []
     private(set) var aarScreen: AARScreen = .floorPlan
+    /// 기록 업로드를 완료했거나 결과 준비 화면에서 명시적으로 포함된 AAR 재생 대상.
+    private(set) var aarParticipantIDs: Set<String> = []
     /// 최근 선택한 대원부터 영상 슬롯 1, 2, 3, 4에 배치한다.
     private(set) var selectedParticipantIDs: [String] = []
     /// 음소거를 직접 해제한 선택 대원. 선택에서 빠지면 함께 제거한다.
@@ -134,6 +136,7 @@ final class InstructorStore {
             memberConnectionState = .connected
             if previewPhase != .teamReadiness {
                 trainingParticipants = previewParticipants
+                aarParticipantIDs = Set(previewParticipants.map(\.id))
             }
         }
         selectedFloorPlanID = floorPlans.first?.id
@@ -179,8 +182,11 @@ final class InstructorStore {
         guard trainingStartedAt != nil else { return nil }
         return formattedTrainingElapsed(at: now)
     }
+    var aarParticipants: [InstructorParticipant] {
+        participants.filter { aarParticipantIDs.contains($0.id) }
+    }
     var selectedParticipants: [InstructorParticipant] {
-        let participantsByID = Dictionary(uniqueKeysWithValues: participants.map { ($0.id, $0) })
+        let participantsByID = Dictionary(uniqueKeysWithValues: aarParticipants.map { ($0.id, $0) })
         return selectedParticipantIDs.compactMap { participantsByID[$0] }
     }
     var selectionSummary: String {
@@ -422,10 +428,23 @@ final class InstructorStore {
         trainingRecords.retry()
     }
 
+    func excludeParticipantFromAAR(_ id: String) {
+        guard phase == .resultsPreparation else { return }
+        trainingRecords.excludeParticipant(id)
+    }
+
+    func proceedToAAR() {
+        guard phase == .resultsPreparation, trainingRecords.canProceedToAAR else { return }
+        enterAAR()
+    }
+
     private func enterAAR() {
-        guard phase == .resultsPreparation, trainingRecords.isReadyForAAR else { return }
+        guard phase == .resultsPreparation, trainingRecords.canProceedToAAR else { return }
+        let eligibleIDs = trainingRecords.aarEligibleParticipantIDs
+        guard !eligibleIDs.isEmpty else { return }
         trainingRecords.stop()
         resetAARPresentationState()
+        aarParticipantIDs = eligibleIDs
         playbackPosition = 331
         phase = .aar
     }
@@ -456,9 +475,8 @@ final class InstructorStore {
             unmutedParticipantIDs.insert(id)
         }
     }
-
     func canToggleParticipant(_ id: String) -> Bool {
-        phase == .aar && participants.contains(where: { $0.id == id })
+        phase == .aar && aarParticipantIDs.contains(id)
     }
 
     func toggleParticipantSelection(_ id: String) {
@@ -796,12 +814,14 @@ final class InstructorStore {
             selectFloorPlan(plan.id)
         }
         resetAARPresentationState()
+        aarParticipantIDs = Set(participants.map(\.id))
         phase = .aar
     }
 #endif
 
     private func resetAARPresentationState() {
         aarScreen = .floorPlan
+        aarParticipantIDs = []
         selectedParticipantIDs = []
         unmutedParticipantIDs = []
     }

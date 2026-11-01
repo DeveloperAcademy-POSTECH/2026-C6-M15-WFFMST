@@ -55,6 +55,8 @@ final class MemberStore {
     private(set) var errorMessage: String?
     private(set) var uploadProgress = 0.0
     private(set) var isUploadComplete = false
+    private(set) var isUploadAbandoned = false
+    private(set) var isFinalizingUploadFailure = false
     private(set) var uploadStatusMessage = "업로드를 준비하고 있습니다."
     private(set) var uploadErrorMessage: String?
     private(set) var isUploading = false
@@ -104,6 +106,11 @@ final class MemberStore {
     var isReady: Bool { startPoint != nil && directionPoint != nil && isTrackingReady }
     var canResetPosition: Bool { phase == .waiting && !startRequestedBySession }
     var isWaitingForTrainingStart: Bool { phase == .waiting && startRequestedBySession }
+    var canAbandonUpload: Bool {
+        !isDemoMode && phase == .uploading && uploadErrorMessage != nil
+            && !isUploading && !isFinalizingUploadFailure && !isUploadComplete && !isUploadAbandoned
+    }
+    var canLeaveUpload: Bool { isUploadComplete || isUploadAbandoned }
 
     /// 데모 Store에서만 사용한다. 번들 지도를 읽고 서버 참가 요청 없이 로컬 세션을 시작한다.
     func enterDemoSession(session: Session, memberName: String, bundle: Bundle = .main) {
@@ -568,6 +575,7 @@ final class MemberStore {
             ? 0
             : Double(uploadedVideoChunkCount) / Double(savedRecordingURLs.count + 1)
         isUploadComplete = false
+        isUploadAbandoned = false
         if uploadErrorMessage == nil {
             uploadStatusMessage = isDemoMode
                 ? "데모 결과를 기기 안에서 확인하고 있습니다."
@@ -578,7 +586,8 @@ final class MemberStore {
 
     /// 종료 후 미전송 조각을 재시도하고 보정 결과를 올린 뒤 기록을 완료한다.
     func uploadRecording() async {
-        guard phase == .uploading, !isUploading, !isUploadComplete else { return }
+        guard phase == .uploading, !isUploading, !isFinalizingUploadFailure,
+              !isUploadComplete, !isUploadAbandoned else { return }
 
         if isDemoMode {
             await completeDemoUpload()
@@ -713,6 +722,29 @@ final class MemberStore {
         await uploadRecording()
     }
 
+    /// 재시도를 포기한 기록을 서버 종결 상태로 전환한다. 로컬 파일은 후속 복구를 위해 보존한다.
+    func abandonUploading() async {
+        guard canAbandonUpload, let identity else { return }
+        isFinalizingUploadFailure = true
+        defer { isFinalizingUploadFailure = false }
+        do {
+            try await recordingRepository.updateRecording(
+                Recording(
+                    identity: identity,
+                    state: .failed,
+                    lastActiveAt: .now,
+                    videoChunkCount: savedRecordingURLs.count
+                )
+            )
+            uploadStatusMessage = "업로드 실패로 기록을 종료했습니다."
+            uploadErrorMessage = nil
+            isUploadAbandoned = true
+        } catch {
+            uploadStatusMessage = "업로드 실패 상태를 서버에 전송하지 못했습니다."
+            uploadErrorMessage = "연결을 확인한 뒤 업로드 종료를 다시 시도해주세요. \(error.localizedDescription)"
+        }
+    }
+
     func clearRecordingError() {
         errorMessage = nil
     }
@@ -735,7 +767,7 @@ final class MemberStore {
     }
 
     func returnToJoin() {
-        guard (phase == .saved && filesSaved) || (phase == .uploading && isUploadComplete) else { return }
+        guard (phase == .saved && filesSaved) || (phase == .uploading && canLeaveUpload) else { return }
         resetToJoin()
     }
 
@@ -801,6 +833,8 @@ final class MemberStore {
         recordingStartedAt = nil
         uploadProgress = 0
         isUploadComplete = false
+        isUploadAbandoned = false
+        isFinalizingUploadFailure = false
         uploadedVideoChunkCount = 0
         enqueuedVideoChunkIndexes = []
         videoChunkUploadQueue = nil
@@ -822,5 +856,33 @@ final class MemberStore {
         }
     }
 }
+
+#if DEBUG
+extension MemberStore {
+    /// 업로드 실패 종결과 재시도의 경합을 검증하기 위한 최소 상태를 구성한다.
+    /// 테스트 타깃에서만 사용하며 실제 사용자 흐름에는 노출하지 않는다.
+    func prepareUploadFailureRaceTest(
+        identity: TrackIdentity,
+        correction: RouteCorrectionOutput,
+        files: LocalRecordingFiles,
+        chunkURL: URL
+    ) async throws {
+        self.identity = identity
+        self.correction = correction
+        recordingFiles = files
+        savedRecordingURLs = [chunkURL]
+        filesSaved = true
+        recordingMetadataStarted = true
+        recordingMarkedFinishing = true
+        phase = .uploading
+        try startVideoChunkUploadQueue(identity: identity, files: files)
+        await enqueueVideoChunk(index: 0, url: chunkURL)
+        await videoChunkUploadQueue?.waitForInitialUploads()
+        await Task.yield()
+        uploadErrorMessage = "업로드 실패"
+        uploadStatusMessage = "업로드에 실패했습니다."
+    }
+}
+#endif
 
 private struct SessionFloorPlanLoadFailure: Error {}

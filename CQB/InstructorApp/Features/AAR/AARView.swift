@@ -57,7 +57,7 @@ struct AARView: View {
         guard let session = store.currentSession else { return }
         await aarStore.load(
             session: session,
-            participantIDs: store.participants.map(\.id),
+            participantIDs: store.aarParticipants.map(\.id),
             localFloorPlan: store.selectedFloorPlan?.registeredPlan
         )
     }
