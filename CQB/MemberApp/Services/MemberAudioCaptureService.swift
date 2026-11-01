@@ -8,6 +8,9 @@ nonisolated final class MemberAudioCaptureService: NSObject, AVCaptureAudioDataO
     private let queue = DispatchQueue(label: "com.cqb.member.audio-capture", qos: .userInitiated)
     private var onSampleBuffer: (@Sendable (CMSampleBuffer) -> Void)?
     private var onInterruption: (@Sendable () -> Void)?
+    private var onResume: (@Sendable () -> Void)?
+    private var isInterrupted = false
+    private var lastSampleTimestamp = -Double.infinity
     private var startup: AsyncStream<Double>.Continuation?
     private var observers: [NSObjectProtocol] = []
     private var isConfigured = false
@@ -16,7 +19,8 @@ nonisolated final class MemberAudioCaptureService: NSObject, AVCaptureAudioDataO
     /// Wait for the first real microphone buffer, so the encoder uses the device sample rate.
     /// A denied/unavailable microphone is represented by nil, as permitted by the contract.
     func start(onSampleBuffer: @escaping @Sendable (CMSampleBuffer) -> Void,
-               onInterruption: @escaping @Sendable () -> Void) async -> Double? {
+               onInterruption: @escaping @Sendable () -> Void,
+               onResume: @escaping @Sendable () -> Void) async -> Double? {
         guard !Task.isCancelled else { return nil }
         let requestID = UUID()
         let responses = AsyncStream<Double>(bufferingPolicy: .bufferingNewest(1)) { continuation in
@@ -34,6 +38,7 @@ nonisolated final class MemberAudioCaptureService: NSObject, AVCaptureAudioDataO
                 generation = requestID
                 self.onSampleBuffer = onSampleBuffer
                 self.onInterruption = onInterruption
+                self.onResume = onResume
                 startup = continuation
                 do {
                     try configure()
@@ -85,7 +90,10 @@ nonisolated final class MemberAudioCaptureService: NSObject, AVCaptureAudioDataO
                 self.queue.async { [self] in
                     guard self.generation == currentGeneration else { return }
                     if self.startup != nil { self.stopOnQueue() }
-                    else { self.onInterruption?() }
+                    else {
+                        self.isInterrupted = true
+                        self.onInterruption?()
+                    }
                 }
             })
         }
@@ -95,6 +103,9 @@ nonisolated final class MemberAudioCaptureService: NSObject, AVCaptureAudioDataO
         generation = UUID()
         onSampleBuffer = nil
         onInterruption = nil
+        onResume = nil
+        isInterrupted = false
+        lastSampleTimestamp = -Double.infinity
         observers.forEach(NotificationCenter.default.removeObserver)
         observers = []
         if session.isRunning { session.stopRunning() }
@@ -104,16 +115,25 @@ nonisolated final class MemberAudioCaptureService: NSObject, AVCaptureAudioDataO
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        guard let callback = onSampleBuffer, let clock = session.synchronizationClock,
+        guard CMSampleBufferDataIsReady(sampleBuffer), CMSampleBufferGetNumSamples(sampleBuffer) > 0,
+              let callback = onSampleBuffer, let clock = session.synchronizationClock,
               let rate = RecordingAudioSamples.sampleRate(of: sampleBuffer),
               let hostBuffer = RecordingAudioSamples.retime(sampleBuffer, convert: {
                   CMSyncConvertTime($0, from: clock, to: CMClockGetHostTimeClock())
               }) else { return }
+        let timestamp = CMSampleBufferGetPresentationTimeStamp(hostBuffer).seconds
+        guard timestamp.isFinite, timestamp > lastSampleTimestamp else { return }
+        lastSampleTimestamp = timestamp
         if let continuation = startup {
             startup = nil
             continuation.yield(rate)
             continuation.finish()
         }
         callback(hostBuffer)
+        // A notification ending an interruption does not prove that samples are flowing.
+        if isInterrupted {
+            isInterrupted = false
+            onResume?()
+        }
     }
 }

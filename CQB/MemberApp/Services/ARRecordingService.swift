@@ -27,6 +27,7 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
     private(set) var rotationDegrees = 0.0
     @ObservationIgnored private let writer = ARFrameVideoWriter()
     @ObservationIgnored private let audioCapture = MemberAudioCaptureService()
+    @ObservationIgnored private var audioStatusTask: Task<Void, Never>?
     @ObservationIgnored var onVideoChunkReady: (@MainActor @Sendable (Int, URL) -> Void)?
     @ObservationIgnored private var origin = SIMD3<Float>(repeating: 0)
     @ObservationIgnored private var firstTimestamp = 0.0
@@ -81,6 +82,7 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
     func stop() {
         wantsRunning = false
         guard !isRecording else { return }
+        stopAudioStatusUpdates()
         session.pause()
         running = false
         trackingWarning = nil
@@ -109,22 +111,27 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
         }
         guard wantsRunning, shouldStart(), !Task.isCancelled else { throw CaptureError.notReady }
         let videoWriter = writer
+        let audioStatus = startAudioStatusUpdates()
         let sampleRate: Double?
         if audioAllowed {
             sampleRate = await audioCapture.start(onSampleBuffer: { sampleBuffer in
                 videoWriter.append(audioSampleBuffer: sampleBuffer)
-            }, onInterruption: { [weak self] in
+            }, onInterruption: {
                 videoWriter.markAudioInterrupted()
-                Task { @MainActor [weak self] in
-                    self?.audioWarning = "소리 녹음이 중단되었습니다. 영상과 동선은 계속 기록합니다."
-                }
+                audioStatus.yield(true)
+            }, onResume: {
+                audioStatus.yield(false)
             })
         } else { sampleRate = nil }
-        audioWarning = sampleRate == nil ? "마이크를 사용할 수 없어 소리 없이 녹화합니다." : nil
+        if sampleRate == nil {
+            stopAudioStatusUpdates()
+            audioWarning = "마이크를 사용할 수 없어 소리 없이 녹화합니다."
+        }
         guard wantsRunning, shouldStart(), !Task.isCancelled, isReady, let frame = session.currentFrame,
               case .normal = frame.camera.trackingState,
               let heading = RouteHeading.stableCameraDirection(headings.map(\.1)),
               let rotation = RouteHeading.rotation(start: start, toward: direction, referenceRadians: heading) else {
+            stopAudioStatusUpdates()
             await audioCapture.stop()
             throw CaptureError.notReady
         }
@@ -141,6 +148,7 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
                 }
             }
         } catch {
+            stopAudioStatusUpdates()
             await audioCapture.stop()
             writer.cancel()
             throw error
@@ -163,11 +171,33 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
     /// Only used for a startup result the Store has not committed to its recording phase.
     func cancelUncommittedRecording() async {
         isRecording = false
+        stopAudioStatusUpdates()
         await audioCapture.stop()
         writer.cancel()
         samples = []
         videoChunkURLs = []
         if !wantsRunning { stop() }
+    }
+
+    private func startAudioStatusUpdates() -> AsyncStream<Bool>.Continuation {
+        stopAudioStatusUpdates()
+        let (updates, continuation) = AsyncStream<Bool>.makeStream()
+        // One consumer preserves capture-queue ordering across repeated interruptions.
+        // Cancelling it isolates late callbacks from a stopped or subsequent recording.
+        audioStatusTask = Task { @MainActor [weak self] in
+            for await isInterrupted in updates {
+                guard !Task.isCancelled, let self else { return }
+                self.audioWarning = isInterrupted
+                    ? "소리 녹음이 중단되었습니다. 영상과 동선은 계속 기록합니다." : nil
+            }
+        }
+        return continuation
+    }
+
+    private func stopAudioStatusUpdates() {
+        audioStatusTask?.cancel()
+        audioStatusTask = nil
+        audioWarning = nil
     }
 
     static func requestMicrophoneAccess(
@@ -195,6 +225,7 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
             writer.append(pixelBuffer: frame.capturedImage, timestamp: frame.timestamp)
         }
         isRecording = false
+        stopAudioStatusUpdates()
         await audioCapture.stop()
         let end = finalFrame.map { $0.timestamp + 1.0 / 30.0 }
         let chunks = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[URL], Error>) in
