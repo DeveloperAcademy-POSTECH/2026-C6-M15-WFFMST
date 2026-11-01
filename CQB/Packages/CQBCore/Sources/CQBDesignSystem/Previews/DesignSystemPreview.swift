@@ -7,7 +7,7 @@ private enum PreviewSegment: String, CaseIterable {
 }
 
 private struct DesignSystemPreview: View {
-    @State private var text = ""
+    @State private var focusedText = "포커스 상태를 확인하세요"
     @State private var segment: PreviewSegment = .pen
     @State private var sliderValue = 0.5
     @State private var selectedPill = 0
@@ -42,10 +42,19 @@ private struct DesignSystemPreview: View {
                     .disabled(true)
 
                 HStack {
-                    Button {} label: {
+                    Button {
+                        focusedField = false
+                    } label: {
                         Image(systemName: "chevron.left")
                     }
-                    .buttonStyle(.dsCircular)
+                    .buttonStyle(.dsCircular(size: .regular))
+
+                    Button {
+                        focusedField = false
+                    } label: {
+                        Image(systemName: "chevron.left")
+                    }
+                    .buttonStyle(.dsCircular(size: .compact))
 
                     Button("선택 전") { selectedPill = 0 }
                         .buttonStyle(DSSelectablePillStyle(isSelected: selectedPill == 0))
@@ -61,13 +70,15 @@ private struct DesignSystemPreview: View {
         VStack(alignment: .leading, spacing: DSSpacing.s24) {
             sectionTitle("Input · placeholder / filled / focused / disabled")
 
-            TextField(
-                "훈련명을 입력하세요",
-                text: $text,
-                prompt: Text("훈련명을 입력하세요").foregroundColor(DSColor.contentTertiary)
-            )
-            .focused($focusedField)
-            .textFieldStyle(.ds(isFocused: focusedField))
+            TextField("Placeholder", text: .constant(""), prompt: placeholder("훈련명을 입력하세요"))
+                .textFieldStyle(.dsDefault)
+
+            TextField("Filled", text: .constant("야간 실내 전술 훈련"))
+                .textFieldStyle(.dsDefault)
+
+            TextField("Focused", text: $focusedText)
+                .focused($focusedField)
+                .textFieldStyle(.ds(isFocused: focusedField))
 
             TextField("비활성 입력", text: .constant("수정할 수 없는 값"))
                 .textFieldStyle(.dsDefault)
@@ -86,8 +97,18 @@ private struct DesignSystemPreview: View {
 
     private var displaySection: some View {
         VStack(alignment: .leading, spacing: DSSpacing.s20) {
-            sectionTitle("Display · long Korean / status")
-            DSFloatingBanner("추가/지우기 버튼을 먼저 누른 후 필요한 영역을 그리듯 조작하세요. 긴 안내 문구도 잘리지 않고 여러 줄로 표시됩니다.")
+            sectionTitle("Guide Toast · regular / compact / card")
+            DSGuideToast(
+                "추가/지우기 버튼을 먼저 누른 후 필요한 영역을 그리듯 조작하세요. 긴 안내 문구도 잘리지 않고 여러 줄로 표시됩니다.",
+                type: .regular
+            )
+            DSGuideToast("포인트를 선택해 주세요", type: .compact)
+            DSGuideToast(
+                "화면에 표시된 안내를 확인하고 다음 단계로 이동하세요.",
+                type: .card
+            )
+
+            sectionTitle("Display · status")
             HStack {
                 DSStepIndicator(current: 1, total: 5)
                 DSStatusBadge("준비 완료", tone: .success)
@@ -100,6 +121,10 @@ private struct DesignSystemPreview: View {
         Text(title)
             .dsTextStyle(DSTypography.captionMedium14)
             .foregroundStyle(DSColor.contentSecondary)
+    }
+
+    private func placeholder(_ text: String) -> Text {
+        Text(text).foregroundColor(DSColor.contentTertiary)
     }
 }
 

@@ -24,6 +24,13 @@ import Testing
 
 @Test func standardControlHeightMatchesFigma() {
     #expect(DSSize.controlHeight == 56)
+    #expect(DSSize.compactControlHeight == 44)
+    #expect(DSCircularButtonSize.regular.dimension == 56)
+    #expect(DSCircularButtonSize.compact.dimension == 44)
+}
+
+@Test func guideToastTypesMatchFigma() {
+    #expect(DSGuideToastType.allCases == [.regular, .compact, .card])
 }
 
 @Test func typographyMetadataMatchesFigma() {
