@@ -5,6 +5,7 @@ task_root="$(cd "$(dirname "$0")/.." && pwd)"
 resource_dir="$task_root/CQB/InstructorApp/Resources/Demo"
 source_video="$resource_dir/DEBRIEF-Demo-AAR.mp4"
 frequencies=(420 440 460 640 660 680)
+duration=30
 
 command -v ffmpeg >/dev/null || { echo "ffmpeg가 필요합니다." >&2; exit 1; }
 command -v ffprobe >/dev/null || { echo "ffprobe가 필요합니다." >&2; exit 1; }
@@ -15,12 +16,13 @@ for index in 0 1 2 3 4 5; do
   destination="$resource_dir/DEBRIEF-Demo-AAR-$member_number.mp4"
 
   ffmpeg -loglevel error -y \
-    -i "$source_video" \
-    -f lavfi -i "sine=frequency=$frequency:sample_rate=48000:duration=12" \
+    -stream_loop -1 -i "$source_video" \
+    -f lavfi -i "sine=frequency=$frequency:sample_rate=48000:duration=$duration" \
     -filter:a volume=0.35 \
     -map 0:v:0 -map 1:a:0 \
     -c:v copy \
     -c:a aac -profile:a aac_low -ac 1 -b:a 64k \
+    -t "$duration" \
     -shortest \
     "$destination"
 

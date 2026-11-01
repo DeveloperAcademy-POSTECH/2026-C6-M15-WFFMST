@@ -352,7 +352,8 @@ private final class InstructorDemoRecordingRepository: RecordingRepository, @unc
                 identity: TrackIdentity(
                     sessionID: sessionID,
                     memberID: memberID,
-                    recordingID: UUID(uuidString: "30000000-0000-0000-0000-00000000009\(index + 1)")!
+                    // 30초 영상으로 교체하기 전의 12초 데모 캐시와 구분한다.
+                    recordingID: UUID(uuidString: "30000000-0000-0000-0000-00000000019\(index + 1)")!
                 ),
                 state: state,
                 startedAt: startedAt,
@@ -376,7 +377,7 @@ private struct InstructorDemoTrackResultRepository: TrackResultRepository {
         let points = Self.paths[index]
         let vertices = points.enumerated().map { offset, point in
             TrackResultVertex(
-                t: Double(offset) * 1.5,
+                t: Double(offset) * 3.75,
                 point: point,
                 part: 0,
                 sampleIndex: offset,
