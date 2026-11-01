@@ -212,10 +212,10 @@ private func aarVideoPreview(selectedCount: Int) -> some View {
         fileName: "훈련장 A 도면.png",
         referenceDistance: 15
     ), phase: .aar)
-    for participant in store.participants.dropFirst(selectedCount) {
+    for participant in store.participants.prefix(selectedCount).reversed() {
         store.toggleParticipantSelection(participant.id)
     }
-    store.changeAARMode(to: .video)
+    store.openAARVideoScreen()
 
     return AARVideoView()
         .environment(store)

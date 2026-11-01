@@ -95,8 +95,9 @@ enum TrainingLifecycleChecks {
                "재연결 첫 스냅샷 전 완료 판정 차단")
         repository.recordings[1].send([firstDone, record(session.id, secondID, .failed)])
         await wait("전원 종결 후 AAR") { store.phase == .aar }
-        expect(store.selectedParticipants.count == 2 && store.trainingRecords.failedCount == 1,
-               "failed도 종결이지만 실패 정보와 참가 명단 유지")
+        expect(store.participants.count == 2 && store.selectedParticipants.isEmpty
+                   && store.trainingRecords.failedCount == 1,
+               "failed도 종결이지만 참가 명단을 유지하고 AAR 선택은 비운다")
         await wait("AAR에서 기록 구독 정리") { repository.recordings[1].terminationCount == 1 }
         expect(repository.writes == [.running, .running, .ended, .ended], "실패 재시도 외 중복 상태 쓰기 없음")
         store.returnHome()

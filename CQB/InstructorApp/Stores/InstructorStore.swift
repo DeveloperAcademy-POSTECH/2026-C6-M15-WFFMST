@@ -71,10 +71,12 @@ final class InstructorStore {
     private(set) var trainingName = "샘플 훈련"
     private(set) var selectedFloorPlanID: String?
     private(set) var participants: [InstructorParticipant] = []
-    private(set) var aarMode: AARMode = .movement
-    private(set) var selectedParticipantIDs: Set<String> = []
+    private(set) var aarScreen: AARScreen = .floorPlan
+    /// 최근 선택한 대원부터 영상 슬롯 1, 2, 3, 4에 배치한다.
+    private(set) var selectedParticipantIDs: [String] = []
+    /// 음소거를 직접 해제한 선택 대원. 선택에서 빠지면 함께 제거한다.
+    private(set) var unmutedParticipantIDs: Set<String> = []
     private(set) var playbackPosition = 331.0
-    private(set) var aarNotice: String?
     private(set) var isUploadingFloorPlan = false
     private(set) var floorPlanUploadError: String?
     private(set) var currentSession: Session?
@@ -132,7 +134,6 @@ final class InstructorStore {
             memberConnectionState = .connected
             if previewPhase != .teamReadiness {
                 trainingParticipants = previewParticipants
-                selectedParticipantIDs = Set(previewParticipants.map(\.id))
             }
         }
         selectedFloorPlanID = floorPlans.first?.id
@@ -178,12 +179,16 @@ final class InstructorStore {
         guard trainingStartedAt != nil else { return nil }
         return formattedTrainingElapsed(at: now)
     }
-    var selectedParticipants: [InstructorParticipant] { participants.filter { selectedParticipantIDs.contains($0.id) } }
-    var selectionSummary: String {
-        if selectedParticipantIDs.count == participants.count && !participants.isEmpty { return "전체 대원" }
-        return selectedParticipants.isEmpty ? "대원 선택" : "대원 " + selectedParticipants.map { String($0.number) }.joined(separator: ", ")
+    var selectedParticipants: [InstructorParticipant] {
+        let participantsByID = Dictionary(uniqueKeysWithValues: participants.map { ($0.id, $0) })
+        return selectedParticipantIDs.compactMap { participantsByID[$0] }
     }
-    var canSelectAllParticipants: Bool { aarMode == .movement || participants.count <= maximumVideoCount }
+    var selectionSummary: String {
+        selectedParticipants.isEmpty
+            ? "대원 선택"
+            : "대원 " + selectedParticipants.map { String($0.number) }.joined(separator: ", ")
+    }
+    var canOpenAARVideoScreen: Bool { phase == .aar && !selectedParticipantIDs.isEmpty }
 
     func formattedTrainingElapsed(at date: Date) -> String {
         guard let trainingStartedAt else { return Self.formatTrainingElapsed(0) }
@@ -420,48 +425,64 @@ final class InstructorStore {
     private func enterAAR() {
         guard phase == .resultsPreparation, trainingRecords.isReadyForAAR else { return }
         trainingRecords.stop()
-        aarMode = .movement
-        selectedParticipantIDs = Set(participants.map(\.id))
+        resetAARPresentationState()
         playbackPosition = 331
-        aarNotice = nil
         phase = .aar
     }
-    func changeAARMode(to mode: AARMode) {
-        if mode == .video, selectedParticipantIDs.count > maximumVideoCount {
-            aarNotice = "영상은 최대 \(maximumVideoCount)명까지 볼 수 있습니다. 표시 대상을 \(maximumVideoCount)명 이하로 선택해주세요."
-            return
-        }
-        aarMode = mode
-        aarNotice = nil
+
+    func openAARVideoScreen() {
+        guard phase == .aar, canOpenAARVideoScreen else { return }
+        aarScreen = .video
     }
+
+    func showAARFloorPlan() {
+        guard phase == .aar else { return }
+        aarScreen = .floorPlan
+    }
+
     func isParticipantSelected(_ id: String) -> Bool { selectedParticipantIDs.contains(id) }
-    func canToggleParticipant(_ id: String) -> Bool {
-        guard participants.contains(where: { $0.id == id }) else { return false }
-        return aarMode == .movement || selectedParticipantIDs.contains(id) || selectedParticipantIDs.count < maximumVideoCount
+
+    func videoSlotNumber(for participantID: String) -> Int? {
+        selectedParticipantIDs.firstIndex(of: participantID).map { $0 + 1 }
     }
-    func toggleParticipantSelection(_ id: String) {
-        guard canToggleParticipant(id) else {
-            aarNotice = "영상은 최대 \(maximumVideoCount)명까지 선택할 수 있습니다."
-            return
-        }
-        if selectedParticipantIDs.contains(id) {
-            selectedParticipantIDs.remove(id)
+
+    func isParticipantMuted(_ id: String) -> Bool { !unmutedParticipantIDs.contains(id) }
+
+    func toggleParticipantMute(_ id: String) {
+        guard isParticipantSelected(id) else { return }
+        if unmutedParticipantIDs.contains(id) {
+            unmutedParticipantIDs.remove(id)
         } else {
-            selectedParticipantIDs.insert(id)
+            unmutedParticipantIDs.insert(id)
         }
-        aarNotice = nil
     }
-    func selectAllParticipants() {
-        guard canSelectAllParticipants else { return }
-        selectedParticipantIDs = Set(participants.map(\.id))
-        aarNotice = nil
+
+    func canToggleParticipant(_ id: String) -> Bool {
+        phase == .aar && participants.contains(where: { $0.id == id })
     }
+
+    func toggleParticipantSelection(_ id: String) {
+        guard canToggleParticipant(id) else { return }
+        if let index = selectedParticipantIDs.firstIndex(of: id) {
+            selectedParticipantIDs.remove(at: index)
+            unmutedParticipantIDs.remove(id)
+            if selectedParticipantIDs.isEmpty { aarScreen = .floorPlan }
+        } else {
+            selectedParticipantIDs.insert(id, at: 0)
+            if selectedParticipantIDs.count > maximumVideoCount,
+               let removedID = selectedParticipantIDs.popLast() {
+                unmutedParticipantIDs.remove(removedID)
+            }
+        }
+    }
+
     func setPlaybackPosition(_ value: Double) {
         guard value.isFinite else { return }
         playbackPosition = min(max(0, value), playbackDuration)
     }
     func finishAAR() {
         guard phase == .aar else { return }
+        resetAARPresentationState()
         phase = .aarCompleted
     }
     func returnHome() {
@@ -469,9 +490,7 @@ final class InstructorStore {
         trainingName = "샘플 훈련"
         selectFloorPlan(floorPlans.first?.id)
         participants = []
-        selectedParticipantIDs = []
-        aarMode = .movement
-        aarNotice = nil
+        resetAARPresentationState()
         currentSession = nil
         trainingStartedAt = nil
         playbackPosition = 331
@@ -776,12 +795,16 @@ final class InstructorStore {
         if let plan = floorPlans.first(where: { $0.reference == session.floorPlan }) {
             selectFloorPlan(plan.id)
         }
-        aarMode = .movement
-        selectedParticipantIDs = Set(participants.map(\.id))
-        aarNotice = nil
+        resetAARPresentationState()
         phase = .aar
     }
 #endif
+
+    private func resetAARPresentationState() {
+        aarScreen = .floorPlan
+        selectedParticipantIDs = []
+        unmutedParticipantIDs = []
+    }
 
     private func loadFloorPlanDetail(_ plan: InstructorFloorPlan) {
         floorPlanDetailTask?.cancel()
