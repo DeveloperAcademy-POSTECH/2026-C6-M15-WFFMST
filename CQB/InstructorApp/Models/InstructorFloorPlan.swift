@@ -9,6 +9,7 @@ struct InstructorFloorPlan: Identifiable, Equatable, Sendable {
     let fileName: String
     let referenceDistance: Double
     let reference: FloorPlanReference
+    let worldMap: WorldMapReference?
     let createdAt: Date
     let updatedAt: Date
     var registeredPlan: LocalRegisteredFloorPlan?
@@ -22,6 +23,7 @@ struct InstructorFloorPlan: Identifiable, Equatable, Sendable {
             floorPlanID: UUID(),
             navigationSHA256: "local-demo"
         ),
+        worldMap: WorldMapReference? = nil,
         createdAt: Date = .now,
         updatedAt: Date = .now,
         registeredPlan: LocalRegisteredFloorPlan? = nil
@@ -31,6 +33,7 @@ struct InstructorFloorPlan: Identifiable, Equatable, Sendable {
         self.fileName = fileName
         self.referenceDistance = referenceDistance
         self.reference = reference
+        self.worldMap = worldMap
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.registeredPlan = registeredPlan

@@ -206,7 +206,8 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
     private func updateInteraction() {
         let isDrawing = tool == .brush
         canvasView.isUserInteractionEnabled = isDrawing && !inputSuspended
-        placementTap.isEnabled = !inputSuspended && (tool == .pen || tool == .scaleA || tool == .scaleB)
+        placementTap.isEnabled = !inputSuspended
+            && (tool == .pen || tool == .scaleA || tool == .scaleB || tool == .alignmentPoint)
         scaleDrag.isEnabled = !inputSuspended && (tool == .scaleA || tool == .scaleB)
         scrollView.isUserInteractionEnabled = !inputSuspended
         scrollView.panGestureRecognizer.minimumNumberOfTouches = tool == .move ? 1 : 2
@@ -268,7 +269,7 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
 
     @objc private func placePoint(_ recognizer: UITapGestureRecognizer) {
         guard recognizer.state == .ended, !isUsingTool, !inputSuspended,
-              tool == .pen || tool == .scaleA || tool == .scaleB else { return }
+              tool == .pen || tool == .scaleA || tool == .scaleB || tool == .alignmentPoint else { return }
         let position = recognizer.location(in: contentView)
         guard position.x >= 0, position.y >= 0, position.x <= imageSize.width,
               position.y <= imageSize.height, imageSize.width > 0, imageSize.height > 0 else { return }

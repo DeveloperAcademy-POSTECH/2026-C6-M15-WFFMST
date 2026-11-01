@@ -85,7 +85,7 @@ nonisolated struct LocalRegisteredFloorPlan: Equatable, Sendable {
 }
 
 nonisolated enum LocalCanvasTool: String, CaseIterable, Sendable {
-    case move, pen, brush, scaleA, scaleB
+    case move, pen, brush, scaleA, scaleB, alignmentPoint
 }
 
 nonisolated enum LocalFloorPlanEditorMode: String, CaseIterable, Sendable {
@@ -97,7 +97,7 @@ nonisolated enum LocalScaleMarker: Sendable {
 }
 
 nonisolated enum FloorPlanRegistrationStep: Int, Sendable {
-    case information, editing, scaling
+    case information, alignment, scanning, editing
 }
 
 nonisolated enum LocalFloorPlanError: LocalizedError, Sendable {

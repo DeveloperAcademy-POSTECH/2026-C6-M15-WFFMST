@@ -85,6 +85,45 @@ private actor ControlledFloorPlanFileRepository: FloorPlanFileRepository {
     func failNextUpload() { failuresRemaining = 1 }
 }
 
+@MainActor
+private final class ControlledWorldMapScanner: NSObject, WorldMapScanning {
+    var onFrameUpdate: ((LocalWorldMapFrameState) -> Void)?
+    var previewSession: AnyObject { self }
+    private var poses: [ARPose] = []
+
+    func start() async throws {
+        poses = [
+            ARPose(x: 0, y: 1.4, z: 0, forwardX: 1, forwardZ: 0),
+            ARPose(x: 1, y: 1.4, z: 0, forwardX: 1, forwardZ: 0),
+        ]
+        onFrameUpdate?(LocalWorldMapFrameState(mapping: .mapped, trackingMessage: "추적 정상"))
+    }
+
+    func currentPose() throws -> ARPose {
+        guard !poses.isEmpty else { throw LocalFloorPlanError.invalid("test pose unavailable") }
+        return poses.removeFirst()
+    }
+
+    func makeWorldMapArchive() async throws -> Data { Data("world-map".utf8) }
+    func stop() {}
+}
+
+private actor ControlledWorldMapFileRepository: WorldMapFileRepository {
+    private var references: [WorldMapReference] = []
+    func upload(_ files: WorldMapFiles, for reference: WorldMapReference) async throws {
+        let setup = try JSONDecoder().decode(WorldMapSetup.self, from: files.setupJSON)
+        precondition(setup.matches(reference))
+        precondition(reference.setupSHA256 == LocalFloorPlanFileBuilder.sha256(files.setupJSON))
+        precondition(setup.worldMapSHA256 == LocalFloorPlanFileBuilder.sha256(files.worldMapArchive))
+        precondition(setup.worldMapBytes == files.worldMapArchive.count)
+        references.append(reference)
+    }
+    func download(_ reference: WorldMapReference) async throws -> WorldMapFiles {
+        throw RepositoryError.notFound
+    }
+    func uploads() -> [WorldMapReference] { references }
+}
+
 @main
 @MainActor
 enum FloorPlanRegistrationChecks {
@@ -93,13 +132,18 @@ enum FloorPlanRegistrationChecks {
         try await checkImportLifecycle()
 
         let importer = ControlledImporter()
-        let draft = FloorPlanDraftStore(importer: importer)
+        let draft = FloorPlanDraftStore(
+            importer: importer,
+            worldMapScanner: ControlledWorldMapScanner()
+        )
         let repository = ControlledFloorPlanFileRepository(failures: 1)
+        let worldMapRepository = ControlledWorldMapFileRepository()
         let catalog = DemoFloorPlanCatalogRepository()
         let store = InstructorStore(
             floorPlans: [],
             floorPlanDraft: draft,
             floorPlanFileRepository: repository,
+            worldMapFileRepository: worldMapRepository,
             floorPlanCatalogRepository: catalog
         )
 
@@ -128,7 +172,7 @@ enum FloorPlanRegistrationChecks {
         store.registerFloorPlan()
         precondition(store.isUploadingFloorPlan && !store.canGoBack)
         store.goBack()
-        precondition(store.phase == .floorPlanCreation && draft.step == .scaling,
+        precondition(store.phase == .floorPlanCreation && draft.step == .editing,
                      "back must not discard a running upload")
         try await wait { !store.isUploadingFloorPlan }
         precondition(store.phase == .floorPlanCreation && store.floorPlans.isEmpty)
@@ -151,6 +195,7 @@ enum FloorPlanRegistrationChecks {
         precondition(uploadedReference.navigationSHA256
             == LocalFloorPlanFileBuilder.sha256(uploadedFiles.navigationMapJSON))
         precondition(store.selectedFloorPlan?.reference == uploadedReference)
+        precondition(store.selectedFloorPlan?.worldMap?.floorPlan == uploadedReference)
         precondition(store.selectedFloorPlan?.registeredPlan?.id == uploadedReference.floorPlanID)
         precondition(draft.step == .information && draft.image == nil)
 
@@ -159,6 +204,7 @@ enum FloorPlanRegistrationChecks {
         store.createSession()
         try await wait { store.phase == .teamReadiness }
         precondition(store.currentSession?.floorPlan == uploadedReference)
+        precondition(store.currentSession?.worldMap == store.selectedFloorPlan?.worldMap)
         store.goBack()
         try await wait { store.phase == .sessionCreation }
 
@@ -185,11 +231,13 @@ enum FloorPlanRegistrationChecks {
         try await wait { !store.isUploadingFloorPlan }
         precondition(store.floorPlanUploadError != nil && store.canGoBack)
         store.goBack()
-        precondition(store.phase == .floorPlanCreation && draft.step == .editing && draft.image != nil,
-                     "first back preserves the draft for editing")
+        precondition(store.phase == .floorPlanCreation && draft.step == .alignment && draft.image != nil,
+                     "first back preserves the draft at scan alignment")
         precondition(store.floorPlanUploadError == nil && !store.isUploadingFloorPlan)
         store.retryFloorPlanUpload()
         precondition(!store.isUploadingFloorPlan, "back must discard the failed upload snapshot")
+        store.goBack()
+        precondition(store.phase == .floorPlanCreation && draft.step == .information)
         store.goBack()
         precondition(store.phase == .floorPlanList && draft.image == nil && draft.name.isEmpty)
         precondition(store.floorPlans.count == 2, "a failed upload must not add a plan")
@@ -281,19 +329,12 @@ enum FloorPlanRegistrationChecks {
         try await wait { !draft.isProcessing }
         precondition(draft.image?.fileName == "original.png")
         precondition(draft.outline == outline, "자동 제안 영역을 첫 미리보기에 적용해야 한다")
-        draft.setEditorMode(.brush)
-        let pendingStroke = LocalEditStroke(mode: .block,
-            points: [LocalPlanPoint(x: 0.2, y: 0.2), LocalPlanPoint(x: 0.4, y: 0.4)],
-            normalizedDiameter: 0.02)
-        draft.stageBrushStroke(pendingStroke)
-
         draft.importImage(from: URL(fileURLWithPath: "/virtual/failure.png"))
         try await wait { await importer.has("failure.png") }
         await importer.fail("failure.png", error: LocalFloorPlanError.invalid("분석 실패"))
         try await wait { !draft.isProcessing }
         precondition(draft.errorMessage == "분석 실패")
         precondition(draft.image?.fileName == "original.png")
-        precondition(draft.pendingBrushStrokes == [pendingStroke], "교체 실패 시 기존 편집 작업본을 유지해야 한다")
 
         draft.importImage(from: URL(fileURLWithPath: "/virtual/stale.png"))
         try await wait { await importer.has("stale.png") }
@@ -325,6 +366,19 @@ enum FloorPlanRegistrationChecks {
         await importer.succeedExtraction("original.png")
         try await wait { !draft.isProcessing }
         precondition(draft.outline == fullImageOutline)
+        draft.continueToWorldMapAlignment()
+        draft.placePoint(LocalPlanPoint(x: 0.2, y: 0.2))
+        draft.placePoint(LocalPlanPoint(x: 0.8, y: 0.2))
+        await draft.startWorldMapScan()
+        precondition(draft.step == .scanning, "scan did not start: \(String(describing: draft.errorMessage))")
+        draft.captureWorldMapStart()
+        precondition(draft.worldMapStart != nil, "start pose not captured: \(String(describing: draft.errorMessage))")
+        draft.captureWorldMapCorrespondencePose()
+        precondition(draft.pendingCorrespondencePose != nil, "correspondence pose not captured")
+        draft.placePoint(LocalPlanPoint(x: 0.8, y: 0.2))
+        precondition(draft.worldMapCorrespondences.count == 2, "correspondence not placed")
+        await draft.saveWorldMap()
+        precondition(draft.step == .editing, "world map not saved: \(String(describing: draft.errorMessage))")
         let stroke = LocalEditStroke(
             mode: .block,
             points: [LocalPlanPoint(x: 0.3, y: 0.3), LocalPlanPoint(x: 0.6, y: 0.3)],
@@ -334,10 +388,6 @@ enum FloorPlanRegistrationChecks {
         draft.stageBrushStroke(stroke)
         draft.applyPendingBrush(.block)
         try await wait { !draft.isProcessing }
-        draft.continueToScale()
-        draft.placePoint(LocalPlanPoint(x: 0.2, y: 0.2))
-        draft.placePoint(LocalPlanPoint(x: 0.8, y: 0.2))
-        draft.setDistance("10")
         precondition(draft.canRegister)
         return stroke
     }

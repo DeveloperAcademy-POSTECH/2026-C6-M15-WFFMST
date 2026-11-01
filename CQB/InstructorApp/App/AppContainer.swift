@@ -10,10 +10,13 @@ struct AppContainer: View {
     @MainActor
     init(
         floorPlanFileRepository: any FloorPlanFileRepository,
+        worldMapFileRepository: any WorldMapFileRepository = StorageWorldMapFileRepository(),
         floorPlanCatalogRepository: (any FloorPlanCatalogRepository)? = nil
     ) {
         _store = State(initialValue: InstructorStore(
+            floorPlanDraft: FloorPlanDraftStore(worldMapScanner: LocalARWorldMapScanService()),
             floorPlanFileRepository: floorPlanFileRepository,
+            worldMapFileRepository: worldMapFileRepository,
             floorPlanCatalogRepository: floorPlanCatalogRepository,
             sessionRepository: FirestoreSessionRepository(),
             memberRepository: FirestoreMemberRepository(),

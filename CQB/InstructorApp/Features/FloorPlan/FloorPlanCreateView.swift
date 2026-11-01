@@ -169,8 +169,10 @@ struct FloorPlanCreateView: View {
                 normalizedDiameter: store.normalizedDiameter,
                 selection: store.selection,
                 pendingBrushStrokes: store.pendingBrushStrokes,
-                scaleA: app.isEditingFloorPlan ? nil : store.scaleA,
-                scaleB: app.isEditingFloorPlan ? nil : store.scaleB,
+                scaleA: store.step == .alignment || store.step == .scanning
+                    ? store.startPlanPoint : nil,
+                scaleB: store.step == .alignment || store.step == .scanning
+                    ? store.directionPlanPoint : nil,
                 scaleLabel: nil,
                 importPresentation: importer,
                 layers: layers,
@@ -179,7 +181,8 @@ struct FloorPlanCreateView: View {
                 onScaleMarkerMoved: store.moveScaleMarker,
                 onEditingChanged: store.setDrawing
             )
-            .allowsHitTesting(!store.isProcessing && !app.isUploadingFloorPlan
+            .allowsHitTesting(!store.isImporting && store.processingStage != .preparingPreview
+                && !app.isUploadingFloorPlan
                 && app.floorPlanUploadError == nil)
             .accessibilityIdentifier("floorPlan.canvas")
         } else {
@@ -222,10 +225,11 @@ struct FloorPlanCreateView: View {
 
     private var sidePanel: some View {
         Group {
-            if store.step == .scaling {
-                scalePanel
-            } else {
-                editingPanel
+            switch store.step {
+            case .information: informationPanel
+            case .alignment: alignmentPanel
+            case .scanning: scanningPanel
+            case .editing: editingPanel
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -265,14 +269,14 @@ struct FloorPlanCreateView: View {
             ActionButton(
                 app.isEditingFloorPlan
                     ? (app.isUploadingFloorPlan ? "수정본 업로드 중" : "수정 완료")
-                    : "다음",
+                    : (app.isUploadingFloorPlan ? "저장 중" : "도면 저장"),
                 fillsWidth: true,
-                action: app.isEditingFloorPlan ? app.saveFloorPlanMaskEdit : store.continueToScale
+                action: app.isEditingFloorPlan ? app.saveFloorPlanMaskEdit : app.registerFloorPlan
             )
                 .frame(height: 52)
-                .disabled(app.isEditingFloorPlan ? !store.canSaveMaskEdit : !store.canContinueEditing)
+                .disabled(app.isEditingFloorPlan ? !store.canSaveMaskEdit : !store.canRegister)
                 .accessibilityIdentifier(app.isEditingFloorPlan
-                    ? "floorPlan.edit.save" : "floorPlan.next.scale")
+                    ? "floorPlan.edit.save" : "floorPlan.save")
                 .padding(.horizontal, 24)
                 .padding(.top, 12)
                 .padding(.bottom, 32)
@@ -395,52 +399,23 @@ struct FloorPlanCreateView: View {
             .disabled(!enabled)
     }
 
-    private var scalePanel: some View {
+    private var informationPanel: some View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("축척 설정")
+                    Text("도면 정보")
                         .font(DSTypography.h2)
                         .foregroundStyle(InstructorColor.textPrimary)
 
-                    Text("A지점과 B지점이 될 부분을 클릭하세요.")
+                    Text("도면 이미지를 첨부하고 이름을 입력하세요. 이미지 분석은 다음 단계와 병렬로 진행됩니다.")
                         .font(DSTypography.bodySmall)
                         .foregroundStyle(InstructorColor.textSecondary)
                         .padding(.top, 8)
 
-                    HStack(spacing: 12) {
-                        Text("A-B 실제 거리")
-                            .font(Self.mediumBodyFont)
-                            .foregroundStyle(InstructorColor.textPrimary)
-                        Spacer()
-                        TextField(
-                            "입력",
-                            text: Binding(get: { store.distanceText }, set: store.setDistance)
-                        )
-                        .focused($focusedField, equals: .distance)
-                        .keyboardType(.numbersAndPunctuation)
-                        .multilineTextAlignment(.center)
-                        .font(DSTypography.body)
-                        .foregroundStyle(InstructorColor.textPrimary)
-                        .tint(InstructorColor.actionPrimary)
-                        .frame(maxWidth: 104, minHeight: 48)
-                        .background(InstructorColor.canvas)
-                        .clipShape(.rect(cornerRadius: 4))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 4)
-                                .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
-                        }
-                        .accessibilityIdentifier("floorPlan.distance")
-                        Text("m")
-                            .font(DSTypography.body)
-                            .foregroundStyle(InstructorColor.textPrimary)
-                    }
-                    .padding(.top, 50)
-
                     Text("도면 이름 설정")
                         .font(DSTypography.h2)
                         .foregroundStyle(InstructorColor.textPrimary)
-                        .padding(.top, 32)
+                        .padding(.top, 40)
 
                     TextField(
                         "훈련장 A",
@@ -469,15 +444,94 @@ struct FloorPlanCreateView: View {
                 .padding(.bottom, 20)
             }
 
-            ActionButton(app.isUploadingFloorPlan ? "업로드 중" : "저장",
-                         fillsWidth: true, action: app.registerFloorPlan)
+            ActionButton("다음", fillsWidth: true, action: store.continueToWorldMapAlignment)
                 .frame(height: 52)
-                .disabled(!store.canRegister || isImportInteractionActive
-                    || app.isUploadingFloorPlan || app.floorPlanUploadError != nil)
-                .accessibilityIdentifier("floorPlan.save")
+                .disabled(!store.canContinueToAlignment || isImportInteractionActive)
+                .accessibilityIdentifier("floorPlan.next.alignment")
                 .padding(.horizontal, 24)
                 .padding(.top, 12)
                 .padding(.bottom, 32)
+        }
+    }
+
+    private var alignmentPanel: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("스캔 기준 설정")
+                        .font(DSTypography.h2)
+                    Text("도면에서 실제 스캔을 시작할 출발점과 바라볼 방향점을 차례로 지정하세요.")
+                        .font(DSTypography.bodySmall)
+                        .foregroundStyle(InstructorColor.textSecondary)
+
+                    panelButton(store.startPlanPoint == nil ? "출발점 지정" : "출발점 다시 지정", enabled: true) {
+                        store.selectWorldMapPointTarget(.start)
+                    }
+                    panelButton(store.directionPlanPoint == nil ? "방향점 지정" : "방향점 다시 지정", enabled: store.startPlanPoint != nil) {
+                        store.selectWorldMapPointTarget(.direction)
+                    }
+
+                    Text("수동 축척 입력은 받지 않습니다. 스캔 대응점의 실제 거리와 도면 좌표로 축척을 자동 계산합니다.")
+                        .font(DSTypography.caption)
+                        .foregroundStyle(InstructorColor.textSecondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(24)
+            }
+            ActionButton("AR 스캔 시작", fillsWidth: true) {
+                Task { await store.startWorldMapScan() }
+            }
+            .frame(height: 52)
+            .disabled(!store.canStartWorldMapScan)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 32)
+        }
+    }
+
+    private var scanningPanel: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("공간 스캔")
+                        .font(DSTypography.h2)
+                    Text("\(store.frameState.mapping.title) · \(store.frameState.trackingMessage)")
+                        .font(DSTypography.bodySmall)
+                        .foregroundStyle(InstructorColor.textSecondary)
+
+                    if let session = store.worldMapPreviewSession {
+                        LocalARWorldMapCameraView(previewSession: session)
+                            .aspectRatio(4 / 3, contentMode: .fit)
+                            .clipShape(.rect(cornerRadius: 4))
+                    }
+
+                    if store.worldMapStart == nil {
+                        Text("도면의 출발점과 같은 실제 위치에서 방향점을 바라본 뒤 시작 자세를 저장하세요.")
+                            .font(DSTypography.caption)
+                        panelButton("시작 자세 저장", enabled: store.canCaptureStartAlignment) {
+                            store.captureWorldMapStart()
+                        }
+                    } else if store.pendingCorrespondencePose != nil {
+                        Text("방금 기록한 실제 위치와 같은 지점을 왼쪽 도면에서 탭하세요.")
+                            .font(DSTypography.caption)
+                            .foregroundStyle(InstructorColor.actionPrimary)
+                    } else {
+                        Text("저장된 대응점 \(store.worldMapCorrespondences.count)개")
+                            .font(DSTypography.bodySmall)
+                        panelButton("현재 위치 대응점 추가", enabled: store.canCaptureCorrespondence) {
+                            store.captureWorldMapCorrespondencePose()
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(24)
+            }
+            ActionButton(store.isSavingWorldMap ? "WorldMap 저장 중" : "스캔 완료", fillsWidth: true) {
+                Task { await store.saveWorldMap() }
+            }
+            .frame(height: 52)
+            .disabled(!store.canSaveWorldMap)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 32)
         }
     }
 

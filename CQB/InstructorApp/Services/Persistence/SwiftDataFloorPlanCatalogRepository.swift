@@ -10,6 +10,8 @@ final class StoredFloorPlan {
     var referenceDistance: Double
     var floorPlanID: UUID
     var navigationSHA256: String
+    var worldMapID: UUID?
+    var worldMapSetupSHA256: String?
     var createdAt: Date
     var updatedAt: Date
 
@@ -20,6 +22,8 @@ final class StoredFloorPlan {
         referenceDistance = floorPlan.referenceDistance
         floorPlanID = floorPlan.reference.floorPlanID
         navigationSHA256 = floorPlan.reference.navigationSHA256
+        worldMapID = floorPlan.worldMap?.worldMapID
+        worldMapSetupSHA256 = floorPlan.worldMap?.setupSHA256
         createdAt = floorPlan.createdAt
         updatedAt = floorPlan.updatedAt
     }
@@ -30,6 +34,8 @@ final class StoredFloorPlan {
         referenceDistance = floorPlan.referenceDistance
         floorPlanID = floorPlan.reference.floorPlanID
         navigationSHA256 = floorPlan.reference.navigationSHA256
+        worldMapID = floorPlan.worldMap?.worldMapID
+        worldMapSetupSHA256 = floorPlan.worldMap?.setupSHA256
         updatedAt = floorPlan.updatedAt
     }
 
@@ -43,6 +49,18 @@ final class StoredFloorPlan {
                 floorPlanID: floorPlanID,
                 navigationSHA256: navigationSHA256
             ),
+            worldMap: worldMapID.flatMap { id in
+                worldMapSetupSHA256.map {
+                    WorldMapReference(
+                        worldMapID: id,
+                        setupSHA256: $0,
+                        floorPlan: FloorPlanReference(
+                            floorPlanID: floorPlanID,
+                            navigationSHA256: navigationSHA256
+                        )
+                    )
+                }
+            },
             createdAt: createdAt,
             updatedAt: updatedAt
         )
