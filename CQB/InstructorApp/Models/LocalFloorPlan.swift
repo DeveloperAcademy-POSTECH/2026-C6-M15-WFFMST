@@ -59,6 +59,13 @@ nonisolated struct LocalExtractionResult: Sendable {
     var extractionAlgorithm: LocalWallExtractionAlgorithm = .v13
 }
 
+/// 정규화된 도면과 독립적으로 완료되는 벽·장애물 추출 결과다.
+nonisolated struct LocalMaskExtractionResult: Sendable {
+    var baseGrid: LocalObstacleGrid
+    var suggestedOutline: [LocalPlanPoint]
+    var extractionAlgorithm: LocalWallExtractionAlgorithm
+}
+
 nonisolated struct LocalBlockedRegionSuggestion: Equatable, Sendable {
     var outline: [LocalPlanPoint]
     var confidence: Double
@@ -78,7 +85,7 @@ nonisolated struct LocalRegisteredFloorPlan: Equatable, Sendable {
 }
 
 nonisolated enum LocalCanvasTool: String, CaseIterable, Sendable {
-    case move, pen, brush, scaleA, scaleB
+    case move, pen, brush, scaleA, scaleB, alignmentPoint
 }
 
 nonisolated enum LocalFloorPlanEditorMode: String, CaseIterable, Sendable {
@@ -90,7 +97,7 @@ nonisolated enum LocalScaleMarker: Sendable {
 }
 
 nonisolated enum FloorPlanRegistrationStep: Int, Sendable {
-    case information, editing, scaling
+    case information, alignment, scanning, editing
 }
 
 nonisolated enum LocalFloorPlanError: LocalizedError, Sendable {

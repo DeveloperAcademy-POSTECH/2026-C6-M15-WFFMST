@@ -1,4 +1,5 @@
 import CQBDesignSystem
+import CQBCore
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -13,6 +14,20 @@ struct FloorPlanCreateView: View {
 
     private var isImportInteractionActive: Bool {
         importer.isPreparing || importer.isPresented || store.isImporting
+    }
+
+    private var scanCheckpointMarkers: [LocalScanCheckpointMarker] {
+        store.scanCheckpoints.enumerated().map { index, point in
+            let state: LocalScanCheckpointState
+            if store.step == .scanning, index < store.completedScanCheckpointCount {
+                state = .completed
+            } else if store.step == .scanning, index == store.currentScanCheckpointIndex {
+                state = .current
+            } else {
+                state = .planned
+            }
+            return LocalScanCheckpointMarker(point: point, number: index + 1, state: state)
+        }
     }
 
     var body: some View {
@@ -164,14 +179,20 @@ struct FloorPlanCreateView: View {
         if let image = store.previewImage {
             LocalFloorPlanCanvas(
                 image: image,
-                mask: store.maskImage,
+                mask: store.step == .editing ? store.maskImage : nil,
                 tool: store.tool,
                 normalizedDiameter: store.normalizedDiameter,
                 selection: store.selection,
                 pendingBrushStrokes: store.pendingBrushStrokes,
-                scaleA: app.isEditingFloorPlan ? nil : store.scaleA,
-                scaleB: app.isEditingFloorPlan ? nil : store.scaleB,
+                scaleA: store.step == .alignment || store.step == .scanning
+                    ? store.startPlanPoint : nil,
+                scaleB: store.step == .alignment || store.step == .scanning
+                    ? store.directionPlanPoint : nil,
                 scaleLabel: nil,
+                scaleALabel: "출발",
+                scaleBLabel: "방향",
+                checkpointMarkers: store.step == .alignment || store.step == .scanning
+                    ? scanCheckpointMarkers : [],
                 importPresentation: importer,
                 layers: layers,
                 onStroke: store.stageBrushStroke,
@@ -179,7 +200,8 @@ struct FloorPlanCreateView: View {
                 onScaleMarkerMoved: store.moveScaleMarker,
                 onEditingChanged: store.setDrawing
             )
-            .allowsHitTesting(!store.isProcessing && !app.isUploadingFloorPlan
+            .allowsHitTesting(!store.isImporting && store.processingStage != .preparingPreview
+                && !app.isUploadingFloorPlan
                 && app.floorPlanUploadError == nil)
             .accessibilityIdentifier("floorPlan.canvas")
         } else {
@@ -222,10 +244,11 @@ struct FloorPlanCreateView: View {
 
     private var sidePanel: some View {
         Group {
-            if store.step == .scaling {
-                scalePanel
-            } else {
-                editingPanel
+            switch store.step {
+            case .information: informationPanel
+            case .alignment: alignmentPanel
+            case .scanning: scanningPanel
+            case .editing: editingPanel
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -265,14 +288,14 @@ struct FloorPlanCreateView: View {
             ActionButton(
                 app.isEditingFloorPlan
                     ? (app.isUploadingFloorPlan ? "수정본 업로드 중" : "수정 완료")
-                    : "다음",
+                    : (app.isUploadingFloorPlan ? "저장 중" : "도면 저장"),
                 fillsWidth: true,
-                action: app.isEditingFloorPlan ? app.saveFloorPlanMaskEdit : store.continueToScale
+                action: app.isEditingFloorPlan ? app.saveFloorPlanMaskEdit : app.registerFloorPlan
             )
                 .frame(height: 52)
-                .disabled(app.isEditingFloorPlan ? !store.canSaveMaskEdit : !store.canContinueEditing)
+                .disabled(app.isEditingFloorPlan ? !store.canSaveMaskEdit : !store.canRegister)
                 .accessibilityIdentifier(app.isEditingFloorPlan
-                    ? "floorPlan.edit.save" : "floorPlan.next.scale")
+                    ? "floorPlan.edit.save" : "floorPlan.save")
                 .padding(.horizontal, 24)
                 .padding(.top, 12)
                 .padding(.bottom, 32)
@@ -395,52 +418,23 @@ struct FloorPlanCreateView: View {
             .disabled(!enabled)
     }
 
-    private var scalePanel: some View {
+    private var informationPanel: some View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("축척 설정")
+                    Text("도면 정보")
                         .font(DSTypography.h2)
                         .foregroundStyle(InstructorColor.textPrimary)
 
-                    Text("A지점과 B지점이 될 부분을 클릭하세요.")
+                    Text("도면 이미지를 첨부하고 이름을 입력하세요. 이미지 분석은 다음 단계와 병렬로 진행됩니다.")
                         .font(DSTypography.bodySmall)
                         .foregroundStyle(InstructorColor.textSecondary)
                         .padding(.top, 8)
 
-                    HStack(spacing: 12) {
-                        Text("A-B 실제 거리")
-                            .font(Self.mediumBodyFont)
-                            .foregroundStyle(InstructorColor.textPrimary)
-                        Spacer()
-                        TextField(
-                            "입력",
-                            text: Binding(get: { store.distanceText }, set: store.setDistance)
-                        )
-                        .focused($focusedField, equals: .distance)
-                        .keyboardType(.numbersAndPunctuation)
-                        .multilineTextAlignment(.center)
-                        .font(DSTypography.body)
-                        .foregroundStyle(InstructorColor.textPrimary)
-                        .tint(InstructorColor.actionPrimary)
-                        .frame(maxWidth: 104, minHeight: 48)
-                        .background(InstructorColor.canvas)
-                        .clipShape(.rect(cornerRadius: 4))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 4)
-                                .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
-                        }
-                        .accessibilityIdentifier("floorPlan.distance")
-                        Text("m")
-                            .font(DSTypography.body)
-                            .foregroundStyle(InstructorColor.textPrimary)
-                    }
-                    .padding(.top, 50)
-
                     Text("도면 이름 설정")
                         .font(DSTypography.h2)
                         .foregroundStyle(InstructorColor.textPrimary)
-                        .padding(.top, 32)
+                        .padding(.top, 40)
 
                     TextField(
                         "훈련장 A",
@@ -469,23 +463,175 @@ struct FloorPlanCreateView: View {
                 .padding(.bottom, 20)
             }
 
-            ActionButton(app.isUploadingFloorPlan ? "업로드 중" : "저장",
-                         fillsWidth: true, action: app.registerFloorPlan)
+            ActionButton("다음", fillsWidth: true, action: store.continueToWorldMapAlignment)
                 .frame(height: 52)
-                .disabled(!store.canRegister || isImportInteractionActive
-                    || app.isUploadingFloorPlan || app.floorPlanUploadError != nil)
-                .accessibilityIdentifier("floorPlan.save")
+                .disabled(!store.canContinueToAlignment || isImportInteractionActive)
+                .accessibilityIdentifier("floorPlan.next.alignment")
                 .padding(.horizontal, 24)
                 .padding(.top, 12)
                 .padding(.bottom, 32)
         }
     }
 
+    private var alignmentPanel: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("스캔 기준 설정")
+                        .font(DSTypography.h2)
+
+                    Text(alignmentInstruction)
+                        .font(DSTypography.bodySmall)
+                        .foregroundStyle(InstructorColor.textSecondary)
+                        .padding(.top, 8)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        scanLegend(color: .red, title: "출발 위치 · 바라보는 방향")
+                        scanLegend(color: .blue, title: "추가 스캔 체크포인트")
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(InstructorColor.surfaceRaised)
+                    .clipShape(.rect(cornerRadius: 4))
+                    .padding(.top, 24)
+
+                    if store.directionPlanPoint != nil {
+                        Text("체크포인트 \(store.scanCheckpoints.count)개")
+                            .font(DSTypography.bodySmall)
+                            .foregroundStyle(InstructorColor.textPrimary)
+                            .padding(.top, 24)
+
+                        panelButton("마지막 체크포인트 삭제", enabled: !store.scanCheckpoints.isEmpty) {
+                            store.removeLastScanCheckpoint()
+                        }
+                        .padding(.top, 12)
+                    }
+
+                    if store.startPlanPoint != nil {
+                        panelButton("출발·방향 다시 설정", enabled: true) {
+                            store.resetWorldMapReference()
+                        }
+                        .padding(.top, 12)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(24)
+            }
+            if store.canReturnToEditingWithWorldMap {
+                ActionButton("기존 스캔 결과로 편집 계속", fillsWidth: true, action: store.returnToEditing)
+                    .frame(height: 52)
+                    .accessibilityIdentifier("floorPlan.scan.reuse")
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 32)
+            } else {
+                ActionButton("AR 스캔 시작", fillsWidth: true) {
+                    Task { await store.startWorldMapScan() }
+                }
+                .frame(height: 52)
+                .disabled(!store.canStartWorldMapScan)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 32)
+            }
+        }
+    }
+
+    private var scanningPanel: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("공간 스캔")
+                        .font(DSTypography.h2)
+
+                    Text(scanProgressTitle)
+                        .font(DSTypography.h3)
+                        .foregroundStyle(InstructorColor.actionPrimary)
+                        .padding(.top, 16)
+
+                    Text("\(store.frameState.mapping.title) · \(store.frameState.trackingMessage)")
+                        .font(DSTypography.bodySmall)
+                        .foregroundStyle(InstructorColor.textSecondary)
+                        .padding(.top, 4)
+
+                    if let session = store.worldMapPreviewSession {
+                        LocalARWorldMapCameraView(previewSession: session)
+                            .aspectRatio(4 / 3, contentMode: .fit)
+                            .clipShape(.rect(cornerRadius: 4))
+                            .padding(.top, 20)
+                    }
+
+                    if store.worldMapStart == nil {
+                        Text("도면의 출발점과 같은 실제 위치에서 방향점을 바라본 뒤 시작 자세를 저장하세요.")
+                            .font(DSTypography.caption)
+                            .foregroundStyle(InstructorColor.textSecondary)
+                            .padding(.top, 16)
+                        panelButton("시작 자세 저장", enabled: store.canCaptureStartAlignment) {
+                            store.captureWorldMapStart()
+                        }
+                        .padding(.top, 12)
+                    } else if let index = store.currentScanCheckpointIndex {
+                        Text("도면에서 노란색으로 표시된 체크포인트 \(index + 1)의 실제 위치로 이동해 주변을 천천히 비춘 뒤 기록하세요.")
+                            .font(DSTypography.bodySmall)
+                            .foregroundStyle(InstructorColor.textSecondary)
+                            .padding(.top, 16)
+                        panelButton("이 위치 기록", enabled: store.canCaptureScanCheckpoint) {
+                            store.captureCurrentScanCheckpoint()
+                        }
+                        .padding(.top, 12)
+                    } else {
+                        Text(store.frameState.mapping == .mapped
+                            ? "모든 체크포인트 기록이 완료되었습니다. 스캔을 완료할 수 있습니다."
+                            : "모든 체크포인트를 기록했습니다. 주변을 천천히 비추며 공간 정보를 조금 더 수집하세요.")
+                            .font(DSTypography.bodySmall)
+                            .foregroundStyle(InstructorColor.textSecondary)
+                            .padding(.top, 16)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(24)
+            }
+            ActionButton(store.isSavingWorldMap ? "WorldMap 저장 중" : "스캔 완료", fillsWidth: true) {
+                Task { await store.saveWorldMap() }
+            }
+            .frame(height: 52)
+            .disabled(!store.canSaveWorldMap)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 32)
+        }
+    }
+
+    private var alignmentInstruction: String {
+        if store.startPlanPoint == nil {
+            return "도면에서 실제 스캔을 시작할 위치를 탭하세요."
+        }
+        if store.directionPlanPoint == nil {
+            return "출발 위치에서 처음 바라볼 방향을 도면 위에서 탭하세요."
+        }
+        return "공간 정보가 많은 지점을 체크포인트로 표시하세요. 스캔할 때 번호 순서대로 안내합니다."
+    }
+
+    private var scanProgressTitle: String {
+        guard store.worldMapStart != nil else { return "시작 위치 맞추기" }
+        if let index = store.currentScanCheckpointIndex {
+            return "체크포인트 \(index + 1) / \(store.scanCheckpoints.count)"
+        }
+        return "체크포인트 \(store.scanCheckpoints.count) / \(store.scanCheckpoints.count)"
+    }
+
+    private func scanLegend(color: Color, title: String) -> some View {
+        HStack(spacing: 10) {
+            Circle().fill(color).frame(width: 12, height: 12)
+            Text(title)
+                .font(DSTypography.caption)
+                .foregroundStyle(InstructorColor.textPrimary)
+        }
+    }
+
     @ViewBuilder
     private var statusOverlay: some View {
-        if (store.isProcessing && !store.isReplayingEdits)
+        if (store.step == .editing && store.isProcessing && !store.isReplayingEdits)
             || importer.isPreparing || store.errorMessage != nil || importer.message != nil
-            || app.isUploadingFloorPlan || app.floorPlanUploadError != nil {
+            || app.isUploadingFloorPlan || app.floorPlanUploadError != nil
+            || store.canRetryMaskExtraction {
             VStack(alignment: .leading, spacing: 8) {
                 if importer.isPreparing {
                     HStack {
@@ -503,13 +649,19 @@ struct FloorPlanCreateView: View {
                     }
                     .accessibilityIdentifier("floorPlan.uploading")
                 }
-                if store.isProcessing && !store.isReplayingEdits {
+                if store.step == .editing && store.isProcessing && !store.isReplayingEdits {
                     HStack {
                         ProgressView()
                         Text(store.activity)
                         Button("취소", action: store.cancelProcessing)
                     }
                     .accessibilityIdentifier("floorPlan.import.processing")
+                }
+                if store.canRetryMaskExtraction {
+                    Text("마스크 분석이 중단되었습니다. 다시 시도할 수 있습니다.")
+                        .foregroundStyle(InstructorColor.validationError)
+                    ActionButton("마스크 분석 다시 시도", action: store.retryMaskExtraction)
+                        .accessibilityIdentifier("floorPlan.mask.retry")
                 }
                 if let error = store.errorMessage {
                     Text(error)

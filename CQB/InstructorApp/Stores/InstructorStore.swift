@@ -32,11 +32,16 @@ final class InstructorStore {
         case localSave
     }
 
+    private enum SessionCreationError: Error {
+        case worldMapMismatch
+    }
+
     private static let logger = Logger(subsystem: "com.wffmst.cqb", category: "InstructorStore")
 
     let floorPlanDraft: FloorPlanDraftStore
     let trainingRecords: TrainingRecordStore
     @ObservationIgnored private let floorPlanFileRepository: any FloorPlanFileRepository
+    @ObservationIgnored private let worldMapFileRepository: (any WorldMapFileRepository)?
     @ObservationIgnored private let floorPlanListPreviewLoader: any FloorPlanListPreviewLoading
     @ObservationIgnored private let floorPlanCatalogRepository: any FloorPlanCatalogRepository
     @ObservationIgnored private let sessionRepository: any SessionRepository
@@ -96,6 +101,7 @@ final class InstructorStore {
     private(set) var sessionObservationError: String?
     private(set) var trainingParticipants: [InstructorParticipant] = []
     private var failedFloorPlanRegistration: LocalRegisteredFloorPlan?
+    private var failedWorldMapDraft: LocalWorldMapScanDraft?
     private var failedReplacementFloorPlanID: String?
     private var floorPlanDetailSnapshot: LocalFloorPlanSnapshot?
     private var editingFloorPlanID: String?
@@ -107,6 +113,7 @@ final class InstructorStore {
         floorPlans: [InstructorFloorPlan] = [],
         floorPlanDraft: FloorPlanDraftStore? = nil,
         floorPlanFileRepository: any FloorPlanFileRepository = DemoFloorPlanFileRepository(),
+        worldMapFileRepository: (any WorldMapFileRepository)? = nil,
         floorPlanListPreviewLoader: (any FloorPlanListPreviewLoading)? = nil,
         floorPlanCatalogRepository: (any FloorPlanCatalogRepository)? = nil,
         sessionRepository: any SessionRepository = DemoSessionRepository(),
@@ -119,6 +126,7 @@ final class InstructorStore {
     ) {
         self.floorPlanDraft = floorPlanDraft ?? FloorPlanDraftStore()
         self.floorPlanFileRepository = floorPlanFileRepository
+        self.worldMapFileRepository = worldMapFileRepository
         self.floorPlanListPreviewLoader = floorPlanListPreviewLoader
             ?? LocalFloorPlanListPreviewLoader(repository: floorPlanFileRepository)
         self.floorPlanCatalogRepository = floorPlanCatalogRepository ?? DemoFloorPlanCatalogRepository()
@@ -319,8 +327,9 @@ final class InstructorStore {
     }
     func registerFloorPlan() {
         guard phase == .floorPlanCreation, !isUploadingFloorPlan,
-              let registration = floorPlanDraft.registration() else { return }
-        uploadFloorPlan(registration)
+              let registration = floorPlanDraft.registration(),
+              let worldMapDraft = floorPlanDraft.worldMapScanDraft() else { return }
+        uploadFloorPlan(registration, worldMapDraft: worldMapDraft)
     }
     func retryFloorPlanUpload() {
         guard (phase == .floorPlanCreation || phase == .floorPlanEditing),
@@ -329,7 +338,7 @@ final class InstructorStore {
         let replacement = failedReplacementFloorPlanID.flatMap { id in
             floorPlans.first { $0.id == id }
         }
-        uploadFloorPlan(registration, replacing: replacement)
+        uploadFloorPlan(registration, worldMapDraft: failedWorldMapDraft, replacing: replacement)
     }
     func setTrainingName(_ value: String) {
         guard !isCreatingSession else { return }
@@ -364,6 +373,7 @@ final class InstructorStore {
                 let session = try await Self.createSession(
                     name: name,
                     floorPlan: reference,
+                    worldMap: floorPlan.worldMap,
                     repository: repository,
                     pinGenerator: makePIN
                 )
@@ -539,9 +549,7 @@ final class InstructorStore {
             phase = .home
         case .floorPlanCreation:
             clearFloorPlanUpload()
-            if floorPlanDraft.step == .scaling {
-                floorPlanDraft.returnToEditing()
-            } else {
+            if !floorPlanDraft.goBackCreationStep() {
                 floorPlanDraft.reset()
                 phase = .floorPlanList
             }
@@ -564,6 +572,7 @@ final class InstructorStore {
     private static func createSession(
         name: String,
         floorPlan: FloorPlanReference,
+        worldMap: WorldMapReference?,
         repository: any SessionRepository,
         pinGenerator: () -> String
     ) async throws -> Session {
@@ -574,8 +583,12 @@ final class InstructorStore {
                 pin: pinGenerator(),
                 name: name,
                 status: .waiting,
-                floorPlan: floorPlan
+                floorPlan: floorPlan,
+                worldMap: worldMap
             )
+            guard session.worldMapMatchesFloorPlan else {
+                throw SessionCreationError.worldMapMismatch
+            }
             do {
                 try await repository.createSession(session)
                 return session
@@ -967,6 +980,9 @@ final class InstructorStore {
     }
 
     private static func sessionCreationMessage(for error: Error) -> String {
+        if error is SessionCreationError {
+            return "도면과 공간 스캔 정보가 일치하지 않습니다. 도면을 다시 저장해주세요."
+        }
         if error as? RepositoryError == .pinTaken {
             return "사용 가능한 PIN을 만들지 못했습니다. 다시 시도해주세요."
         }
@@ -975,13 +991,16 @@ final class InstructorStore {
 
     private func uploadFloorPlan(
         _ registration: LocalRegisteredFloorPlan,
+        worldMapDraft: LocalWorldMapScanDraft? = nil,
         replacing existingPlan: InstructorFloorPlan? = nil
     ) {
         isUploadingFloorPlan = true
         floorPlanUploadError = nil
         failedFloorPlanRegistration = registration
+        failedWorldMapDraft = worldMapDraft
         failedReplacementFloorPlanID = existingPlan?.id
         let repository = floorPlanFileRepository
+        let worldMapRepository = worldMapFileRepository
         let catalogRepository = floorPlanCatalogRepository
         let expectedPhase: InstructorPhase = existingPlan == nil ? .floorPlanCreation : .floorPlanEditing
         let preparation = Task.detached(priority: .userInitiated) {
@@ -997,6 +1016,37 @@ final class InstructorStore {
                 try Task.checkCancellation()
                 try await repository.upload(upload.files, for: upload.reference)
                 try Task.checkCancellation()
+                let worldMapReference: WorldMapReference?
+                if let worldMapDraft {
+                    guard let worldMapRepository else {
+                        throw LocalFloorPlanError.invalid("WorldMap 저장소가 구성되지 않았습니다.")
+                    }
+                    let worldMapUpload = try LocalWorldMapFileBuilder.build(
+                        from: worldMapDraft,
+                        floorPlan: upload.reference
+                    )
+                    try await worldMapRepository.upload(
+                        worldMapUpload.files,
+                        for: worldMapUpload.reference
+                    )
+                    worldMapReference = worldMapUpload.reference
+                } else if let existingWorldMap = existingPlan?.worldMap {
+                    guard let worldMapRepository else {
+                        throw LocalFloorPlanError.invalid("WorldMap 저장소가 구성되지 않았습니다.")
+                    }
+                    let existingFiles = try await worldMapRepository.download(existingWorldMap)
+                    try Task.checkCancellation()
+                    let rebound = try LocalWorldMapFileBuilder.rebind(
+                        existingFiles,
+                        from: existingWorldMap,
+                        to: upload.reference
+                    )
+                    try await worldMapRepository.upload(rebound.files, for: rebound.reference)
+                    worldMapReference = rebound.reference
+                } else {
+                    worldMapReference = nil
+                }
+                try Task.checkCancellation()
                 let now = Date.now
                 let plan = InstructorFloorPlan(
                     id: existingPlan?.id ?? upload.registration.id.uuidString,
@@ -1004,6 +1054,7 @@ final class InstructorStore {
                     fileName: existingPlan?.fileName ?? upload.registration.image.fileName,
                     referenceDistance: existingPlan?.referenceDistance ?? upload.registration.scale.meters,
                     reference: upload.reference,
+                    worldMap: worldMapReference,
                     createdAt: existingPlan?.createdAt ?? now,
                     updatedAt: now,
                     registeredPlan: upload.registration
@@ -1056,6 +1107,7 @@ final class InstructorStore {
         isUploadingFloorPlan = false
         floorPlanUploadError = nil
         failedFloorPlanRegistration = nil
+        failedWorldMapDraft = nil
         failedReplacementFloorPlanID = nil
     }
 

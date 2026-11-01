@@ -15,6 +15,9 @@ struct LocalFloorPlanCanvas: UIViewRepresentable {
     var scaleA: LocalPlanPoint?
     var scaleB: LocalPlanPoint?
     var scaleLabel: String? = nil
+    var scaleALabel = "A"
+    var scaleBLabel = "B"
+    var checkpointMarkers: [LocalScanCheckpointMarker] = []
     var importPresentation: FloorPlanImportPresentation? = nil
     var layers = FloorPlanLayerDisplay()
     var onStroke: (LocalEditStroke) -> Void
@@ -37,7 +40,9 @@ struct LocalFloorPlanCanvas: UIViewRepresentable {
         view.update(image: image, mask: mask, tool: tool,
                     normalizedDiameter: normalizedDiameter, selection: selection,
                     pendingBrushStrokes: pendingBrushStrokes,
-                    scaleA: scaleA, scaleB: scaleB, scaleLabel: scaleLabel, layers: layers)
+                    scaleA: scaleA, scaleB: scaleB, scaleLabel: scaleLabel,
+                    scaleALabel: scaleALabel, scaleBLabel: scaleBLabel,
+                    checkpointMarkers: checkpointMarkers, layers: layers)
     }
 
     static func dismantleUIView(_ view: LocalFloorPlanCanvasView, coordinator: ()) {
@@ -101,6 +106,8 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
                 normalizedDiameter: Double, selection: [LocalPlanPoint],
                 pendingBrushStrokes: [LocalEditStroke],
                 scaleA: LocalPlanPoint?, scaleB: LocalPlanPoint?, scaleLabel: String?,
+                scaleALabel: String, scaleBLabel: String,
+                checkpointMarkers: [LocalScanCheckpointMarker],
                 layers: FloorPlanLayerDisplay = FloorPlanLayerDisplay()) {
         let imageChanged = imageView.image !== image
         if imageChanged {
@@ -128,7 +135,9 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
         let diameterChanged = self.normalizedDiameter != diameter
         self.normalizedDiameter = diameter
         markersView.update(selection: selection, pendingBrushStrokes: pendingBrushStrokes,
-                           brushDiameter: diameter, scaleA: scaleA, scaleB: scaleB, scaleLabel: scaleLabel)
+                           brushDiameter: diameter, scaleA: scaleA, scaleB: scaleB,
+                           scaleLabel: scaleLabel, scaleALabel: scaleALabel,
+                           scaleBLabel: scaleBLabel, checkpointMarkers: checkpointMarkers)
         if toolChanged || imageChanged { updateInteraction() }
         else if diameterChanged { updateInkTool() }
         if imageChanged { setNeedsLayout() }
@@ -206,7 +215,8 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
     private func updateInteraction() {
         let isDrawing = tool == .brush
         canvasView.isUserInteractionEnabled = isDrawing && !inputSuspended
-        placementTap.isEnabled = !inputSuspended && (tool == .pen || tool == .scaleA || tool == .scaleB)
+        placementTap.isEnabled = !inputSuspended
+            && (tool == .pen || tool == .scaleA || tool == .scaleB || tool == .alignmentPoint)
         scaleDrag.isEnabled = !inputSuspended && (tool == .scaleA || tool == .scaleB)
         scrollView.isUserInteractionEnabled = !inputSuspended
         scrollView.panGestureRecognizer.minimumNumberOfTouches = tool == .move ? 1 : 2
@@ -268,7 +278,7 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
 
     @objc private func placePoint(_ recognizer: UITapGestureRecognizer) {
         guard recognizer.state == .ended, !isUsingTool, !inputSuspended,
-              tool == .pen || tool == .scaleA || tool == .scaleB else { return }
+              tool == .pen || tool == .scaleA || tool == .scaleB || tool == .alignmentPoint else { return }
         let position = recognizer.location(in: contentView)
         guard position.x >= 0, position.y >= 0, position.x <= imageSize.width,
               position.y <= imageSize.height, imageSize.width > 0, imageSize.height > 0 else { return }
@@ -399,20 +409,30 @@ private final class LocalFloorPlanMarkersView: UIView {
     var scaleA: LocalPlanPoint?
     var scaleB: LocalPlanPoint?
     var scaleLabel: String?
+    var scaleALabel = "A"
+    var scaleBLabel = "B"
+    var checkpointMarkers: [LocalScanCheckpointMarker] = []
     var viewScale: CGFloat = 1 { didSet { if viewScale != oldValue { setNeedsDisplay() } } }
 
     func update(selection: [LocalPlanPoint],
                 pendingBrushStrokes: [LocalEditStroke], brushDiameter: Double,
-                scaleA: LocalPlanPoint?, scaleB: LocalPlanPoint?, scaleLabel: String?) {
+                scaleA: LocalPlanPoint?, scaleB: LocalPlanPoint?, scaleLabel: String?,
+                scaleALabel: String, scaleBLabel: String,
+                checkpointMarkers: [LocalScanCheckpointMarker]) {
         guard self.selection != selection
                 || self.pendingBrushStrokes != pendingBrushStrokes || self.brushDiameter != brushDiameter
-                || self.scaleA != scaleA || self.scaleB != scaleB || self.scaleLabel != scaleLabel else { return }
+                || self.scaleA != scaleA || self.scaleB != scaleB || self.scaleLabel != scaleLabel
+                || self.scaleALabel != scaleALabel || self.scaleBLabel != scaleBLabel
+                || self.checkpointMarkers != checkpointMarkers else { return }
         self.selection = selection
         self.pendingBrushStrokes = pendingBrushStrokes
         self.brushDiameter = brushDiameter
         self.scaleA = scaleA
         self.scaleB = scaleB
         self.scaleLabel = scaleLabel
+        self.scaleALabel = scaleALabel
+        self.scaleBLabel = scaleBLabel
+        self.checkpointMarkers = checkpointMarkers
         setNeedsDisplay()
     }
 
@@ -458,8 +478,23 @@ private final class LocalFloorPlanMarkersView: UIView {
                                      .foregroundColor: UIColor.white])
             }
         }
-        if let scaleA { scaleMarker(scaleA, label: "A", unit: unit, context: context) }
-        if let scaleB { scaleMarker(scaleB, label: "B", unit: unit, context: context) }
+        if let scaleA { scaleMarker(scaleA, label: scaleALabel, unit: unit, context: context) }
+        if let scaleB { scaleMarker(scaleB, label: scaleBLabel, unit: unit, context: context) }
+        if let currentIndex = checkpointMarkers.firstIndex(where: { $0.state == .current }) {
+            let origin = currentIndex > 0 ? checkpointMarkers[currentIndex - 1].point : scaleA
+            if let origin {
+                context.setStrokeColor(UIColor.systemYellow.cgColor)
+                context.setLineWidth(3 * unit)
+                context.setLineDash(phase: 0, lengths: [8 * unit, 6 * unit])
+                context.move(to: cg(origin))
+                context.addLine(to: cg(checkpointMarkers[currentIndex].point))
+                context.strokePath()
+                context.setLineDash(phase: 0, lengths: [])
+            }
+        }
+        for checkpoint in checkpointMarkers {
+            checkpointMarker(checkpoint, unit: unit, context: context)
+        }
     }
 
     private func cg(_ point: LocalPlanPoint) -> CGPoint {
@@ -479,7 +514,7 @@ private final class LocalFloorPlanMarkersView: UIView {
 
     private func scaleMarker(_ point: LocalPlanPoint, label: String, unit: CGFloat, context: CGContext) {
         let position = cg(point)
-        let diameter = 36 * unit
+        let diameter = (label.count > 1 ? 52 : 36) * unit
         let circle = CGRect(
             x: position.x - diameter / 2,
             y: position.y - diameter / 2,
@@ -494,13 +529,62 @@ private final class LocalFloorPlanMarkersView: UIView {
 
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
+        let font = UIFont.boldSystemFont(ofSize: (label.count > 1 ? 13 : 16) * unit)
         (label as NSString).draw(
-            in: circle.offsetBy(dx: 0, dy: 6 * unit),
+            in: CGRect(x: circle.minX, y: position.y - font.lineHeight / 2,
+                       width: circle.width, height: font.lineHeight),
             withAttributes: [
-                .font: UIFont.boldSystemFont(ofSize: 16 * unit),
+                .font: font,
                 .foregroundColor: UIColor.white,
                 .paragraphStyle: paragraph
             ]
         )
+    }
+
+    private func checkpointMarker(_ checkpoint: LocalScanCheckpointMarker,
+                                  unit: CGFloat, context: CGContext) {
+        let position = cg(checkpoint.point)
+        let diameter = 34 * unit
+        let circle = CGRect(
+            x: position.x - diameter / 2,
+            y: position.y - diameter / 2,
+            width: diameter,
+            height: diameter
+        )
+        let fillColor: UIColor = checkpoint.state == .completed
+            ? UIColor.systemBlue.withAlphaComponent(0.45)
+            : .systemBlue
+        context.setFillColor(fillColor.cgColor)
+        context.fillEllipse(in: circle)
+        context.setStrokeColor((checkpoint.state == .current
+            ? UIColor.systemYellow : UIColor.white.withAlphaComponent(0.9)).cgColor)
+        context.setLineWidth((checkpoint.state == .current ? 5 : 2) * unit)
+        context.strokeEllipse(in: circle.insetBy(dx: unit, dy: unit))
+
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        let label = checkpoint.state == .completed ? "✓" : String(checkpoint.number)
+        let font = UIFont.boldSystemFont(ofSize: 16 * unit)
+        (label as NSString).draw(
+            in: CGRect(x: circle.minX, y: position.y - font.lineHeight / 2,
+                       width: circle.width, height: font.lineHeight),
+            withAttributes: [
+                .font: font,
+                .foregroundColor: UIColor.white,
+                .paragraphStyle: paragraph
+            ]
+        )
+
+        if checkpoint.state == .current {
+            let title = "현재 스캔 위치" as NSString
+            title.draw(
+                at: CGPoint(x: circle.maxX + 6 * unit, y: position.y - 9 * unit),
+                withAttributes: [
+                    .font: UIFont.boldSystemFont(ofSize: 14 * unit),
+                    .foregroundColor: UIColor.black,
+                    .backgroundColor: UIColor.systemYellow
+                ]
+            )
+        }
     }
 }

@@ -1,3 +1,4 @@
+import CQBCore
 import Foundation
 import Observation
 import OSLog
@@ -11,18 +12,27 @@ private enum LocalFloorPlanHistoryEntry: Sendable {
 
 enum FloorPlanProcessingStage: Equatable {
     case idle
-    case analyzingImage
+    case normalizingImage
+    case extractingMask
     case preparingPreview
     case replayingEdits
 
     var message: String? {
         switch self {
         case .idle: nil
-        case .analyzingImage: "도면을 분석하고 벽을 추출하는 중"
+        case .normalizingImage: "도면 이미지를 준비하는 중"
+        case .extractingMask: "도면을 분석하고 벽을 추출하는 중"
         case .preparingPreview: "분석 결과와 미리보기를 준비하는 중"
         case .replayingEdits: "편집 결과를 계산하는 중"
         }
     }
+}
+
+enum FloorPlanMaskExtractionState: Equatable {
+    case idle
+    case running
+    case succeeded
+    case failed
 }
 
 @MainActor
@@ -45,26 +55,50 @@ final class FloorPlanDraftStore {
     private(set) var editorMode: LocalFloorPlanEditorMode = .pen
     private(set) var normalizedDiameter = 0.006
     private(set) var processingStage: FloorPlanProcessingStage = .idle
+    private(set) var maskExtractionState: FloorPlanMaskExtractionState = .idle
     private(set) var isDrawing = false
     private(set) var errorMessage: String?
     private(set) var maskPNGData: Data?
     private(set) var extractionAlgorithm: LocalWallExtractionAlgorithm = .v13
+    private(set) var startPlanPoint: LocalPlanPoint?
+    private(set) var directionPlanPoint: LocalPlanPoint?
+    private(set) var scanCheckpoints: [LocalPlanPoint] = []
+    private(set) var worldMapPointTarget: LocalWorldMapPointTarget = .start
+    private(set) var frameState = LocalWorldMapFrameState(
+        mapping: .unavailable,
+        trackingMessage: "스캔을 시작해주세요"
+    )
+    private(set) var worldMapStart: WorldMapStart?
+    private(set) var worldMapCorrespondences: [WorldMapCorrespondence] = []
+    private(set) var worldMapDraft: LocalWorldMapScanDraft?
+    private(set) var isSavingWorldMap = false
 #if canImport(UIKit)
     private(set) var previewImage: UIImage?
     private(set) var maskImage: UIImage?
 #endif
     @ObservationIgnored private let importer: any FloorPlanImporting
+    @ObservationIgnored private let worldMapScanner: (any WorldMapScanning)?
     @ObservationIgnored private var work: Task<Void, Never>?
+    @ObservationIgnored private var worldMapSaveTask: Task<Data, Error>?
     @ObservationIgnored private var generation = UUID()
+    @ObservationIgnored private var worldMapSaveGeneration = UUID()
     @ObservationIgnored private var replayCache: LocalFloorPlanReplayCache?
     private var history: [LocalFloorPlanHistoryEntry] = []
     private var redoHistory: [LocalFloorPlanHistoryEntry] = []
 
-    init(importer: any FloorPlanImporting = LocalFloorPlanImportService()) {
+    init(
+        importer: any FloorPlanImporting = LocalFloorPlanImportService(),
+        worldMapScanner: (any WorldMapScanning)? = nil
+    ) {
         self.importer = importer
+        self.worldMapScanner = worldMapScanner
+        self.worldMapScanner?.onFrameUpdate = { [weak self] state in self?.frameState = state }
     }
 
-    deinit { work?.cancel() }
+    deinit {
+        work?.cancel()
+        worldMapSaveTask?.cancel()
+    }
 
     var hasName: Bool { !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private var editPointCount: Int {
@@ -81,7 +115,7 @@ final class FloorPlanDraftStore {
     var canApplyBrush: Bool { !pendingBrushStrokes.isEmpty && !isProcessing && !isDrawing }
     var isProcessing: Bool { processingStage != .idle }
     var isImporting: Bool {
-        processingStage == .analyzingImage || processingStage == .preparingPreview
+        processingStage == .normalizingImage
     }
     var activity: String { processingStage.message ?? "" }
     // Only same-image edit replay retains a preview; import/retry work stays visible.
@@ -100,8 +134,44 @@ final class FloorPlanDraftStore {
         return try? LocalFloorPlanGeometry.validateScale(scale, width: image.width, height: image.height)
     }
     var hasValidScale: Bool { canContinueEditing && pixelsPerMeter != nil }
-    var canRegister: Bool { step == .scaling && hasValidScale && hasName }
+    var canContinueToAlignment: Bool {
+        image != nil && hasName && processingStage != .normalizingImage
+    }
+    var canStartWorldMapScan: Bool {
+        startPlanPoint != nil && directionPlanPoint != nil && !scanCheckpoints.isEmpty
+            && worldMapScanner != nil
+    }
+    var canCaptureStartAlignment: Bool {
+        step == .scanning && worldMapStart == nil && frameState.trackingMessage == "추적 정상"
+    }
+    var completedScanCheckpointCount: Int {
+        max(0, worldMapCorrespondences.count - (worldMapStart == nil ? 0 : 1))
+    }
+    var currentScanCheckpointIndex: Int? {
+        guard step == .scanning, worldMapStart != nil,
+              completedScanCheckpointCount < scanCheckpoints.count else { return nil }
+        return completedScanCheckpointCount
+    }
+    var canCaptureScanCheckpoint: Bool {
+        currentScanCheckpointIndex != nil && frameState.trackingMessage == "추적 정상"
+    }
+    var canSaveWorldMap: Bool {
+        step == .scanning && worldMapStart != nil && worldMapCorrespondences.count >= 2
+            && completedScanCheckpointCount == scanCheckpoints.count
+            && frameState.mapping == .mapped && !isSavingWorldMap
+    }
+    var worldMapPreviewSession: AnyObject? { worldMapScanner?.previewSession }
+    var canRegister: Bool {
+        step == .editing && hasValidScale && hasName && worldMapDraft != nil
+    }
     var canSaveMaskEdit: Bool { step == .editing && hasValidScale && hasName }
+    var canRetryMaskExtraction: Bool {
+        step == .editing && image != nil && worldMapDraft != nil
+            && maskExtractionState == .failed && !isProcessing
+    }
+    var canReturnToEditingWithWorldMap: Bool {
+        step == .alignment && image != nil && worldMapDraft != nil
+    }
 
     func begin() { reset() }
     func beginMaskEditing(_ snapshot: LocalFloorPlanSnapshot) {
@@ -164,14 +234,26 @@ final class FloorPlanDraftStore {
     func importImage(from url: URL) {
         invalidateWork()
         errorMessage = nil
-        processingStage = .analyzingImage
+        processingStage = .normalizingImage
         let token = generation
         let service = importer
         work = Task { [weak self] in
             do {
-                let result = try await service.process(url: url)
+                let normalizedImage = try await service.normalize(url: url)
                 try Task.checkCancellation()
                 guard let self, self.generation == token else { return }
+
+                self.clearImageState()
+                self.image = normalizedImage
+#if canImport(UIKit)
+                self.previewImage = UIImage(data: normalizedImage.pngData)
+#endif
+                self.processingStage = .extractingMask
+                self.maskExtractionState = .running
+
+                let result = try await service.extractMask(from: normalizedImage)
+                try Task.checkCancellation()
+                guard self.generation == token else { return }
 
                 self.processingStage = .preparingPreview
                 let previewStart = ContinuousClock.now
@@ -182,7 +264,7 @@ final class FloorPlanDraftStore {
                 // The old draft remains usable if any of these steps fail or are cancelled.
                 let preparation = Task.detached(priority: .userInitiated) {
                     var cache = try LocalFloorPlanReplayCache(base: result.baseGrid,
-                        width: result.image.width, height: result.image.height)
+                        width: normalizedImage.width, height: normalizedImage.height)
                     let grid = try cache.resolve(edits: [], outline: outline)
                     try Task.checkCancellation()
                     let png = try LocalFloorPlanMaskRenderer.pngData(grid: grid)
@@ -195,8 +277,6 @@ final class FloorPlanDraftStore {
                 guard self.generation == token else { return }
                 Self.logDuration("preview", since: previewStart)
 
-                self.clearImageState()
-                self.image = result.image
                 self.baseGrid = result.baseGrid
                 self.extractionAlgorithm = result.extractionAlgorithm
                 self.resolvedGrid = grid
@@ -204,27 +284,45 @@ final class FloorPlanDraftStore {
                 self.maskPNGData = png
                 self.replayCache = cache
 #if canImport(UIKit)
-                self.previewImage = UIImage(data: result.image.pngData)
+                self.previewImage = UIImage(data: normalizedImage.pngData)
                 self.maskImage = UIImage(data: png, scale: 1 / CGFloat(grid.cellSizePixels))
 #endif
-                self.step = .editing
-                self.editorMode = .pen
-                self.tool = .pen
+                self.maskExtractionState = .succeeded
                 self.processingStage = .idle
                 self.work = nil
+                self.finishCreationIfReady()
             } catch {
                 guard let self, self.generation == token else { return }
+                if self.image?.fileName == url.lastPathComponent {
+                    self.maskExtractionState = .failed
+                }
                 self.processingStage = .idle
                 self.work = nil
-                if !(error is CancellationError) { self.errorMessage = error.localizedDescription }
+                if !(error is CancellationError) {
+                    if self.image?.fileName == url.lastPathComponent {
+                        Self.logger.error("AI wall extraction failed; fallback will run after AR scan: \(error.localizedDescription, privacy: .public)")
+                        if self.worldMapDraft != nil { self.extractFallbackMask() }
+                    } else {
+                        self.errorMessage = error.localizedDescription
+                    }
+                }
             }
         }
     }
 
     func cancelProcessing() {
+        let cancelledMaskExtraction = image != nil && maskExtractionState == .running
+            && processingStage != .replayingEdits
         invalidateWork()
+        if cancelledMaskExtraction { maskExtractionState = .failed }
         if image == nil { step = .information }
         errorMessage = nil
+    }
+
+    func retryMaskExtraction() {
+        guard canRetryMaskExtraction else { return }
+        errorMessage = nil
+        extractFallbackMask()
     }
 
     func stageBrushStroke(_ stroke: LocalEditStroke) {
@@ -310,7 +408,8 @@ final class FloorPlanDraftStore {
     }
 
     func placePoint(_ point: LocalPlanPoint) {
-        guard point.isValid, !isProcessing else { return }
+        guard point.isValid, processingStage != .normalizingImage,
+              processingStage != .preparingPreview else { return }
         switch tool {
         case .pen:
             guard selection.count < 512 else { errorMessage = "선택 영역의 꼭짓점은 최대 512개입니다."; return }
@@ -318,27 +417,188 @@ final class FloorPlanDraftStore {
         case .scaleA: scaleA = point; tool = .scaleB
         case .scaleB:
             if scaleB == nil { scaleB = point }
+        case .alignmentPoint:
+            placeWorldMapPoint(point)
         default: return
         }
     }
 
     func moveScaleMarker(_ marker: LocalScaleMarker, to point: LocalPlanPoint) {
-        guard step == .scaling, point.isValid, !isProcessing else { return }
+        guard point.isValid, !isProcessing else { return }
         switch marker {
         case .a: scaleA = point
         case .b: scaleB = point
         }
     }
 
-    func continueToScale() {
-        guard canContinueEditing else { return }
-        step = .scaling
-        tool = .scaleA
+    func continueToWorldMapAlignment() {
+        guard canContinueToAlignment else { return }
+        step = .alignment
+        worldMapPointTarget = startPlanPoint == nil ? .start : .direction
+        tool = .alignmentPoint
         errorMessage = nil
     }
+
+    func selectWorldMapPointTarget(_ target: LocalWorldMapPointTarget) {
+        guard step == .alignment else { return }
+        worldMapPointTarget = target
+        tool = .alignmentPoint
+        errorMessage = nil
+    }
+
+    func removeLastScanCheckpoint() {
+        guard step == .alignment, !scanCheckpoints.isEmpty else { return }
+        scanCheckpoints.removeLast()
+        invalidateCompletedWorldMap()
+        errorMessage = nil
+    }
+
+    func resetWorldMapReference() {
+        guard step == .alignment else { return }
+        startPlanPoint = nil
+        directionPlanPoint = nil
+        worldMapStart = nil
+        worldMapCorrespondences = []
+        invalidateCompletedWorldMap()
+        worldMapPointTarget = .start
+        tool = .alignmentPoint
+        errorMessage = nil
+    }
+
+    func startWorldMapScan() async {
+        guard canStartWorldMapScan, let worldMapScanner else { return }
+        cancelWorldMapSave()
+        worldMapStart = nil
+        worldMapCorrespondences = []
+        worldMapDraft = nil
+        frameState = LocalWorldMapFrameState(
+            mapping: .unavailable,
+            trackingMessage: "주변을 천천히 비추며 초기화하세요"
+        )
+        do {
+            try await worldMapScanner.start()
+            step = .scanning
+            tool = .move
+            errorMessage = nil
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func captureWorldMapStart() {
+        guard canCaptureStartAlignment, let worldMapScanner,
+              let startPlanPoint, let directionPlanPoint else { return }
+        do {
+            let pose = try worldMapScanner.currentPose()
+            let start = WorldMapStart(
+                pose: pose,
+                planPoint: NormalizedPoint(x: startPlanPoint.x, y: startPlanPoint.y),
+                directionPoint: NormalizedPoint(x: directionPlanPoint.x, y: directionPlanPoint.y)
+            )
+            worldMapStart = start
+            worldMapCorrespondences = [WorldMapCorrespondence(
+                label: "start",
+                planPoint: start.planPoint,
+                arPose: pose,
+                capturedAt: .now
+            )]
+            errorMessage = nil
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func captureCurrentScanCheckpoint() {
+        guard canCaptureScanCheckpoint, let index = currentScanCheckpointIndex,
+              scanCheckpoints.indices.contains(index), let worldMapScanner else { return }
+        do {
+            let pose = try worldMapScanner.currentPose()
+            let point = scanCheckpoints[index]
+            worldMapCorrespondences.append(WorldMapCorrespondence(
+                label: "checkpoint-\(index + 1)",
+                planPoint: NormalizedPoint(x: point.x, y: point.y),
+                arPose: pose,
+                capturedAt: .now
+            ))
+            errorMessage = nil
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func saveWorldMap() async {
+        guard canSaveWorldMap, let worldMapScanner, let image, let worldMapStart else { return }
+        cancelWorldMapSave()
+        isSavingWorldMap = true
+        let token = worldMapSaveGeneration
+        let correspondences = worldMapCorrespondences
+        do {
+            let result = try LocalWorldMapAlignmentCalculator.calculate(
+                correspondences: correspondences,
+                imageWidth: image.width,
+                imageHeight: image.height
+            )
+            let archiveTask = Task { try await worldMapScanner.makeWorldMapArchive() }
+            worldMapSaveTask = archiveTask
+            let archive = try await withTaskCancellationHandler {
+                try await archiveTask.value
+            } onCancel: {
+                archiveTask.cancel()
+            }
+            try Task.checkCancellation()
+            guard worldMapSaveGeneration == token, step == .scanning else { return }
+            scaleA = result.scale.a
+            scaleB = result.scale.b
+            distanceText = String(result.scale.meters)
+            worldMapDraft = LocalWorldMapScanDraft(
+                id: UUID(),
+                createdAt: .now,
+                archive: archive,
+                start: worldMapStart,
+                correspondences: correspondences,
+                alignment: result.alignment,
+                compression: .none
+            )
+            worldMapSaveTask = nil
+            isSavingWorldMap = false
+            worldMapScanner.stop()
+            errorMessage = nil
+            finishCreationIfReady()
+            if maskExtractionState == .failed {
+                extractFallbackMask()
+            }
+        } catch {
+            guard worldMapSaveGeneration == token else { return }
+            worldMapSaveTask = nil
+            isSavingWorldMap = false
+            if !(error is CancellationError) { errorMessage = error.localizedDescription }
+        }
+    }
+
     func returnToEditing() {
-        step = image == nil ? .information : .editing
+        guard canReturnToEditingWithWorldMap else { return }
+        step = .editing
         tool = editorMode == .pen ? .pen : .brush
+        errorMessage = nil
+    }
+
+    func worldMapScanDraft() -> LocalWorldMapScanDraft? { worldMapDraft }
+
+    /// 생성 흐름 안에서 한 단계 뒤로 이동했다면 true를 반환한다.
+    func goBackCreationStep() -> Bool {
+        switch step {
+        case .information:
+            return false
+        case .alignment:
+            step = .information
+            tool = .move
+        case .scanning:
+            cancelWorldMapSave()
+            worldMapScanner?.stop()
+            worldMapStart = nil
+            worldMapCorrespondences = []
+            step = .alignment
+            tool = .alignmentPoint
+        case .editing:
+            step = .alignment
+            tool = .alignmentPoint
+        }
+        errorMessage = nil
+        return true
     }
 
     func registration() -> LocalRegisteredFloorPlan? {
@@ -361,6 +621,92 @@ final class FloorPlanDraftStore {
             resolvedGrid: resolvedGrid,
             extractionAlgorithm: extractionAlgorithm
         )
+    }
+
+    private func placeWorldMapPoint(_ point: LocalPlanPoint) {
+        switch worldMapPointTarget {
+        case .start:
+            startPlanPoint = point
+            directionPlanPoint = nil
+            worldMapStart = nil
+            worldMapCorrespondences = []
+            invalidateCompletedWorldMap()
+            worldMapPointTarget = .direction
+        case .direction:
+            guard let startPlanPoint,
+                  hypot(point.x - startPlanPoint.x, point.y - startPlanPoint.y) > 0.01 else {
+                errorMessage = "방향점은 출발점과 떨어진 위치에 지정해주세요."
+                return
+            }
+            directionPlanPoint = point
+            invalidateCompletedWorldMap()
+            worldMapPointTarget = .checkpoint
+        case .checkpoint:
+            guard scanCheckpoints.allSatisfy({ hypot(point.x - $0.x, point.y - $0.y) > 0.01 }) else {
+                errorMessage = "이미 지정한 체크포인트와 떨어진 위치를 선택해주세요."
+                return
+            }
+            scanCheckpoints.append(point)
+            invalidateCompletedWorldMap()
+        }
+        errorMessage = nil
+    }
+
+    private func finishCreationIfReady() {
+        // Only the scan completion path advances automatically. If the user has gone
+        // back to alignment, a late mask result must not undo that navigation.
+        guard step == .scanning, worldMapDraft != nil else { return }
+        step = .editing
+        editorMode = .pen
+        tool = .pen
+    }
+
+    private func extractFallbackMask() {
+        guard let image else { return }
+        invalidateWork()
+        processingStage = .extractingMask
+        maskExtractionState = .running
+        let token = generation
+        let service = importer
+        work = Task { [weak self] in
+            do {
+                let result = try await service.extractFallbackMask(from: image)
+                try Task.checkCancellation()
+                let outline = result.suggestedOutline.isEmpty
+                    ? Self.fullImageOutline : result.suggestedOutline
+                let preparation = Task.detached(priority: .userInitiated) {
+                    var cache = try LocalFloorPlanReplayCache(
+                        base: result.baseGrid,
+                        width: image.width,
+                        height: image.height
+                    )
+                    let grid = try cache.resolve(edits: [], outline: outline)
+                    let png = try LocalFloorPlanMaskRenderer.pngData(grid: grid)
+                    return (cache, grid, png)
+                }
+                let (cache, grid, png) = try await preparation.value
+                guard let self, self.generation == token else { return }
+                self.baseGrid = result.baseGrid
+                self.resolvedGrid = grid
+                self.outline = outline
+                self.extractionAlgorithm = result.extractionAlgorithm
+                self.replayCache = cache
+                self.maskPNGData = png
+#if canImport(UIKit)
+                self.maskImage = UIImage(data: png, scale: 1 / CGFloat(grid.cellSizePixels))
+#endif
+                self.processingStage = .idle
+                self.maskExtractionState = .succeeded
+                self.work = nil
+                self.finishCreationIfReady()
+            } catch {
+                guard let self, self.generation == token else { return }
+                self.processingStage = .idle
+                self.maskExtractionState = .failed
+                self.work = nil
+                if !(error is CancellationError) { self.errorMessage = error.localizedDescription }
+            }
+        }
     }
 
     // During stroke replay, retain only the last visual preview to prevent flashing.
@@ -419,6 +765,17 @@ final class FloorPlanDraftStore {
         processingStage = .idle
     }
 
+    private func cancelWorldMapSave() {
+        worldMapSaveGeneration = UUID()
+        worldMapSaveTask?.cancel()
+        worldMapSaveTask = nil
+        isSavingWorldMap = false
+    }
+
+    private func invalidateCompletedWorldMap() {
+        worldMapDraft = nil
+    }
+
     private static func logDuration(_ stage: String, since start: ContinuousClock.Instant) {
 #if DEBUG
         let duration = start.duration(to: .now).components
@@ -429,11 +786,14 @@ final class FloorPlanDraftStore {
     }
 
     private func clearImageState() {
+        cancelWorldMapSave()
+        worldMapScanner?.stop()
         replayCache = nil
         step = .information
         image = nil
         baseGrid = nil
         extractionAlgorithm = .v13
+        maskExtractionState = .idle
         resolvedGrid = nil
         edits = []
         outline = []
@@ -444,6 +804,14 @@ final class FloorPlanDraftStore {
         scaleA = nil
         scaleB = nil
         distanceText = ""
+        startPlanPoint = nil
+        directionPlanPoint = nil
+        scanCheckpoints = []
+        worldMapPointTarget = .start
+        frameState = LocalWorldMapFrameState(mapping: .unavailable, trackingMessage: "스캔을 시작해주세요")
+        worldMapStart = nil
+        worldMapCorrespondences = []
+        worldMapDraft = nil
         maskPNGData = nil
         tool = .move
         editorMode = .pen

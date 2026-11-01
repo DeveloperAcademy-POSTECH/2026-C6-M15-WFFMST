@@ -34,6 +34,7 @@ struct InstructorApp: App {
         WindowGroup {
             AppContainer(
                 floorPlanFileRepository: floorPlanFileRepository,
+                worldMapFileRepository: StorageWorldMapFileRepository(),
                 floorPlanCatalogRepository: floorPlanCatalogRepository
             )
         }

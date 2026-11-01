@@ -5,34 +5,54 @@ import ImageIO
 import UniformTypeIdentifiers
 
 private actor ControlledImporter: FloorPlanImporting {
-    private var pending: [String: CheckedContinuation<LocalExtractionResult, Error>] = [:]
+    private var pendingNormalization: [String: CheckedContinuation<LocalImportedImage, Error>] = [:]
+    private var pendingExtraction: [String: CheckedContinuation<LocalMaskExtractionResult, Error>] = [:]
 
-    func process(url: URL) async throws -> LocalExtractionResult {
-        try await withCheckedThrowingContinuation { pending[url.lastPathComponent] = $0 }
+    func normalize(url: URL) async throws -> LocalImportedImage {
+        try await withCheckedThrowingContinuation { pendingNormalization[url.lastPathComponent] = $0 }
     }
 
-    func has(_ name: String) -> Bool { pending[name] != nil }
+    func extractMask(from image: LocalImportedImage) async throws -> LocalMaskExtractionResult {
+        try await withCheckedThrowingContinuation { pendingExtraction[image.fileName] = $0 }
+    }
 
-    func succeed(_ name: String, suggestedOutline: [LocalPlanPoint] = []) {
-        pending.removeValue(forKey: name)?.resume(returning: LocalExtractionResult(
-            image: LocalImportedImage(
-                pngData: Data([1, 2, 3]),
-                width: 100,
-                height: 80,
-                fileName: name
-            ),
+    func extractFallbackMask(from image: LocalImportedImage) async throws -> LocalMaskExtractionResult {
+        maskResult()
+    }
+
+    func has(_ name: String) -> Bool { pendingNormalization[name] != nil }
+    func hasExtraction(_ name: String) -> Bool { pendingExtraction[name] != nil }
+
+    func succeedNormalization(_ name: String) {
+        pendingNormalization.removeValue(forKey: name)?.resume(returning: LocalImportedImage(
+            pngData: Data([1, 2, 3]),
+            width: 100,
+            height: 80,
+            fileName: name
+        ))
+    }
+
+    func succeedExtraction(_ name: String, suggestedOutline: [LocalPlanPoint] = []) {
+        pendingExtraction.removeValue(forKey: name)?.resume(returning: maskResult(
+            suggestedOutline: suggestedOutline
+        ))
+    }
+
+    private func maskResult(suggestedOutline: [LocalPlanPoint] = []) -> LocalMaskExtractionResult {
+        LocalMaskExtractionResult(
             baseGrid: LocalObstacleGrid(
                 columns: 50,
                 rows: 40,
                 cellSizePixels: 2,
                 blocked: [UInt8](repeating: 0, count: 2_000)
             ),
-            suggestedOutline: suggestedOutline
-        ))
+            suggestedOutline: suggestedOutline,
+            extractionAlgorithm: .v13
+        )
     }
 
     func fail(_ name: String, error: Error) {
-        pending.removeValue(forKey: name)?.resume(throwing: error)
+        pendingNormalization.removeValue(forKey: name)?.resume(throwing: error)
     }
 }
 
@@ -65,20 +85,86 @@ private actor ControlledFloorPlanFileRepository: FloorPlanFileRepository {
     func failNextUpload() { failuresRemaining = 1 }
 }
 
+@MainActor
+private final class ControlledWorldMapScanner: NSObject, WorldMapScanning {
+    var onFrameUpdate: ((LocalWorldMapFrameState) -> Void)?
+    var previewSession: AnyObject { self }
+    private var poses: [ARPose] = []
+    private var delaysArchive: Bool
+    private(set) var isArchivePending = false
+    private(set) var startCount = 0
+
+    init(delaysArchive: Bool = false) {
+        self.delaysArchive = delaysArchive
+    }
+
+    func start() async throws {
+        startCount += 1
+        poses = [
+            ARPose(x: 0, y: 1.4, z: 0, forwardX: 1, forwardZ: 0),
+            ARPose(x: 1, y: 1.4, z: 0, forwardX: 1, forwardZ: 0),
+        ]
+        onFrameUpdate?(LocalWorldMapFrameState(mapping: .mapped, trackingMessage: "추적 정상"))
+    }
+
+    func currentPose() throws -> ARPose {
+        guard !poses.isEmpty else { throw LocalFloorPlanError.invalid("test pose unavailable") }
+        return poses.removeFirst()
+    }
+
+    func makeWorldMapArchive() async throws -> Data {
+        isArchivePending = true
+        defer { isArchivePending = false }
+        while delaysArchive {
+            try Task.checkCancellation()
+            try await Task.sleep(for: .milliseconds(2))
+        }
+        return Data("world-map".utf8)
+    }
+
+    func releaseArchive() { delaysArchive = false }
+    func stop() {}
+}
+
+private actor ControlledWorldMapFileRepository: WorldMapFileRepository {
+    private var references: [WorldMapReference] = []
+    func upload(_ files: WorldMapFiles, for reference: WorldMapReference) async throws {
+        let setup = try JSONDecoder().decode(WorldMapSetup.self, from: files.setupJSON)
+        precondition(setup.matches(reference))
+        precondition(reference.setupSHA256 == LocalFloorPlanFileBuilder.sha256(files.setupJSON))
+        precondition(setup.worldMapSHA256 == LocalFloorPlanFileBuilder.sha256(files.worldMapArchive))
+        precondition(setup.worldMapBytes == files.worldMapArchive.count)
+        references.append(reference)
+    }
+    func download(_ reference: WorldMapReference) async throws -> WorldMapFiles {
+        throw RepositoryError.notFound
+    }
+    func uploads() -> [WorldMapReference] { references }
+}
+
 @main
 @MainActor
 enum FloorPlanRegistrationChecks {
     static func main() async throws {
+        try checkWorldMapAlignmentAndAutomaticScale()
         try await checkImportLifecycle()
+        try await checkWorldMapSaveCancellation()
+        try await checkWorldMapDraftReuseAfterBackNavigation()
+        try await checkMaskCancellationRecovery()
 
         let importer = ControlledImporter()
-        let draft = FloorPlanDraftStore(importer: importer)
+        let draft = FloorPlanDraftStore(
+            importer: importer,
+            worldMapScanner: ControlledWorldMapScanner()
+        )
         let repository = ControlledFloorPlanFileRepository(failures: 1)
+        let worldMapRepository = ControlledWorldMapFileRepository()
         let catalog = DemoFloorPlanCatalogRepository()
         let store = InstructorStore(
             floorPlans: [],
             floorPlanDraft: draft,
             floorPlanFileRepository: repository,
+            worldMapFileRepository: worldMapRepository,
             floorPlanCatalogRepository: catalog
         )
 
@@ -107,7 +193,7 @@ enum FloorPlanRegistrationChecks {
         store.registerFloorPlan()
         precondition(store.isUploadingFloorPlan && !store.canGoBack)
         store.goBack()
-        precondition(store.phase == .floorPlanCreation && draft.step == .scaling,
+        precondition(store.phase == .floorPlanCreation && draft.step == .editing,
                      "back must not discard a running upload")
         try await wait { !store.isUploadingFloorPlan }
         precondition(store.phase == .floorPlanCreation && store.floorPlans.isEmpty)
@@ -130,6 +216,7 @@ enum FloorPlanRegistrationChecks {
         precondition(uploadedReference.navigationSHA256
             == LocalFloorPlanFileBuilder.sha256(uploadedFiles.navigationMapJSON))
         precondition(store.selectedFloorPlan?.reference == uploadedReference)
+        precondition(store.selectedFloorPlan?.worldMap?.floorPlan == uploadedReference)
         precondition(store.selectedFloorPlan?.registeredPlan?.id == uploadedReference.floorPlanID)
         precondition(draft.step == .information && draft.image == nil)
 
@@ -138,8 +225,37 @@ enum FloorPlanRegistrationChecks {
         store.createSession()
         try await wait { store.phase == .teamReadiness }
         precondition(store.currentSession?.floorPlan == uploadedReference)
+        precondition(store.currentSession?.worldMap == store.selectedFloorPlan?.worldMap)
         store.goBack()
         try await wait { store.phase == .sessionCreation }
+
+        let validPlan = try require(store.selectedFloorPlan, "등록된 도면 필요")
+        let mismatchedFloorPlan = FloorPlanReference(
+            floorPlanID: UUID(),
+            navigationSHA256: String(repeating: "0", count: 64)
+        )
+        let mismatchedPlan = InstructorFloorPlan(
+            id: validPlan.id,
+            name: validPlan.name,
+            fileName: validPlan.fileName,
+            referenceDistance: validPlan.referenceDistance,
+            reference: validPlan.reference,
+            worldMap: WorldMapReference(
+                worldMapID: UUID(),
+                setupSHA256: String(repeating: "1", count: 64),
+                floorPlan: mismatchedFloorPlan
+            ),
+            createdAt: validPlan.createdAt,
+            updatedAt: validPlan.updatedAt,
+            registeredPlan: validPlan.registeredPlan
+        )
+        let mismatchStore = InstructorStore(floorPlans: [mismatchedPlan])
+        mismatchStore.openSessionCreation()
+        mismatchStore.createSession()
+        try await wait { !mismatchStore.isCreatingSession }
+        precondition(mismatchStore.phase == .sessionCreation)
+        precondition(mismatchStore.currentSession == nil)
+        precondition(mismatchStore.sessionCreationError?.contains("일치하지 않습니다") == true)
 
         store.openFloorPlanCreation()
         _ = try await prepareDraft(draft, importer: importer)
@@ -164,11 +280,13 @@ enum FloorPlanRegistrationChecks {
         try await wait { !store.isUploadingFloorPlan }
         precondition(store.floorPlanUploadError != nil && store.canGoBack)
         store.goBack()
-        precondition(store.phase == .floorPlanCreation && draft.step == .editing && draft.image != nil,
-                     "first back preserves the draft for editing")
+        precondition(store.phase == .floorPlanCreation && draft.step == .alignment && draft.image != nil,
+                     "first back preserves the draft at scan alignment")
         precondition(store.floorPlanUploadError == nil && !store.isUploadingFloorPlan)
         store.retryFloorPlanUpload()
         precondition(!store.isUploadingFloorPlan, "back must discard the failed upload snapshot")
+        store.goBack()
+        precondition(store.phase == .floorPlanCreation && draft.step == .information)
         store.goBack()
         precondition(store.phase == .floorPlanList && draft.image == nil && draft.name.isEmpty)
         precondition(store.floorPlans.count == 2, "a failed upload must not add a plan")
@@ -183,49 +301,120 @@ enum FloorPlanRegistrationChecks {
         print("PASS: FloorPlanFiles 생성, 홀수 이미지 계약, SHA-256 참조, 업로드·로컬 저장 실패 재시도, 세션 참조")
     }
 
+    private static func checkWorldMapAlignmentAndAutomaticScale() throws {
+        let capturedAt = Date(timeIntervalSince1970: 0)
+        let correspondences = [
+            WorldMapCorrespondence(
+                label: "origin",
+                planPoint: NormalizedPoint(x: 0.2, y: 0.25),
+                arPose: ARPose(x: 0, y: 1.5, z: 0, forwardX: 0, forwardZ: -1),
+                capturedAt: capturedAt
+            ),
+            WorldMapCorrespondence(
+                label: "east",
+                planPoint: NormalizedPoint(x: 0.6, y: 0.25),
+                arPose: ARPose(x: 2, y: 1.5, z: 0, forwardX: 0, forwardZ: -1),
+                capturedAt: capturedAt
+            ),
+            WorldMapCorrespondence(
+                label: "south",
+                planPoint: NormalizedPoint(x: 0.2, y: 0.5),
+                arPose: ARPose(x: 0, y: 1.5, z: 1, forwardX: 0, forwardZ: -1),
+                capturedAt: capturedAt
+            )
+        ]
+        let result = try LocalWorldMapAlignmentCalculator.calculate(
+            correspondences: correspondences,
+            imageWidth: 1_000,
+            imageHeight: 800
+        )
+        precondition(abs(result.alignment.pixelsPerMeter - 200) < 1e-9)
+        precondition(abs(result.alignment.rotationDegrees) < 1e-9)
+        precondition(abs(result.alignment.translation.x - 200) < 1e-9)
+        precondition(abs(result.alignment.translation.y - 200) < 1e-9)
+        precondition(result.alignment.rmsErrorMeters < 1e-9)
+        precondition(result.alignment.algorithmVersion == "similarity-v1")
+        let pixelsPerMeter = try LocalFloorPlanGeometry.validateScale(
+            result.scale,
+            width: 1_000,
+            height: 800
+        )
+        precondition(abs(pixelsPerMeter - 200) < 1e-9)
+
+        var noisyCorrespondences = correspondences
+        noisyCorrespondences[2] = WorldMapCorrespondence(
+            label: "south-noisy",
+            planPoint: NormalizedPoint(x: 0.205, y: 0.49),
+            arPose: correspondences[2].arPose,
+            capturedAt: capturedAt
+        )
+        let noisyResult = try LocalWorldMapAlignmentCalculator.calculate(
+            correspondences: noisyCorrespondences,
+            imageWidth: 1_000,
+            imageHeight: 800
+        )
+        let noisyScale = try LocalFloorPlanGeometry.validateScale(
+            noisyResult.scale,
+            width: 1_000,
+            height: 800
+        )
+        precondition(abs(noisyScale - noisyResult.alignment.pixelsPerMeter) < 1e-9,
+                     "manifest scale and fitted alignment scale must stay identical")
+
+        do {
+            _ = try LocalWorldMapAlignmentCalculator.calculate(
+                correspondences: Array(correspondences.prefix(1)),
+                imageWidth: 1_000,
+                imageHeight: 800
+            )
+            preconditionFailure("대응점 하나로 정렬을 계산하면 안 된다")
+        } catch is LocalFloorPlanError {}
+    }
+
     private static func checkImportLifecycle() async throws {
         let importer = ControlledImporter()
         let draft = FloorPlanDraftStore(importer: importer)
 
         draft.importImage(from: URL(fileURLWithPath: "/virtual/cancelled.png"))
-        precondition(draft.processingStage == .analyzingImage)
+        precondition(draft.processingStage == .normalizingImage)
         precondition(draft.isProcessing && draft.isImporting)
         try await wait { await importer.has("cancelled.png") }
         draft.cancelProcessing()
         precondition(draft.processingStage == .idle && !draft.isProcessing)
         precondition(draft.errorMessage == nil, "사용자 취소는 오류로 표시하지 않아야 한다")
-        await importer.succeed("cancelled.png")
+        await importer.succeedNormalization("cancelled.png")
         try await Task.sleep(for: .milliseconds(20))
         precondition(draft.image == nil, "취소된 작업의 늦은 결과를 반영하지 않아야 한다")
 
         draft.importImage(from: URL(fileURLWithPath: "/virtual/original.png"))
         try await wait { await importer.has("original.png") }
-        await importer.succeed("original.png", suggestedOutline: outline)
+        await importer.succeedNormalization("original.png")
+        try await wait { await importer.hasExtraction("original.png") }
+        precondition(draft.image?.fileName == "original.png",
+                     "정규화 이미지는 마스크 추출 완료 전에 표시해야 한다")
+        precondition(draft.maskExtractionState == .running)
+        precondition(!draft.isImporting, "마스크 추출은 파일 가져오기 화면을 막지 않아야 한다")
+        await importer.succeedExtraction("original.png", suggestedOutline: outline)
         try await wait { !draft.isProcessing }
         precondition(draft.image?.fileName == "original.png")
         precondition(draft.outline == outline, "자동 제안 영역을 첫 미리보기에 적용해야 한다")
-        draft.setEditorMode(.brush)
-        let pendingStroke = LocalEditStroke(mode: .block,
-            points: [LocalPlanPoint(x: 0.2, y: 0.2), LocalPlanPoint(x: 0.4, y: 0.4)],
-            normalizedDiameter: 0.02)
-        draft.stageBrushStroke(pendingStroke)
-
         draft.importImage(from: URL(fileURLWithPath: "/virtual/failure.png"))
         try await wait { await importer.has("failure.png") }
         await importer.fail("failure.png", error: LocalFloorPlanError.invalid("분석 실패"))
         try await wait { !draft.isProcessing }
         precondition(draft.errorMessage == "분석 실패")
         precondition(draft.image?.fileName == "original.png")
-        precondition(draft.pendingBrushStrokes == [pendingStroke], "교체 실패 시 기존 편집 작업본을 유지해야 한다")
 
         draft.importImage(from: URL(fileURLWithPath: "/virtual/stale.png"))
         try await wait { await importer.has("stale.png") }
         draft.importImage(from: URL(fileURLWithPath: "/virtual/latest.png"))
         try await wait { await importer.has("latest.png") }
-        await importer.succeed("stale.png")
+        await importer.succeedNormalization("stale.png")
         try await Task.sleep(for: .milliseconds(20))
         precondition(draft.image?.fileName == "original.png", "이전 요청의 결과를 반영하지 않아야 한다")
-        await importer.succeed("latest.png")
+        await importer.succeedNormalization("latest.png")
+        try await wait { await importer.hasExtraction("latest.png") }
+        await importer.succeedExtraction("latest.png")
         try await wait { !draft.isProcessing }
         precondition(draft.image?.fileName == "latest.png")
         precondition(draft.outline == fullImageOutline,
@@ -237,13 +426,134 @@ enum FloorPlanRegistrationChecks {
         precondition(draft.errorMessage == nil, "파일 선택 취소는 오류로 표시하지 않아야 한다")
     }
 
+    private static func checkWorldMapSaveCancellation() async throws {
+        let importer = ControlledImporter()
+        let scanner = ControlledWorldMapScanner(delaysArchive: true)
+        let draft = FloorPlanDraftStore(importer: importer, worldMapScanner: scanner)
+        try await prepareScannableDraft(draft, importer: importer, completeMask: true)
+
+        let save = Task { await draft.saveWorldMap() }
+        try await wait { scanner.isArchivePending }
+        precondition(draft.isSavingWorldMap)
+        precondition(draft.goBackCreationStep())
+        scanner.releaseArchive()
+        await save.value
+
+        precondition(draft.step == .alignment)
+        precondition(draft.worldMapDraft == nil)
+        precondition(draft.worldMapCorrespondences.isEmpty)
+        precondition(!draft.isSavingWorldMap)
+        precondition(draft.errorMessage == nil)
+    }
+
+    private static func checkWorldMapDraftReuseAfterBackNavigation() async throws {
+        let importer = ControlledImporter()
+        let scanner = ControlledWorldMapScanner()
+        let draft = FloorPlanDraftStore(importer: importer, worldMapScanner: scanner)
+        try await prepareScannableDraft(draft, importer: importer, completeMask: false)
+        await draft.saveWorldMap()
+
+        precondition(draft.step == .editing)
+        let original = try require(draft.worldMapDraft, "WorldMap 초안 필요")
+        precondition(scanner.startCount == 1)
+
+        precondition(draft.goBackCreationStep())
+        precondition(draft.step == .alignment)
+        precondition(draft.canReturnToEditingWithWorldMap)
+        let preserved = try require(draft.worldMapDraft, "뒤로가기 후 WorldMap 초안 보존 필요")
+        precondition(preserved.id == original.id)
+        precondition(preserved.archive == original.archive)
+        precondition(preserved.correspondences.count == original.correspondences.count)
+        precondition(scanner.startCount == 1, "편집에서 뒤로 가도 재스캔하지 않아야 한다")
+
+        await importer.succeedExtraction("mask-cancel.png")
+        try await wait { !draft.isProcessing }
+        precondition(draft.step == .alignment,
+                     "늦은 마스크 결과가 사용자의 뒤로가기를 되돌리지 않아야 한다")
+
+        draft.returnToEditing()
+        precondition(draft.step == .editing)
+        precondition(draft.worldMapDraft?.id == original.id)
+        precondition(scanner.startCount == 1)
+
+        precondition(draft.goBackCreationStep())
+        draft.selectWorldMapPointTarget(.checkpoint)
+        draft.placePoint(LocalPlanPoint(x: 0.3, y: 0.7))
+        precondition(draft.worldMapDraft == nil,
+                     "정합 입력을 변경하면 이전 WorldMap 정합 결과를 폐기해야 한다")
+        draft.returnToEditing()
+        precondition(draft.step == .alignment, "WorldMap 초안 없이 편집으로 복귀하면 안 된다")
+    }
+
+    private static func checkMaskCancellationRecovery() async throws {
+        let importer = ControlledImporter()
+        let draft = FloorPlanDraftStore(
+            importer: importer,
+            worldMapScanner: ControlledWorldMapScanner()
+        )
+        try await prepareScannableDraft(draft, importer: importer, completeMask: false)
+        await draft.saveWorldMap()
+        precondition(draft.step == .editing && draft.maskExtractionState == .running)
+
+        draft.cancelProcessing()
+        precondition(!draft.isProcessing)
+        precondition(draft.maskExtractionState == .failed)
+        precondition(draft.canRetryMaskExtraction)
+
+        draft.retryMaskExtraction()
+        try await wait { draft.maskExtractionState == .succeeded }
+        precondition(draft.canRegister)
+        await importer.succeedExtraction("mask-cancel.png")
+    }
+
+    private static func prepareScannableDraft(
+        _ draft: FloorPlanDraftStore,
+        importer: ControlledImporter,
+        completeMask: Bool
+    ) async throws {
+        let fileName = completeMask ? "save-cancel.png" : "mask-cancel.png"
+        draft.setName("테스트 도면")
+        draft.importImage(from: URL(fileURLWithPath: "/virtual/\(fileName)"))
+        try await wait { await importer.has(fileName) }
+        await importer.succeedNormalization(fileName)
+        try await wait { await importer.hasExtraction(fileName) }
+        if completeMask {
+            await importer.succeedExtraction(fileName)
+            try await wait { !draft.isProcessing }
+        }
+        draft.continueToWorldMapAlignment()
+        draft.placePoint(LocalPlanPoint(x: 0.2, y: 0.2))
+        draft.placePoint(LocalPlanPoint(x: 0.8, y: 0.2))
+        draft.placePoint(LocalPlanPoint(x: 0.8, y: 0.5))
+        await draft.startWorldMapScan()
+        draft.captureWorldMapStart()
+        draft.captureCurrentScanCheckpoint()
+        precondition(draft.canSaveWorldMap)
+    }
+
     private static func prepareDraft(_ draft: FloorPlanDraftStore, importer: ControlledImporter) async throws -> LocalEditStroke {
         draft.setName("  새 도면  ")
         draft.importImage(from: URL(fileURLWithPath: "/virtual/original.png"))
         try await wait { await importer.has("original.png") }
-        await importer.succeed("original.png")
+        await importer.succeedNormalization("original.png")
+        try await wait { await importer.hasExtraction("original.png") }
+        await importer.succeedExtraction("original.png")
         try await wait { !draft.isProcessing }
         precondition(draft.outline == fullImageOutline)
+        draft.continueToWorldMapAlignment()
+        draft.placePoint(LocalPlanPoint(x: 0.2, y: 0.2))
+        draft.placePoint(LocalPlanPoint(x: 0.8, y: 0.2))
+        draft.placePoint(LocalPlanPoint(x: 0.8, y: 0.5))
+        precondition(draft.scanCheckpoints.count == 1, "checkpoint not planned")
+        await draft.startWorldMapScan()
+        precondition(draft.step == .scanning, "scan did not start: \(String(describing: draft.errorMessage))")
+        draft.captureWorldMapStart()
+        precondition(draft.worldMapStart != nil, "start pose not captured: \(String(describing: draft.errorMessage))")
+        draft.captureCurrentScanCheckpoint()
+        precondition(draft.worldMapCorrespondences.count == 2, "checkpoint pose not captured")
+        precondition(draft.completedScanCheckpointCount == 1, "checkpoint not completed")
+        await draft.saveWorldMap()
+        precondition(draft.step == .editing, "world map not saved: \(String(describing: draft.errorMessage))")
         let stroke = LocalEditStroke(
             mode: .block,
             points: [LocalPlanPoint(x: 0.3, y: 0.3), LocalPlanPoint(x: 0.6, y: 0.3)],
@@ -253,10 +563,6 @@ enum FloorPlanRegistrationChecks {
         draft.stageBrushStroke(stroke)
         draft.applyPendingBrush(.block)
         try await wait { !draft.isProcessing }
-        draft.continueToScale()
-        draft.placePoint(LocalPlanPoint(x: 0.2, y: 0.2))
-        draft.placePoint(LocalPlanPoint(x: 0.8, y: 0.2))
-        draft.setDistance("10")
         precondition(draft.canRegister)
         return stroke
     }
