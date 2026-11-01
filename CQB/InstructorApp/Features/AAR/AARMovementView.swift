@@ -23,11 +23,21 @@ struct AARMovementView: View {
                         container: geometry.size,
                         padding: floorPlanPadding
                     )
-                    ForEach(store.selectedParticipants) { participant in
+                    ForEach(store.aarParticipants) { participant in
                         if let position = aarStore.position(for: participant.id) {
-                            participantMarker(participant)
+                            Button {
+                                store.toggleParticipantSelection(participant.id)
+                            } label: {
+                                participantMarker(participant)
+                            }
+                            .buttonStyle(.plain)
                                 .opacity(position.presence == .tracked ? 1 : 0.35)
                                 .position(layout.viewPoint(for: position.point))
+                            .accessibilityLabel(markerAccessibilityLabel(participant))
+                            .accessibilityHint(store.isParticipantSelected(participant.id)
+                                ? "선택을 해제합니다"
+                                : "영상 패널에 추가합니다")
+                            .accessibilityIdentifier("aar.marker.\(participant.id)")
                         }
                     }
                 }
@@ -64,13 +74,33 @@ struct AARMovementView: View {
     }
 
     private func participantMarker(_ participant: InstructorParticipant) -> some View {
-        Text("\(participant.number)")
-            .font(markerFont)
-            .foregroundStyle(InstructorColor.textPrimary)
-            .monospacedDigit()
-            .frame(width: 49, height: 49)
-            .background(InstructorColor.teamOne, in: Circle())
-            .accessibilityLabel("\(participant.displayName) 위치")
+        let slotNumber = store.videoSlotNumber(for: participant.id)
+
+        return ZStack {
+            Circle()
+                .fill(slotNumber == nil ? InstructorColor.playerSurface : InstructorColor.actionPrimary)
+                .frame(width: slotNumber == nil ? 18 : 48, height: slotNumber == nil ? 18 : 48)
+                .overlay {
+                    Circle()
+                        .strokeBorder(InstructorColor.textPrimary, lineWidth: slotNumber == nil ? 2 : 0)
+                }
+
+            if let slotNumber {
+                Text("\(slotNumber)")
+                    .font(markerFont)
+                    .foregroundStyle(InstructorColor.playerSurface)
+                    .monospacedDigit()
+            }
+        }
+        .frame(width: 48, height: 48)
+        .contentShape(.circle)
+    }
+
+    private func markerAccessibilityLabel(_ participant: InstructorParticipant) -> String {
+        if let slotNumber = store.videoSlotNumber(for: participant.id) {
+            return "\(participant.name), 선택됨, 영상 \(slotNumber)번"
+        }
+        return "\(participant.name), 선택되지 않음"
     }
 
     private var markerFont: Font {
