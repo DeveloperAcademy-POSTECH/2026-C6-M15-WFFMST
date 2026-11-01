@@ -5,34 +5,54 @@ import ImageIO
 import UniformTypeIdentifiers
 
 private actor ControlledImporter: FloorPlanImporting {
-    private var pending: [String: CheckedContinuation<LocalExtractionResult, Error>] = [:]
+    private var pendingNormalization: [String: CheckedContinuation<LocalImportedImage, Error>] = [:]
+    private var pendingExtraction: [String: CheckedContinuation<LocalMaskExtractionResult, Error>] = [:]
 
-    func process(url: URL) async throws -> LocalExtractionResult {
-        try await withCheckedThrowingContinuation { pending[url.lastPathComponent] = $0 }
+    func normalize(url: URL) async throws -> LocalImportedImage {
+        try await withCheckedThrowingContinuation { pendingNormalization[url.lastPathComponent] = $0 }
     }
 
-    func has(_ name: String) -> Bool { pending[name] != nil }
+    func extractMask(from image: LocalImportedImage) async throws -> LocalMaskExtractionResult {
+        try await withCheckedThrowingContinuation { pendingExtraction[image.fileName] = $0 }
+    }
 
-    func succeed(_ name: String, suggestedOutline: [LocalPlanPoint] = []) {
-        pending.removeValue(forKey: name)?.resume(returning: LocalExtractionResult(
-            image: LocalImportedImage(
-                pngData: Data([1, 2, 3]),
-                width: 100,
-                height: 80,
-                fileName: name
-            ),
+    func extractFallbackMask(from image: LocalImportedImage) async throws -> LocalMaskExtractionResult {
+        maskResult()
+    }
+
+    func has(_ name: String) -> Bool { pendingNormalization[name] != nil }
+    func hasExtraction(_ name: String) -> Bool { pendingExtraction[name] != nil }
+
+    func succeedNormalization(_ name: String) {
+        pendingNormalization.removeValue(forKey: name)?.resume(returning: LocalImportedImage(
+            pngData: Data([1, 2, 3]),
+            width: 100,
+            height: 80,
+            fileName: name
+        ))
+    }
+
+    func succeedExtraction(_ name: String, suggestedOutline: [LocalPlanPoint] = []) {
+        pendingExtraction.removeValue(forKey: name)?.resume(returning: maskResult(
+            suggestedOutline: suggestedOutline
+        ))
+    }
+
+    private func maskResult(suggestedOutline: [LocalPlanPoint] = []) -> LocalMaskExtractionResult {
+        LocalMaskExtractionResult(
             baseGrid: LocalObstacleGrid(
                 columns: 50,
                 rows: 40,
                 cellSizePixels: 2,
                 blocked: [UInt8](repeating: 0, count: 2_000)
             ),
-            suggestedOutline: suggestedOutline
-        ))
+            suggestedOutline: suggestedOutline,
+            extractionAlgorithm: .v13
+        )
     }
 
     func fail(_ name: String, error: Error) {
-        pending.removeValue(forKey: name)?.resume(throwing: error)
+        pendingNormalization.removeValue(forKey: name)?.resume(throwing: error)
     }
 }
 
@@ -69,6 +89,7 @@ private actor ControlledFloorPlanFileRepository: FloorPlanFileRepository {
 @MainActor
 enum FloorPlanRegistrationChecks {
     static func main() async throws {
+        try checkWorldMapAlignmentAndAutomaticScale()
         try await checkImportLifecycle()
 
         let importer = ControlledImporter()
@@ -183,24 +204,80 @@ enum FloorPlanRegistrationChecks {
         print("PASS: FloorPlanFiles 생성, 홀수 이미지 계약, SHA-256 참조, 업로드·로컬 저장 실패 재시도, 세션 참조")
     }
 
+    private static func checkWorldMapAlignmentAndAutomaticScale() throws {
+        let capturedAt = Date(timeIntervalSince1970: 0)
+        let correspondences = [
+            WorldMapCorrespondence(
+                label: "origin",
+                planPoint: NormalizedPoint(x: 0.2, y: 0.25),
+                arPose: ARPose(x: 0, y: 1.5, z: 0, forwardX: 0, forwardZ: -1),
+                capturedAt: capturedAt
+            ),
+            WorldMapCorrespondence(
+                label: "east",
+                planPoint: NormalizedPoint(x: 0.6, y: 0.25),
+                arPose: ARPose(x: 2, y: 1.5, z: 0, forwardX: 0, forwardZ: -1),
+                capturedAt: capturedAt
+            ),
+            WorldMapCorrespondence(
+                label: "south",
+                planPoint: NormalizedPoint(x: 0.2, y: 0.5),
+                arPose: ARPose(x: 0, y: 1.5, z: 1, forwardX: 0, forwardZ: -1),
+                capturedAt: capturedAt
+            )
+        ]
+        let result = try LocalWorldMapAlignmentCalculator.calculate(
+            correspondences: correspondences,
+            imageWidth: 1_000,
+            imageHeight: 800
+        )
+        precondition(abs(result.alignment.pixelsPerMeter - 200) < 1e-9)
+        precondition(abs(result.alignment.rotationDegrees) < 1e-9)
+        precondition(abs(result.alignment.translation.x - 200) < 1e-9)
+        precondition(abs(result.alignment.translation.y - 200) < 1e-9)
+        precondition(result.alignment.rmsErrorMeters < 1e-9)
+        precondition(result.alignment.algorithmVersion == "similarity-v1")
+        let pixelsPerMeter = try LocalFloorPlanGeometry.validateScale(
+            result.scale,
+            width: 1_000,
+            height: 800
+        )
+        precondition(abs(pixelsPerMeter - 200) < 1e-9)
+
+        do {
+            _ = try LocalWorldMapAlignmentCalculator.calculate(
+                correspondences: Array(correspondences.prefix(1)),
+                imageWidth: 1_000,
+                imageHeight: 800
+            )
+            preconditionFailure("대응점 하나로 정렬을 계산하면 안 된다")
+        } catch is LocalFloorPlanError {}
+    }
+
     private static func checkImportLifecycle() async throws {
         let importer = ControlledImporter()
         let draft = FloorPlanDraftStore(importer: importer)
 
         draft.importImage(from: URL(fileURLWithPath: "/virtual/cancelled.png"))
-        precondition(draft.processingStage == .analyzingImage)
+        precondition(draft.processingStage == .normalizingImage)
         precondition(draft.isProcessing && draft.isImporting)
         try await wait { await importer.has("cancelled.png") }
         draft.cancelProcessing()
         precondition(draft.processingStage == .idle && !draft.isProcessing)
         precondition(draft.errorMessage == nil, "사용자 취소는 오류로 표시하지 않아야 한다")
-        await importer.succeed("cancelled.png")
+        await importer.succeedNormalization("cancelled.png")
         try await Task.sleep(for: .milliseconds(20))
         precondition(draft.image == nil, "취소된 작업의 늦은 결과를 반영하지 않아야 한다")
 
         draft.importImage(from: URL(fileURLWithPath: "/virtual/original.png"))
         try await wait { await importer.has("original.png") }
-        await importer.succeed("original.png", suggestedOutline: outline)
+        await importer.succeedNormalization("original.png")
+        try await wait { await importer.hasExtraction("original.png") }
+        precondition(draft.image?.fileName == "original.png",
+                     "정규화 이미지는 마스크 추출 완료 전에 표시해야 한다")
+        precondition(draft.maskExtractionState == .running)
+        precondition(!draft.isImporting, "마스크 추출은 파일 가져오기 화면을 막지 않아야 한다")
+        await importer.succeedExtraction("original.png", suggestedOutline: outline)
         try await wait { !draft.isProcessing }
         precondition(draft.image?.fileName == "original.png")
         precondition(draft.outline == outline, "자동 제안 영역을 첫 미리보기에 적용해야 한다")
@@ -222,10 +299,12 @@ enum FloorPlanRegistrationChecks {
         try await wait { await importer.has("stale.png") }
         draft.importImage(from: URL(fileURLWithPath: "/virtual/latest.png"))
         try await wait { await importer.has("latest.png") }
-        await importer.succeed("stale.png")
+        await importer.succeedNormalization("stale.png")
         try await Task.sleep(for: .milliseconds(20))
         precondition(draft.image?.fileName == "original.png", "이전 요청의 결과를 반영하지 않아야 한다")
-        await importer.succeed("latest.png")
+        await importer.succeedNormalization("latest.png")
+        try await wait { await importer.hasExtraction("latest.png") }
+        await importer.succeedExtraction("latest.png")
         try await wait { !draft.isProcessing }
         precondition(draft.image?.fileName == "latest.png")
         precondition(draft.outline == fullImageOutline,
@@ -241,7 +320,9 @@ enum FloorPlanRegistrationChecks {
         draft.setName("  새 도면  ")
         draft.importImage(from: URL(fileURLWithPath: "/virtual/original.png"))
         try await wait { await importer.has("original.png") }
-        await importer.succeed("original.png")
+        await importer.succeedNormalization("original.png")
+        try await wait { await importer.hasExtraction("original.png") }
+        await importer.succeedExtraction("original.png")
         try await wait { !draft.isProcessing }
         precondition(draft.outline == fullImageOutline)
         let stroke = LocalEditStroke(

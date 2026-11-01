@@ -11,18 +11,27 @@ private enum LocalFloorPlanHistoryEntry: Sendable {
 
 enum FloorPlanProcessingStage: Equatable {
     case idle
-    case analyzingImage
+    case normalizingImage
+    case extractingMask
     case preparingPreview
     case replayingEdits
 
     var message: String? {
         switch self {
         case .idle: nil
-        case .analyzingImage: "도면을 분석하고 벽을 추출하는 중"
+        case .normalizingImage: "도면 이미지를 준비하는 중"
+        case .extractingMask: "도면을 분석하고 벽을 추출하는 중"
         case .preparingPreview: "분석 결과와 미리보기를 준비하는 중"
         case .replayingEdits: "편집 결과를 계산하는 중"
         }
     }
+}
+
+enum FloorPlanMaskExtractionState: Equatable {
+    case idle
+    case running
+    case succeeded
+    case failed
 }
 
 @MainActor
@@ -45,6 +54,7 @@ final class FloorPlanDraftStore {
     private(set) var editorMode: LocalFloorPlanEditorMode = .pen
     private(set) var normalizedDiameter = 0.006
     private(set) var processingStage: FloorPlanProcessingStage = .idle
+    private(set) var maskExtractionState: FloorPlanMaskExtractionState = .idle
     private(set) var isDrawing = false
     private(set) var errorMessage: String?
     private(set) var maskPNGData: Data?
@@ -81,7 +91,7 @@ final class FloorPlanDraftStore {
     var canApplyBrush: Bool { !pendingBrushStrokes.isEmpty && !isProcessing && !isDrawing }
     var isProcessing: Bool { processingStage != .idle }
     var isImporting: Bool {
-        processingStage == .analyzingImage || processingStage == .preparingPreview
+        processingStage == .normalizingImage
     }
     var activity: String { processingStage.message ?? "" }
     // Only same-image edit replay retains a preview; import/retry work stays visible.
@@ -164,14 +174,34 @@ final class FloorPlanDraftStore {
     func importImage(from url: URL) {
         invalidateWork()
         errorMessage = nil
-        processingStage = .analyzingImage
+        processingStage = .normalizingImage
         let token = generation
         let service = importer
         work = Task { [weak self] in
             do {
-                let result = try await service.process(url: url)
+                let normalizedImage = try await service.normalize(url: url)
                 try Task.checkCancellation()
                 guard let self, self.generation == token else { return }
+
+                self.clearImageState()
+                self.image = normalizedImage
+#if canImport(UIKit)
+                self.previewImage = UIImage(data: normalizedImage.pngData)
+#endif
+                self.processingStage = .extractingMask
+                self.maskExtractionState = .running
+
+                let result: LocalMaskExtractionResult
+                do {
+                    result = try await service.extractMask(from: normalizedImage)
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    Self.logger.error("AI wall extraction failed; using V13 fallback: \(error.localizedDescription, privacy: .public)")
+                    result = try await service.extractFallbackMask(from: normalizedImage)
+                }
+                try Task.checkCancellation()
+                guard self.generation == token else { return }
 
                 self.processingStage = .preparingPreview
                 let previewStart = ContinuousClock.now
@@ -182,7 +212,7 @@ final class FloorPlanDraftStore {
                 // The old draft remains usable if any of these steps fail or are cancelled.
                 let preparation = Task.detached(priority: .userInitiated) {
                     var cache = try LocalFloorPlanReplayCache(base: result.baseGrid,
-                        width: result.image.width, height: result.image.height)
+                        width: normalizedImage.width, height: normalizedImage.height)
                     let grid = try cache.resolve(edits: [], outline: outline)
                     try Task.checkCancellation()
                     let png = try LocalFloorPlanMaskRenderer.pngData(grid: grid)
@@ -195,8 +225,6 @@ final class FloorPlanDraftStore {
                 guard self.generation == token else { return }
                 Self.logDuration("preview", since: previewStart)
 
-                self.clearImageState()
-                self.image = result.image
                 self.baseGrid = result.baseGrid
                 self.extractionAlgorithm = result.extractionAlgorithm
                 self.resolvedGrid = grid
@@ -204,16 +232,20 @@ final class FloorPlanDraftStore {
                 self.maskPNGData = png
                 self.replayCache = cache
 #if canImport(UIKit)
-                self.previewImage = UIImage(data: result.image.pngData)
+                self.previewImage = UIImage(data: normalizedImage.pngData)
                 self.maskImage = UIImage(data: png, scale: 1 / CGFloat(grid.cellSizePixels))
 #endif
                 self.step = .editing
                 self.editorMode = .pen
                 self.tool = .pen
+                self.maskExtractionState = .succeeded
                 self.processingStage = .idle
                 self.work = nil
             } catch {
                 guard let self, self.generation == token else { return }
+                if self.image != nil {
+                    self.maskExtractionState = .failed
+                }
                 self.processingStage = .idle
                 self.work = nil
                 if !(error is CancellationError) { self.errorMessage = error.localizedDescription }
@@ -434,6 +466,7 @@ final class FloorPlanDraftStore {
         image = nil
         baseGrid = nil
         extractionAlgorithm = .v13
+        maskExtractionState = .idle
         resolvedGrid = nil
         edits = []
         outline = []

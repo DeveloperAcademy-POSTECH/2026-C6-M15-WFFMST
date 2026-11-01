@@ -59,6 +59,13 @@ nonisolated struct LocalExtractionResult: Sendable {
     var extractionAlgorithm: LocalWallExtractionAlgorithm = .v13
 }
 
+/// 정규화된 도면과 독립적으로 완료되는 벽·장애물 추출 결과다.
+nonisolated struct LocalMaskExtractionResult: Sendable {
+    var baseGrid: LocalObstacleGrid
+    var suggestedOutline: [LocalPlanPoint]
+    var extractionAlgorithm: LocalWallExtractionAlgorithm
+}
+
 nonisolated struct LocalBlockedRegionSuggestion: Equatable, Sendable {
     var outline: [LocalPlanPoint]
     var confidence: Double
