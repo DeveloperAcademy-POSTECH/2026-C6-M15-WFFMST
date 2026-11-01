@@ -12,7 +12,10 @@ struct CameraPreviewView: View {
 
     private var guidanceMessage: String? {
         if let error = service.fatalError { return error }
-        if isRecording { return service.trackingWarning }
+        if isRecording {
+            let warnings = [service.trackingWarning, service.audioWarning].compactMap { $0 }
+            return warnings.isEmpty ? nil : warnings.joined(separator: "\n")
+        }
         if isWaiting && !service.isReady { return service.statusMessage }
         return nil
     }

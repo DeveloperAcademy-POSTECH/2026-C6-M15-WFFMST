@@ -289,8 +289,11 @@ final class MemberStore {
                     }
                 }
             }
-            try cameraService.startRecording(to: files.videoChunksDirectory,
-                start: map.pixel(startPoint), direction: map.pixel(directionPoint))
+            try await cameraService.startRecording(to: files.videoChunksDirectory,
+                start: map.pixel(startPoint), direction: map.pixel(directionPoint),
+                shouldStart: { [weak self] in
+                    self?.phase == .waiting && self?.startRequestedBySession == true
+                })
             self.identity = identity
             recordingFiles = files
             savedRecordingURLs = []
@@ -317,6 +320,7 @@ final class MemberStore {
         } catch {
             videoChunkUploadQueue = nil
             cameraService.onVideoChunkReady = nil
+            guard phase == .waiting, startRequestedBySession else { return }
             // Keep the session start request pending so the member can retry while the
             // session is running, or tracking recovery can trigger another attempt.
             canRetryRecordingStart = true

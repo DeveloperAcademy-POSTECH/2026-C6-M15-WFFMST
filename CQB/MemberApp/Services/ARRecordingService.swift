@@ -11,12 +11,14 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate {
     private(set) var statusMessage = "카메라 준비 중"
     /// 시작 전 방향 안정화와 별개인, 현재 AR 추적 품질 안내.
     private(set) var trackingWarning: String?
+    private(set) var audioWarning: String?
     private(set) var fatalError: String?
     private(set) var isRecording = false
     private(set) var samples: [RawTrackSample] = []
     private(set) var videoChunkURLs: [URL] = []
     private(set) var rotationDegrees = 0.0
     @ObservationIgnored private let writer = ARFrameVideoWriter()
+    @ObservationIgnored private let audioCapture = MemberAudioCaptureService()
     @ObservationIgnored var onVideoChunkReady: (@MainActor @Sendable (Int, URL) -> Void)?
     @ObservationIgnored private var origin = SIMD3<Float>(repeating: 0)
     @ObservationIgnored private var firstTimestamp = 0.0
@@ -28,6 +30,7 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate {
     @ObservationIgnored private var running = false
     @ObservationIgnored private var startingSession = false
     @ObservationIgnored private var wantsRunning = false
+    @ObservationIgnored private var startingRecording = false
 
     override init() {
         super.init()
@@ -85,22 +88,54 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate {
         writer.discardFinishedCapture()
     }
 
-    func startRecording(to directory: URL, start: MapPoint, direction: MapPoint) throws {
-        guard !isRecording, isReady, let frame = session.currentFrame,
+    func startRecording(to directory: URL, start: MapPoint, direction: MapPoint,
+                        shouldStart: @MainActor () -> Bool = { true }) async throws {
+        guard !isRecording, !startingRecording else { throw CaptureError.notReady }
+        startingRecording = true
+        defer { startingRecording = false }
+        let audioAllowed: Bool
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized: audioAllowed = true
+        case .notDetermined: audioAllowed = await AVCaptureDevice.requestAccess(for: .audio)
+        default: audioAllowed = false
+        }
+        guard wantsRunning, shouldStart(), !Task.isCancelled else { throw CaptureError.notReady }
+        let videoWriter = writer
+        let sampleRate: Double?
+        if audioAllowed {
+            sampleRate = await audioCapture.start(onSampleBuffer: { sampleBuffer in
+                videoWriter.append(audioSampleBuffer: sampleBuffer)
+            }, onInterruption: { [weak self] in
+                videoWriter.markAudioInterrupted()
+                Task { @MainActor [weak self] in
+                    self?.audioWarning = "소리 녹음이 중단되었습니다. 영상과 동선은 계속 기록합니다."
+                }
+            })
+        } else { sampleRate = nil }
+        audioWarning = sampleRate == nil ? "마이크를 사용할 수 없어 소리 없이 녹화합니다." : nil
+        guard wantsRunning, shouldStart(), !Task.isCancelled, isReady, let frame = session.currentFrame,
               case .normal = frame.camera.trackingState,
               let heading = RouteHeading.stableCameraDirection(headings.map(\.1)),
               let rotation = RouteHeading.rotation(start: start, toward: direction, referenceRadians: heading) else {
+            await audioCapture.stop()
             throw CaptureError.notReady
         }
         let orientation = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first(where: { $0.activationState == .foregroundActive })?.interfaceOrientation ?? .landscapeRight
-        try writer.start(firstFrame: frame.capturedImage, timestamp: frame.timestamp,
-                         outputDirectory: directory, orientation: orientation) { [weak self] index, url in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                if !self.videoChunkURLs.contains(url) { self.videoChunkURLs.append(url) }
-                self.onVideoChunkReady?(index, url)
+        do {
+            try writer.start(firstFrame: frame.capturedImage, timestamp: frame.timestamp,
+                             outputDirectory: directory, orientation: orientation,
+                             audioSampleRate: sampleRate) { [weak self] index, url in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if !self.videoChunkURLs.contains(url) { self.videoChunkURLs.append(url) }
+                    self.onVideoChunkReady?(index, url)
+                }
             }
+        } catch {
+            await audioCapture.stop()
+            writer.cancel()
+            throw error
         }
         let position = frame.camera.transform.columns.3
         origin = SIMD3(position.x, position.y, position.z)
@@ -119,12 +154,16 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate {
 
     func stopRecording() async throws -> [URL] {
         guard isRecording else { throw CaptureError.notRecording }
-        if let frame = session.currentFrame, frame.timestamp > firstTimestamp + lastSampleTime {
+        let finalFrame = session.currentFrame
+        if let frame = finalFrame, frame.timestamp > firstTimestamp + lastSampleTime {
             recordSample(frame, force: true)
+            writer.append(pixelBuffer: frame.capturedImage, timestamp: frame.timestamp)
         }
         isRecording = false
+        await audioCapture.stop()
+        let end = finalFrame.map { $0.timestamp + 1.0 / 30.0 }
         let chunks = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[URL], Error>) in
-            writer.finish { continuation.resume(with: $0) }
+            writer.finish(at: end) { continuation.resume(with: $0) }
         }
         videoChunkURLs = chunks
         return chunks
@@ -212,6 +251,7 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate {
         isReady = false
         normalSince = nil
         headings = []
+        writer.markAudioInterrupted()
         guard isRecording, let last = samples.last else { return }
         samples.append(RawTrackSample(t: last.t + 0.000001, x: last.x, y: last.y, z: last.z,
             relative: nil, trackingState: state, segment: segment))
