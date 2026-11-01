@@ -347,10 +347,6 @@ private struct SessionStartCard: View {
                                     .padding(.vertical, DSSpacing.s8)
                                     .background(DSColor.surfaceSecondary)
                                     .clipShape(.capsule)
-                                    .overlay {
-                                        Capsule()
-                                            .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
-                                    }
                             }
                             .buttonStyle(HomeCardButtonStyle())
                             .accessibilityHint("샘플 데이터로 전체 훈련 흐름을 체험합니다.")
