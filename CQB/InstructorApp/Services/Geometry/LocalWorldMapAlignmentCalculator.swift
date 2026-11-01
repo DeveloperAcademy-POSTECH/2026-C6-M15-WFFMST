@@ -75,10 +75,11 @@ nonisolated enum LocalWorldMapAlignmentCalculator {
         }
         let rmsErrorMeters = sqrt(squaredError / count) / pixelsPerMeter
 
-        guard let scale = farthestPairScale(
+        guard let scale = fittedScale(
             correspondences: correspondences,
             imageWidth: imageWidth,
-            imageHeight: imageHeight
+            imageHeight: imageHeight,
+            pixelsPerMeter: pixelsPerMeter
         ) else {
             throw LocalFloorPlanError.invalid("대응점은 실제 공간에서 15cm 이상 떨어진 위치에 지정해 주세요.")
         }
@@ -96,10 +97,11 @@ nonisolated enum LocalWorldMapAlignmentCalculator {
         )
     }
 
-    private static func farthestPairScale(
+    private static func fittedScale(
         correspondences: [WorldMapCorrespondence],
         imageWidth: Int,
-        imageHeight: Int
+        imageHeight: Int,
+        pixelsPerMeter: Double
     ) -> LocalPlanScale? {
         var best: (first: Int, second: Int, meters: Double)?
         for first in correspondences.indices {
@@ -123,7 +125,7 @@ nonisolated enum LocalWorldMapAlignmentCalculator {
         return LocalPlanScale(
             a: LocalPlanPoint(x: first.x, y: first.y),
             b: LocalPlanPoint(x: second.x, y: second.y),
-            meters: best.meters
+            meters: pixelDistance / pixelsPerMeter
         )
     }
 }

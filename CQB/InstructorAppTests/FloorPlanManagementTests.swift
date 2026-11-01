@@ -122,7 +122,84 @@ final class FloorPlanManagementTests: XCTestCase {
         XCTAssertEqual(uploadCount, 1)
     }
 
-    func testDeleteRemovesLocalCatalogEntryButDoesNotRequestStorageDeletion() throws {
+    func testMaskEditRebindsExistingWorldMapToNewFloorPlanReference() async throws {
+        let registration = try makeRegistration()
+        let floorPlanUpload = try LocalFloorPlanFileBuilder.build(from: registration)
+        let worldMapDraft = LocalWorldMapScanDraft(
+            id: UUID(),
+            createdAt: Date(timeIntervalSince1970: 20),
+            archive: Data("world-map".utf8),
+            start: WorldMapStart(
+                pose: ARPose(x: 0, y: 1.5, z: 0, forwardX: 1, forwardZ: 0),
+                planPoint: NormalizedPoint(x: 0, y: 0.5),
+                directionPoint: NormalizedPoint(x: 1, y: 0.5)
+            ),
+            correspondences: [
+                WorldMapCorrespondence(
+                    label: "start",
+                    planPoint: NormalizedPoint(x: 0, y: 0.5),
+                    arPose: ARPose(x: 0, y: 1.5, z: 0, forwardX: 1, forwardZ: 0),
+                    capturedAt: Date(timeIntervalSince1970: 20)
+                ),
+                WorldMapCorrespondence(
+                    label: "checkpoint-1",
+                    planPoint: NormalizedPoint(x: 1, y: 0.5),
+                    arPose: ARPose(x: 4, y: 1.5, z: 0, forwardX: 1, forwardZ: 0),
+                    capturedAt: Date(timeIntervalSince1970: 21)
+                )
+            ],
+            alignment: WorldMapAlignment(
+                rotationDegrees: 0,
+                pixelsPerMeter: 4,
+                translation: ImagePoint(x: 0, y: 8),
+                rmsErrorMeters: 0,
+                algorithmVersion: "test"
+            ),
+            compression: .none
+        )
+        let existingWorldMap = try LocalWorldMapFileBuilder.build(
+            from: worldMapDraft,
+            floorPlan: floorPlanUpload.reference
+        )
+        let plan = makePlan(
+            registration: registration,
+            reference: floorPlanUpload.reference,
+            worldMap: existingWorldMap.reference
+        )
+        let worldMapRepository = WorldMapRebindRepositoryStub(
+            reference: existingWorldMap.reference,
+            files: existingWorldMap.files
+        )
+        let store = InstructorStore(
+            floorPlans: [plan],
+            floorPlanFileRepository: FloorPlanDetailRemoteStub(result: .success(floorPlanUpload.files)),
+            worldMapFileRepository: worldMapRepository,
+            floorPlanCatalogRepository: DemoFloorPlanCatalogRepository(floorPlans: [plan])
+        )
+
+        store.openFloorPlanList()
+        store.openFloorPlanDetail(plan.id)
+        let didLoadDetail = await waitUntil { store.floorPlanDetailState == .loaded }
+        XCTAssertTrue(didLoadDetail)
+        store.beginFloorPlanMaskEditing()
+        store.saveFloorPlanMaskEdit()
+        let didSaveEdit = await waitUntil {
+            store.phase == .floorPlanDetail && !store.isUploadingFloorPlan
+        }
+        XCTAssertTrue(didSaveEdit)
+
+        let updatedPlan = try XCTUnwrap(store.floorPlans.first)
+        let updatedWorldMap = try XCTUnwrap(updatedPlan.worldMap)
+        XCTAssertEqual(updatedWorldMap.floorPlan, updatedPlan.reference)
+        XCTAssertNotEqual(updatedWorldMap.worldMapID, existingWorldMap.reference.worldMapID)
+        let result = await worldMapRepository.result()
+        XCTAssertEqual(result.downloadCount, 1)
+        XCTAssertEqual(result.uploads.count, 1)
+        XCTAssertEqual(result.uploads.first?.0, updatedWorldMap)
+        XCTAssertEqual(result.uploads.first?.1.worldMapArchive, existingWorldMap.files.worldMapArchive)
+    }
+
+    func testDeleteRemovesLocalCatalogEntryButDoesNotRequestStorageDeletion() async throws {
         let registration = try makeRegistration()
         let plan = makePlan(
             registration: registration,
@@ -139,6 +216,8 @@ final class FloorPlanManagementTests: XCTestCase {
 
         store.openFloorPlanList()
         store.openFloorPlanDetail(plan.id)
+        let didLoadDetail = await waitUntil { store.floorPlanDetailState == .loaded }
+        XCTAssertTrue(didLoadDetail)
         store.deleteViewedFloorPlan()
 
         XCTAssertEqual(store.phase, .floorPlanList)
@@ -146,7 +225,7 @@ final class FloorPlanManagementTests: XCTestCase {
         XCTAssertTrue(try catalog.fetchAll().isEmpty)
     }
 
-    func testDeleteFailureKeepsDetailAndCatalogEntry() throws {
+    func testDeleteFailureKeepsDetailAndCatalogEntry() async throws {
         let registration = try makeRegistration()
         let plan = makePlan(
             registration: registration,
@@ -164,6 +243,8 @@ final class FloorPlanManagementTests: XCTestCase {
 
         store.openFloorPlanList()
         store.openFloorPlanDetail(plan.id)
+        let didLoadDetail = await waitUntil { store.floorPlanDetailState == .loaded }
+        XCTAssertTrue(didLoadDetail)
         store.deleteViewedFloorPlan()
 
         XCTAssertEqual(store.phase, .floorPlanDetail)
@@ -217,7 +298,8 @@ final class FloorPlanManagementTests: XCTestCase {
 
     private func makePlan(
         registration: LocalRegisteredFloorPlan,
-        reference: FloorPlanReference
+        reference: FloorPlanReference,
+        worldMap: WorldMapReference? = nil
     ) -> InstructorFloorPlan {
         InstructorFloorPlan(
             id: "catalog-plan",
@@ -225,6 +307,7 @@ final class FloorPlanManagementTests: XCTestCase {
             fileName: registration.image.fileName,
             referenceDistance: registration.scale.meters,
             reference: reference,
+            worldMap: worldMap,
             createdAt: Date(timeIntervalSince1970: 10),
             updatedAt: Date(timeIntervalSince1970: 10),
             registeredPlan: registration
@@ -254,6 +337,32 @@ final class FloorPlanManagementTests: XCTestCase {
             try? await Task.sleep(for: .milliseconds(10))
         }
         return condition()
+    }
+}
+
+private actor WorldMapRebindRepositoryStub: WorldMapFileRepository {
+    private let reference: WorldMapReference
+    private let files: WorldMapFiles
+    private var downloadCount = 0
+    private var uploads: [(WorldMapReference, WorldMapFiles)] = []
+
+    init(reference: WorldMapReference, files: WorldMapFiles) {
+        self.reference = reference
+        self.files = files
+    }
+
+    func upload(_ files: WorldMapFiles, for reference: WorldMapReference) async throws {
+        uploads.append((reference, files))
+    }
+
+    func download(_ reference: WorldMapReference) async throws -> WorldMapFiles {
+        guard reference == self.reference else { throw RepositoryError.notFound }
+        downloadCount += 1
+        return files
+    }
+
+    func result() -> (downloadCount: Int, uploads: [(WorldMapReference, WorldMapFiles)]) {
+        (downloadCount, uploads)
     }
 }
 

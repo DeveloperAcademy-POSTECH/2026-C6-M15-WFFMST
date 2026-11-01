@@ -39,4 +39,32 @@ nonisolated enum LocalWorldMapFileBuilder {
             reference: reference
         )
     }
+
+    static func rebind(
+        _ files: WorldMapFiles,
+        from reference: WorldMapReference,
+        to floorPlan: FloorPlanReference,
+        id: UUID = UUID(),
+        createdAt: Date = .now
+    ) throws -> LocalWorldMapUpload {
+        guard reference.setupSHA256 == LocalFloorPlanFileBuilder.sha256(files.setupJSON) else {
+            throw RepositoryError.integrityMismatch
+        }
+        let setup = try JSONDecoder().decode(WorldMapSetup.self, from: files.setupJSON)
+        guard setup.matches(reference),
+              setup.worldMapSHA256 == LocalFloorPlanFileBuilder.sha256(files.worldMapArchive),
+              setup.worldMapBytes == files.worldMapArchive.count else {
+            throw RepositoryError.integrityMismatch
+        }
+        let rebound = LocalWorldMapScanDraft(
+            id: id,
+            createdAt: createdAt,
+            archive: files.worldMapArchive,
+            start: setup.start,
+            correspondences: setup.correspondences,
+            alignment: setup.alignment,
+            compression: setup.compression
+        )
+        return try build(from: rebound, floorPlan: floorPlan)
+    }
 }

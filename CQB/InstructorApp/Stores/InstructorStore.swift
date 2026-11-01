@@ -32,6 +32,10 @@ final class InstructorStore {
         case localSave
     }
 
+    private enum SessionCreationError: Error {
+        case worldMapMismatch
+    }
+
     private static let logger = Logger(subsystem: "com.wffmst.cqb", category: "InstructorStore")
 
     let floorPlanDraft: FloorPlanDraftStore
@@ -545,6 +549,9 @@ final class InstructorStore {
                 floorPlan: floorPlan,
                 worldMap: worldMap
             )
+            guard session.worldMapMatchesFloorPlan else {
+                throw SessionCreationError.worldMapMismatch
+            }
             do {
                 try await repository.createSession(session)
                 return session
@@ -930,6 +937,9 @@ final class InstructorStore {
     }
 
     private static func sessionCreationMessage(for error: Error) -> String {
+        if error is SessionCreationError {
+            return "도면과 공간 스캔 정보가 일치하지 않습니다. 도면을 다시 저장해주세요."
+        }
         if error as? RepositoryError == .pinTaken {
             return "사용 가능한 PIN을 만들지 못했습니다. 다시 시도해주세요."
         }
@@ -977,8 +987,21 @@ final class InstructorStore {
                         for: worldMapUpload.reference
                     )
                     worldMapReference = worldMapUpload.reference
+                } else if let existingWorldMap = existingPlan?.worldMap {
+                    guard let worldMapRepository else {
+                        throw LocalFloorPlanError.invalid("WorldMap 저장소가 구성되지 않았습니다.")
+                    }
+                    let existingFiles = try await worldMapRepository.download(existingWorldMap)
+                    try Task.checkCancellation()
+                    let rebound = try LocalWorldMapFileBuilder.rebind(
+                        existingFiles,
+                        from: existingWorldMap,
+                        to: upload.reference
+                    )
+                    try await worldMapRepository.upload(rebound.files, for: rebound.reference)
+                    worldMapReference = rebound.reference
                 } else {
-                    worldMapReference = existingPlan?.worldMap
+                    worldMapReference = nil
                 }
                 try Task.checkCancellation()
                 let now = Date.now

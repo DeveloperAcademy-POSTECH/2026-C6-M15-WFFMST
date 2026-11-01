@@ -622,7 +622,8 @@ struct FloorPlanCreateView: View {
     private var statusOverlay: some View {
         if (store.step == .editing && store.isProcessing && !store.isReplayingEdits)
             || importer.isPreparing || store.errorMessage != nil || importer.message != nil
-            || app.isUploadingFloorPlan || app.floorPlanUploadError != nil {
+            || app.isUploadingFloorPlan || app.floorPlanUploadError != nil
+            || store.canRetryMaskExtraction {
             VStack(alignment: .leading, spacing: 8) {
                 if importer.isPreparing {
                     HStack {
@@ -647,6 +648,12 @@ struct FloorPlanCreateView: View {
                         Button("취소", action: store.cancelProcessing)
                     }
                     .accessibilityIdentifier("floorPlan.import.processing")
+                }
+                if store.canRetryMaskExtraction {
+                    Text("마스크 분석이 중단되었습니다. 다시 시도할 수 있습니다.")
+                        .foregroundStyle(InstructorColor.validationError)
+                    ActionButton("마스크 분석 다시 시도", action: store.retryMaskExtraction)
+                        .accessibilityIdentifier("floorPlan.mask.retry")
                 }
                 if let error = store.errorMessage {
                     Text(error)
