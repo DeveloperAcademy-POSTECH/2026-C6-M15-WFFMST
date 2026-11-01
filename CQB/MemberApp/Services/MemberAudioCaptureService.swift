@@ -8,7 +8,7 @@ nonisolated final class MemberAudioCaptureService: NSObject, AVCaptureAudioDataO
     private let queue = DispatchQueue(label: "com.cqb.member.audio-capture", qos: .userInitiated)
     private var onSampleBuffer: (@Sendable (CMSampleBuffer) -> Void)?
     private var onInterruption: (@Sendable () -> Void)?
-    private var startup: CheckedContinuation<Double?, Never>?
+    private var startup: AsyncStream<Double>.Continuation?
     private var observers: [NSObjectProtocol] = []
     private var isConfigured = false
     private var generation = UUID()
@@ -17,13 +17,24 @@ nonisolated final class MemberAudioCaptureService: NSObject, AVCaptureAudioDataO
     /// A denied/unavailable microphone is represented by nil, as permitted by the contract.
     func start(onSampleBuffer: @escaping @Sendable (CMSampleBuffer) -> Void,
                onInterruption: @escaping @Sendable () -> Void) async -> Double? {
-        await withCheckedContinuation { continuation in
+        guard !Task.isCancelled else { return nil }
+        let requestID = UUID()
+        let responses = AsyncStream<Double>(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            continuation.onTermination = { [weak self] reason in
+                guard case .cancelled = reason, let self else { return }
+                self.queue.async { [self] in
+                    guard self.generation == requestID else { return }
+                    self.stopOnQueue()
+                }
+            }
+            // Enqueue startup before iteration begins, so cancellation's cleanup is ordered
+            // after it. The request ID prevents an old cleanup from stopping a new capture.
             queue.async { [self] in
                 stopOnQueue()
+                generation = requestID
                 self.onSampleBuffer = onSampleBuffer
                 self.onInterruption = onInterruption
                 startup = continuation
-                let currentGeneration = generation
                 do {
                     try configure()
                     observeInterruptions()
@@ -34,11 +45,13 @@ nonisolated final class MemberAudioCaptureService: NSObject, AVCaptureAudioDataO
                     return
                 }
                 queue.asyncAfter(deadline: .now() + 2) { [self] in
-                    guard generation == currentGeneration, startup != nil else { return }
+                    guard generation == requestID, startup != nil else { return }
                     stopOnQueue()
                 }
             }
         }
+        var iterator = responses.makeAsyncIterator()
+        return await iterator.next()
     }
 
     /// Waiting for this queue drains previously delivered buffers before the writer finishes.
@@ -87,7 +100,7 @@ nonisolated final class MemberAudioCaptureService: NSObject, AVCaptureAudioDataO
         if session.isRunning { session.stopRunning() }
         let continuation = startup
         startup = nil
-        continuation?.resume(returning: nil)
+        continuation?.finish()
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
@@ -98,7 +111,8 @@ nonisolated final class MemberAudioCaptureService: NSObject, AVCaptureAudioDataO
               }) else { return }
         if let continuation = startup {
             startup = nil
-            continuation.resume(returning: rate)
+            continuation.yield(rate)
+            continuation.finish()
         }
         callback(hostBuffer)
     }

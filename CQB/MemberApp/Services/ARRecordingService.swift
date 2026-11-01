@@ -3,9 +3,17 @@ import AVFoundation
 import Observation
 import UIKit
 
+/// The Store can control startup independently from the AR preview and session subscription.
+@MainActor
+protocol MemberRecordingStarting: AnyObject {
+    func startRecording(to directory: URL, start: MapPoint, direction: MapPoint,
+                        shouldStart: @escaping @MainActor () -> Bool) async throws
+    func cancelUncommittedRecording() async
+}
+
 /// 카메라의 단일 소유자. 같은 ARFrame 시계를 영상 PTS와 동선 t에 사용한다.
 @MainActor @Observable
-final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate {
+final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, MemberRecordingStarting {
     let session = ARSession()
     private(set) var isReady = false
     private(set) var statusMessage = "카메라 준비 중"
@@ -71,8 +79,8 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate {
     }
 
     func stop() {
-        guard !isRecording else { return }
         wantsRunning = false
+        guard !isRecording else { return }
         session.pause()
         running = false
         trackingWarning = nil
@@ -89,14 +97,14 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate {
     }
 
     func startRecording(to directory: URL, start: MapPoint, direction: MapPoint,
-                        shouldStart: @MainActor () -> Bool = { true }) async throws {
-        guard !isRecording, !startingRecording else { throw CaptureError.notReady }
+                        shouldStart: @escaping @MainActor () -> Bool = { true }) async throws {
+        guard !Task.isCancelled, !isRecording, !startingRecording else { throw CaptureError.notReady }
         startingRecording = true
         defer { startingRecording = false }
         let audioAllowed: Bool
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized: audioAllowed = true
-        case .notDetermined: audioAllowed = await AVCaptureDevice.requestAccess(for: .audio)
+        case .notDetermined: audioAllowed = await Self.requestMicrophoneAccess()
         default: audioAllowed = false
         }
         guard wantsRunning, shouldStart(), !Task.isCancelled else { throw CaptureError.notReady }
@@ -150,6 +158,33 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate {
         trackingWarning = nil
         statusMessage = "영상·동선 기록 중"
         recordSample(frame)
+    }
+
+    /// Only used for a startup result the Store has not committed to its recording phase.
+    func cancelUncommittedRecording() async {
+        isRecording = false
+        await audioCapture.stop()
+        writer.cancel()
+        samples = []
+        videoChunkURLs = []
+        if !wantsRunning { stop() }
+    }
+
+    static func requestMicrophoneAccess(
+        using request: (@escaping @Sendable (Bool) -> Void) -> Void = { callback in
+            AVCaptureDevice.requestAccess(for: .audio, completionHandler: callback)
+        }
+    ) async -> Bool {
+        // Cancelling iteration returns immediately. The system dialog cannot be dismissed,
+        // but its eventual callback only finishes this already-terminated stream.
+        let responses = AsyncStream<Bool>(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            request { allowed in
+                continuation.yield(allowed)
+                continuation.finish()
+            }
+        }
+        var iterator = responses.makeAsyncIterator()
+        return await iterator.next() ?? false
     }
 
     func stopRecording() async throws -> [URL] {
