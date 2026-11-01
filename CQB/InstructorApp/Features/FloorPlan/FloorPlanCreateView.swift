@@ -517,13 +517,21 @@ struct FloorPlanCreateView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(24)
             }
-            ActionButton("AR 스캔 시작", fillsWidth: true) {
-                Task { await store.startWorldMapScan() }
+            if store.canReturnToEditingWithWorldMap {
+                ActionButton("기존 스캔 결과로 편집 계속", fillsWidth: true, action: store.returnToEditing)
+                    .frame(height: 52)
+                    .accessibilityIdentifier("floorPlan.scan.reuse")
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 32)
+            } else {
+                ActionButton("AR 스캔 시작", fillsWidth: true) {
+                    Task { await store.startWorldMapScan() }
+                }
+                .frame(height: 52)
+                .disabled(!store.canStartWorldMapScan)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 32)
             }
-            .frame(height: 52)
-            .disabled(!store.canStartWorldMapScan)
-            .padding(.horizontal, 24)
-            .padding(.bottom, 32)
         }
     }
 

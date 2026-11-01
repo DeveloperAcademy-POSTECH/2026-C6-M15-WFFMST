@@ -169,6 +169,9 @@ final class FloorPlanDraftStore {
         step == .editing && image != nil && worldMapDraft != nil
             && maskExtractionState == .failed && !isProcessing
     }
+    var canReturnToEditingWithWorldMap: Bool {
+        step == .alignment && image != nil && worldMapDraft != nil
+    }
 
     func begin() { reset() }
     func beginMaskEditing(_ snapshot: LocalFloorPlanSnapshot) {
@@ -446,7 +449,7 @@ final class FloorPlanDraftStore {
     func removeLastScanCheckpoint() {
         guard step == .alignment, !scanCheckpoints.isEmpty else { return }
         scanCheckpoints.removeLast()
-        worldMapDraft = nil
+        invalidateCompletedWorldMap()
         errorMessage = nil
     }
 
@@ -456,7 +459,7 @@ final class FloorPlanDraftStore {
         directionPlanPoint = nil
         worldMapStart = nil
         worldMapCorrespondences = []
-        worldMapDraft = nil
+        invalidateCompletedWorldMap()
         worldMapPointTarget = .start
         tool = .alignmentPoint
         errorMessage = nil
@@ -567,8 +570,10 @@ final class FloorPlanDraftStore {
     }
 
     func returnToEditing() {
-        step = image == nil ? .information : .editing
+        guard canReturnToEditingWithWorldMap else { return }
+        step = .editing
         tool = editorMode == .pen ? .pen : .brush
+        errorMessage = nil
     }
 
     func worldMapScanDraft() -> LocalWorldMapScanDraft? { worldMapDraft }
@@ -589,7 +594,6 @@ final class FloorPlanDraftStore {
             step = .alignment
             tool = .alignmentPoint
         case .editing:
-            worldMapDraft = nil
             step = .alignment
             tool = .alignmentPoint
         }
@@ -626,7 +630,7 @@ final class FloorPlanDraftStore {
             directionPlanPoint = nil
             worldMapStart = nil
             worldMapCorrespondences = []
-            worldMapDraft = nil
+            invalidateCompletedWorldMap()
             worldMapPointTarget = .direction
         case .direction:
             guard let startPlanPoint,
@@ -635,6 +639,7 @@ final class FloorPlanDraftStore {
                 return
             }
             directionPlanPoint = point
+            invalidateCompletedWorldMap()
             worldMapPointTarget = .checkpoint
         case .checkpoint:
             guard scanCheckpoints.allSatisfy({ hypot(point.x - $0.x, point.y - $0.y) > 0.01 }) else {
@@ -642,12 +647,15 @@ final class FloorPlanDraftStore {
                 return
             }
             scanCheckpoints.append(point)
+            invalidateCompletedWorldMap()
         }
         errorMessage = nil
     }
 
     private func finishCreationIfReady() {
-        guard worldMapDraft != nil else { return }
+        // Only the scan completion path advances automatically. If the user has gone
+        // back to alignment, a late mask result must not undo that navigation.
+        guard step == .scanning, worldMapDraft != nil else { return }
         step = .editing
         editorMode = .pen
         tool = .pen
@@ -762,6 +770,10 @@ final class FloorPlanDraftStore {
         worldMapSaveTask?.cancel()
         worldMapSaveTask = nil
         isSavingWorldMap = false
+    }
+
+    private func invalidateCompletedWorldMap() {
+        worldMapDraft = nil
     }
 
     private static func logDuration(_ stage: String, since start: ContinuousClock.Instant) {

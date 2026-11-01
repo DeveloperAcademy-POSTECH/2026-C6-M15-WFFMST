@@ -92,12 +92,14 @@ private final class ControlledWorldMapScanner: NSObject, WorldMapScanning {
     private var poses: [ARPose] = []
     private var delaysArchive: Bool
     private(set) var isArchivePending = false
+    private(set) var startCount = 0
 
     init(delaysArchive: Bool = false) {
         self.delaysArchive = delaysArchive
     }
 
     func start() async throws {
+        startCount += 1
         poses = [
             ARPose(x: 0, y: 1.4, z: 0, forwardX: 1, forwardZ: 0),
             ARPose(x: 1, y: 1.4, z: 0, forwardX: 1, forwardZ: 0),
@@ -147,6 +149,7 @@ enum FloorPlanRegistrationChecks {
         try checkWorldMapAlignmentAndAutomaticScale()
         try await checkImportLifecycle()
         try await checkWorldMapSaveCancellation()
+        try await checkWorldMapDraftReuseAfterBackNavigation()
         try await checkMaskCancellationRecovery()
 
         let importer = ControlledImporter()
@@ -441,6 +444,45 @@ enum FloorPlanRegistrationChecks {
         precondition(draft.worldMapCorrespondences.isEmpty)
         precondition(!draft.isSavingWorldMap)
         precondition(draft.errorMessage == nil)
+    }
+
+    private static func checkWorldMapDraftReuseAfterBackNavigation() async throws {
+        let importer = ControlledImporter()
+        let scanner = ControlledWorldMapScanner()
+        let draft = FloorPlanDraftStore(importer: importer, worldMapScanner: scanner)
+        try await prepareScannableDraft(draft, importer: importer, completeMask: false)
+        await draft.saveWorldMap()
+
+        precondition(draft.step == .editing)
+        let original = try require(draft.worldMapDraft, "WorldMap 초안 필요")
+        precondition(scanner.startCount == 1)
+
+        precondition(draft.goBackCreationStep())
+        precondition(draft.step == .alignment)
+        precondition(draft.canReturnToEditingWithWorldMap)
+        let preserved = try require(draft.worldMapDraft, "뒤로가기 후 WorldMap 초안 보존 필요")
+        precondition(preserved.id == original.id)
+        precondition(preserved.archive == original.archive)
+        precondition(preserved.correspondences.count == original.correspondences.count)
+        precondition(scanner.startCount == 1, "편집에서 뒤로 가도 재스캔하지 않아야 한다")
+
+        await importer.succeedExtraction("mask-cancel.png")
+        try await wait { !draft.isProcessing }
+        precondition(draft.step == .alignment,
+                     "늦은 마스크 결과가 사용자의 뒤로가기를 되돌리지 않아야 한다")
+
+        draft.returnToEditing()
+        precondition(draft.step == .editing)
+        precondition(draft.worldMapDraft?.id == original.id)
+        precondition(scanner.startCount == 1)
+
+        precondition(draft.goBackCreationStep())
+        draft.selectWorldMapPointTarget(.checkpoint)
+        draft.placePoint(LocalPlanPoint(x: 0.3, y: 0.7))
+        precondition(draft.worldMapDraft == nil,
+                     "정합 입력을 변경하면 이전 WorldMap 정합 결과를 폐기해야 한다")
+        draft.returnToEditing()
+        precondition(draft.step == .alignment, "WorldMap 초안 없이 편집으로 복귀하면 안 된다")
     }
 
     private static func checkMaskCancellationRecovery() async throws {
