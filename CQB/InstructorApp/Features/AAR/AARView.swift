@@ -15,23 +15,25 @@ struct AARView: View {
     @Environment(AARStore.self) private var aarStore
 
     var body: some View {
-        VStack(spacing: AARLayout.sectionSpacing) {
-            header
-                .frame(height: AARLayout.headerHeight)
+        DropdownHost {
+            VStack(spacing: AARLayout.sectionSpacing) {
+                header
+                    .frame(height: AARLayout.headerHeight)
 
-            if store.trainingRecords.failedCount > 0 {
-                Text("\(store.trainingRecords.failedCount)명의 기록 처리가 실패했습니다. 해당 기록의 재생 자료가 없을 수 있습니다.")
-                    .font(.callout)
-                    .foregroundStyle(InstructorColor.textSecondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityIdentifier("aar.recordingFailures")
+                if store.trainingRecords.failedCount > 0 {
+                    Text("\(store.trainingRecords.failedCount)명의 기록 처리가 실패했습니다. 해당 기록의 재생 자료가 없을 수 있습니다.")
+                        .font(.callout)
+                        .foregroundStyle(InstructorColor.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier("aar.recordingFailures")
+                }
+
+                AARContentView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                AARTimelineView()
+                    .frame(height: AARLayout.timelineHeight)
             }
-
-            AARContentView()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            AARTimelineView()
-                .frame(height: AARLayout.timelineHeight)
         }
         .padding(.top, AARLayout.topPadding)
         .padding(.horizontal, AARLayout.outerHorizontalPadding)
