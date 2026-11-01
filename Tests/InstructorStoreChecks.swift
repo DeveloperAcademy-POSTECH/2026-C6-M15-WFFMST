@@ -438,9 +438,11 @@ struct InstructorStoreChecks {
         ids.prefix(4).forEach(aarStore.toggleParticipantSelection)
         expect(aarStore.selectedParticipantIDs == Array(ids.prefix(4).reversed()),
                "최근 선택 순서로 최대 4명 배치")
+        aarStore.selectedParticipantIDs.forEach(aarStore.toggleParticipantMute)
+        expect(aarStore.unmutedParticipantIDs.count == 4,
+               "선택한 영상 4개의 소리를 동시에 켤 수 있음")
         let oldestID = ids[0]
         let newestID = ids[4]
-        aarStore.toggleParticipantMute(oldestID)
         aarStore.toggleParticipantSelection(newestID)
         expect(aarStore.selectedParticipantIDs == [newestID, ids[3], ids[2], ids[1]],
                "다섯 번째 선택 시 가장 오래된 대원 제거")
@@ -458,6 +460,10 @@ struct InstructorStoreChecks {
                "중간 선택 해제 후 빈자리 없이 슬롯 번호 재할당")
         expect(!aarStore.unmutedParticipantIDs.contains(ids[3]),
                "직접 선택 해제한 대원의 음소거 해제 상태 삭제")
+        aarStore.toggleParticipantSelection(ids[3])
+        expect(aarStore.isParticipantMuted(ids[3]),
+               "선택 해제한 대원을 다시 선택하면 기본 음소거")
+        aarStore.toggleParticipantSelection(ids[3])
 
         aarStore.selectedParticipantIDs.forEach(aarStore.toggleParticipantSelection)
         expect(aarStore.selectedParticipantIDs.isEmpty && aarStore.aarScreen == .floorPlan,

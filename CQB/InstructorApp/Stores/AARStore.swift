@@ -107,12 +107,17 @@ final class AARStore {
     /// 영상 모드에서 보여 줄 대원을 바꾼다. 요금이 내려받기에서 나오므로 요청한 대원만 받는다.
     /// 선택에서 빠진 대원의 영상은 멈추기만 하고 캐시에 둔다.
     func showVideos(for participantIDs: [String]) {
+        let previouslyRequestedIDs = Set(requestedVideoIDs)
         requestedVideoIDs = participantIDs
         for (participantID, state) in videos where !participantIDs.contains(participantID) {
             if case .ready(let player, _) = state { player.pause() }
         }
         startRequestedVideoLoads()
-        syncVideos(seek: true)
+        // 기존 영상까지 다시 seek하면 선택·해제할 때 재생 중인 모든 소리가 순간적으로 끊긴다.
+        // 캐시에 있어 즉시 표시되는 새 영상만 현재 타임라인 위치로 맞춘다.
+        for participantID in participantIDs where !previouslyRequestedIDs.contains(participantID) {
+            syncVideo(participantID, seek: true)
+        }
     }
 
     /// AAR에 들어갈 때 한 번 부른다. 같은 세션은 다시 받지 않는다.
@@ -188,6 +193,7 @@ final class AARStore {
     /// 재생을 멈추고 불러온 동선과 영상을 비운다.
     func reset() {
         pause()
+        deactivateAudioSession()
         loadedSessionID = nil
         tracks = [:]
         videoTasks.values.forEach { $0.cancel() }
@@ -211,6 +217,7 @@ final class AARStore {
     private func play() {
         guard canPlay else { return }
         if playbackPosition >= playbackDuration { playbackPosition = 0 }
+        activateAudioSession()
         isPlaying = true
         syncVideos(seek: true)
         playbackTask?.cancel()
@@ -242,26 +249,55 @@ final class AARStore {
         syncVideos(seek: false)
     }
 
+    /// AAR 영상의 소리가 기기 무음 설정과 무관하게 미디어로 재생되도록 한다.
+    private func activateAudioSession() {
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .moviePlayback)
+            try session.setActive(true)
+        } catch {
+            Self.logger.error("AAR 오디오 세션 활성화 실패: \(error.localizedDescription, privacy: .private)")
+        }
+    }
+
+    private func deactivateAudioSession() {
+        do {
+            try AVAudioSession.sharedInstance().setActive(
+                false,
+                options: .notifyOthersOnDeactivation
+            )
+        } catch {
+            Self.logger.error("AAR 오디오 세션 비활성화 실패: \(error.localizedDescription, privacy: .private)")
+        }
+    }
+
     /// 화면에 보이는 영상을 타임라인 위치에 맞춘다.
     /// - Parameter seek: 사용자가 위치를 옮겼을 때 true. 재생 중에는 많이 벌어졌을 때만 다시 맞춘다
     private func syncVideos(seek: Bool) {
         for participantID in requestedVideoIDs {
-            guard case .ready(let player, let timeline) = videos[participantID] else { continue }
-            switch timeline.frame(at: playbackPosition) {
-            case .notStarted:
+            syncVideo(participantID, seek: seek)
+        }
+    }
+
+    private func syncVideo(_ participantID: String, seek: Bool) {
+        guard requestedVideoIDs.contains(participantID),
+              case .ready(let player, let timeline) = videos[participantID]
+        else { return }
+
+        switch timeline.frame(at: playbackPosition) {
+        case .notStarted:
+            player.pause()
+            Self.seek(player, to: 0, ifDriftFrom: seek ? nil : 0)
+        case .playing(let seconds):
+            Self.seek(player, to: seconds, ifDriftFrom: seek ? nil : player.currentTime().seconds)
+            if isPlaying {
+                if player.rate == 0 { player.play() }
+            } else {
                 player.pause()
-                Self.seek(player, to: 0, ifDriftFrom: seek ? nil : 0)
-            case .playing(let seconds):
-                Self.seek(player, to: seconds, ifDriftFrom: seek ? nil : player.currentTime().seconds)
-                if isPlaying {
-                    if player.rate == 0 { player.play() }
-                } else {
-                    player.pause()
-                }
-            case .ended(let seconds):
-                player.pause()
-                Self.seek(player, to: seconds, ifDriftFrom: seek ? nil : player.currentTime().seconds)
             }
+        case .ended(let seconds):
+            player.pause()
+            Self.seek(player, to: seconds, ifDriftFrom: seek ? nil : player.currentTime().seconds)
         }
     }
 
@@ -312,7 +348,8 @@ final class AARStore {
                 self.videoTasks[participantID] = nil
                 self.videos[participantID] = state
                 self.updatePlaybackDuration()
-                self.syncVideos(seek: true)
+                // 새로 준비된 영상만 맞추고 이미 재생 중인 다른 영상은 건드리지 않는다.
+                self.syncVideo(participantID, seek: true)
             }
         }
     }
