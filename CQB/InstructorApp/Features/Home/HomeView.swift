@@ -50,7 +50,6 @@ struct HomeView: View {
                         onSelectRecord: onSelectTrainingRecord
                     )
                     .frame(width: historyWidth, height: contentHeight)
-                    .clipShape(.rect(cornerRadius: DSRadius.large))
 
                     VStack(spacing: DSSpacing.s24) {
                         SessionStartCard(
@@ -60,14 +59,12 @@ struct HomeView: View {
                             onStartDemo: demoMode.start
                         )
                         .frame(width: sideWidth, height: sessionHeight)
-                        .clipShape(.rect(cornerRadius: DSRadius.large))
 
                         FloorPlanManagementCard(
                             floorPlanCount: store.floorPlans.count,
                             action: store.openFloorPlanList
                         )
                         .frame(width: sideWidth, height: floorPlanHeight)
-                        .clipShape(.rect(cornerRadius: DSRadius.large))
                     }
                 }
                 .frame(width: contentWidth, height: contentHeight)
@@ -116,54 +113,54 @@ private struct TrainingHistoryCard: View {
     let onSelectRecord: ((UUID) -> Void)?
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("이전 훈련 기록")
-                    .dsTextStyle(DSTypography.headingBold32)
-                    .foregroundStyle(DSPalette.Neutral.white)
+        HomeCardSurface {
+            VStack(spacing: 0) {
+                HStack {
+                    Text("이전 훈련 기록")
+                        .dsTextStyle(DSTypography.headingBold32)
+                        .foregroundStyle(DSPalette.Neutral.white)
 
-                Spacer()
+                    Spacer()
 
-                Button("모두보기", action: onShowAll)
-                    .dsTextStyle(DSTypography.bodyRegular24)
-                    .foregroundStyle(DSPalette.Primary.p200)
-                    .fixedSize()
-                    .accessibilityHint("이전 훈련 기록 전체 목록으로 이동합니다.")
-                    .accessibilityIdentifier("home.trainingHistory.showAll")
-            }
-            .padding(.horizontal, DSSpacing.s20)
-            .padding(.top, DSSpacing.s24)
-            .frame(height: 102, alignment: .top)
+                    Button("모두보기", action: onShowAll)
+                        .dsTextStyle(DSTypography.bodyRegular24)
+                        .foregroundStyle(DSPalette.Primary.p200)
+                        .fixedSize()
+                        .accessibilityHint("이전 훈련 기록 전체 목록으로 이동합니다.")
+                        .accessibilityIdentifier("home.trainingHistory.showAll")
+                }
+                .padding(.horizontal, DSSpacing.s20)
+                .padding(.top, DSSpacing.s24)
+                .frame(height: 102, alignment: .top)
 
-            if records.isEmpty {
-                HomeTrainingHistoryEmptyState()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: DSSpacing.s20) {
-                        TrainingRecordButton(
-                            record: records[0],
-                            prominence: .featured,
-                            action: onSelectRecord
-                        )
-
-                        ForEach(records.dropFirst()) { record in
+                if records.isEmpty {
+                    HomeTrainingHistoryEmptyState()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: DSSpacing.s20) {
                             TrainingRecordButton(
-                                record: record,
-                                prominence: .compact,
+                                record: records[0],
+                                prominence: .featured,
                                 action: onSelectRecord
                             )
+
+                            ForEach(records.dropFirst()) { record in
+                                TrainingRecordButton(
+                                    record: record,
+                                    prominence: .compact,
+                                    action: onSelectRecord
+                                )
+                            }
                         }
+                        .padding(.horizontal, DSSpacing.s12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .padding(.horizontal, DSSpacing.s12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .scrollIndicators(.hidden)
                 }
-                .scrollIndicators(.hidden)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(DSColor.surfacePrimary)
-        .clipShape(.rect(cornerRadius: DSRadius.large))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("home.trainingHistory")
     }
@@ -323,66 +320,66 @@ private struct SessionStartCard: View {
     let onStartDemo: () -> Void
 
     var body: some View {
-        ZStack {
-            Image("HomeSessionBackground")
-                .resizable()
-                .scaledToFill()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
-                .accessibilityHidden(true)
+        HomeCardSurface {
+            ZStack {
+                Image("HomeSessionBackground")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+                    .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .top) {
-                    Text("훈련 세션 만들고\n대원들을 초대하세요")
-                        .dsTextStyle(DSTypography.headingBold32)
-                        .foregroundStyle(DSColor.contentPrimary)
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .top) {
+                        Text("훈련 세션 만들고\n대원들을 초대하세요")
+                            .dsTextStyle(DSTypography.headingBold32)
+                            .foregroundStyle(DSColor.contentPrimary)
+
+                        Spacer()
+
+                        if showsDemoEntry {
+                            Button(action: onStartDemo) {
+                                Label("데모 모드", systemImage: "testtube.2")
+                                    .dsTextStyle(DSTypography.bodyRegular12)
+                                    .foregroundStyle(DSColor.contentSecondary)
+                                    .fixedSize()
+                                    .padding(.horizontal, DSSpacing.s12)
+                                    .padding(.vertical, DSSpacing.s8)
+                                    .background(DSColor.surfaceSecondary)
+                                    .clipShape(.capsule)
+                                    .overlay {
+                                        Capsule()
+                                            .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
+                                    }
+                            }
+                            .buttonStyle(HomeCardButtonStyle())
+                            .accessibilityHint("샘플 데이터로 전체 훈련 흐름을 체험합니다.")
+                            .accessibilityIdentifier("home.demo")
+                        }
+                    }
 
                     Spacer()
 
-                    if showsDemoEntry {
-                        Button(action: onStartDemo) {
-                            Label("데모 모드", systemImage: "testtube.2")
-                                .dsTextStyle(DSTypography.bodyRegular12)
-                                .foregroundStyle(DSColor.contentSecondary)
-                                .fixedSize()
-                                .padding(.horizontal, DSSpacing.s12)
-                                .padding(.vertical, DSSpacing.s8)
-                                .background(DSColor.surfaceSecondary)
-                                .clipShape(.capsule)
-                                .overlay {
-                                    Capsule()
-                                        .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
-                                }
-                        }
-                        .buttonStyle(HomeCardButtonStyle())
-                        .accessibilityHint("샘플 데이터로 전체 훈련 흐름을 체험합니다.")
-                        .accessibilityIdentifier("home.demo")
+                    Button(action: onStart) {
+                        Text("훈련 시작하기")
+                            .dsTextStyle(DSTypography.headingExtraBold24)
+                            .frame(width: 311, height: DSSize.controlHeight)
                     }
+                        .buttonStyle(HomeTrainingStartButtonStyle())
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .disabled(!isEnabled)
+                        .accessibilityHint(
+                            isEnabled
+                                ? "훈련 세션 생성 화면으로 이동합니다."
+                                : "도면을 등록한 후 사용할 수 있습니다."
+                        )
+                        .accessibilityIdentifier("home.createSession")
                 }
-
-                Spacer()
-
-                Button(action: onStart) {
-                    Text("훈련 시작하기")
-                        .dsTextStyle(DSTypography.headingExtraBold24)
-                        .frame(width: 311, height: DSSize.controlHeight)
-                }
-                    .buttonStyle(HomeTrainingStartButtonStyle())
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .disabled(!isEnabled)
-                    .accessibilityHint(
-                        isEnabled
-                            ? "훈련 세션 생성 화면으로 이동합니다."
-                            : "도면을 등록한 후 사용할 수 있습니다."
-                    )
-                    .accessibilityIdentifier("home.createSession")
+                .padding(.horizontal, 28)
+                .padding(.top, 52)
+                .padding(.bottom, 43)
             }
-            .padding(.horizontal, 28)
-            .padding(.top, 52)
-            .padding(.bottom, 43)
         }
-        .background(DSColor.surfacePrimary)
-        .clipShape(.rect(cornerRadius: DSRadius.large))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("home.sessionStart")
     }
@@ -393,45 +390,58 @@ private struct FloorPlanManagementCard: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .firstTextBaseline, spacing: DSSpacing.s8) {
-                    Text("도면 관리")
-                        .dsTextStyle(DSTypography.headingBold32)
-                        .foregroundStyle(DSColor.contentPrimary)
+        HomeCardSurface {
+            Button(action: action) {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .firstTextBaseline, spacing: DSSpacing.s8) {
+                        Text("도면 관리")
+                            .dsTextStyle(DSTypography.headingBold32)
+                            .foregroundStyle(DSColor.contentPrimary)
+
+                        Spacer()
+
+                        Text("준비된 도면")
+                            .dsTextStyle(DSTypography.bodyRegular24)
+                            .foregroundStyle(DSColor.contentPrimary)
+
+                        Text("\(floorPlanCount)개")
+                            .dsTextStyle(DSTypography.headingSemiBold24)
+                            .foregroundStyle(DSPalette.Primary.p200)
+                    }
 
                     Spacer()
 
-                    Text("준비된 도면")
-                        .dsTextStyle(DSTypography.bodyRegular24)
+                    Text("준비된 도면을 확인하거나\n새로운 훈련 도면을 등록할 수 있습니다.")
+                        .dsTextStyle(DSTypography.bodyRegular16)
                         .foregroundStyle(DSColor.contentPrimary)
-
-                    Text("\(floorPlanCount)개")
-                        .dsTextStyle(DSTypography.headingSemiBold24)
-                        .foregroundStyle(DSPalette.Primary.p200)
+                        .multilineTextAlignment(.leading)
                 }
-
-                Spacer()
-
-                Text("준비된 도면을 확인하거나\n새로운 훈련 도면을 등록할 수 있습니다.")
-                    .dsTextStyle(DSTypography.bodyRegular16)
-                    .foregroundStyle(DSColor.contentPrimary)
-                    .multilineTextAlignment(.leading)
+                .padding(.horizontal, DSSpacing.s24)
+                .padding(.top, DSSpacing.s24)
+                .padding(.bottom, 26)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .contentShape(.rect)
             }
-            .padding(.horizontal, DSSpacing.s24)
-            .padding(.top, DSSpacing.s24)
-            .padding(.bottom, 26)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .contentShape(.rect)
+            .buttonStyle(HomeCardButtonStyle())
         }
-        .buttonStyle(HomeCardButtonStyle())
-        .background(DSColor.surfacePrimary)
-        .clipShape(.rect(cornerRadius: DSRadius.large))
         .accessibilityLabel("도면 관리, 준비된 도면 \(floorPlanCount)개")
         .accessibilityHint("등록된 도면 목록으로 이동합니다.")
         .accessibilityIdentifier("home.floorPlans")
     }
 
+}
+
+private struct HomeCardSurface<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        GeometryReader { proxy in
+            content
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .background(DSColor.surfacePrimary)
+                .clipShape(.rect(cornerRadius: DSRadius.large))
+        }
+    }
 }
 
 private struct HomeCardButtonStyle: ButtonStyle {
