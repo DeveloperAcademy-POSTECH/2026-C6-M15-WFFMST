@@ -6,11 +6,7 @@ nonisolated final class MemberAudioCaptureService: NSObject, AVCaptureAudioDataO
     private let session = AVCaptureSession()
     private let output = AVCaptureAudioDataOutput()
     private let queue = DispatchQueue(label: "com.cqb.member.audio-capture", qos: .userInitiated)
-    private var onSampleBuffer: (@Sendable (CMSampleBuffer) -> Void)?
-    private var onInterruption: (@Sendable () -> Void)?
-    private var onResume: (@Sendable () -> Void)?
-    private var isInterrupted = false
-    private var lastSampleTimestamp = -Double.infinity
+    private var delivery: MemberAudioSampleDelivery?
     private var startup: AsyncStream<Double>.Continuation?
     private var observers: [NSObjectProtocol] = []
     private var isConfigured = false
@@ -36,9 +32,8 @@ nonisolated final class MemberAudioCaptureService: NSObject, AVCaptureAudioDataO
             queue.async { [self] in
                 stopOnQueue()
                 generation = requestID
-                self.onSampleBuffer = onSampleBuffer
-                self.onInterruption = onInterruption
-                self.onResume = onResume
+                delivery = MemberAudioSampleDelivery(onSampleBuffer: onSampleBuffer,
+                                                     onInterruption: onInterruption, onResume: onResume)
                 startup = continuation
                 do {
                     try configure()
@@ -91,8 +86,7 @@ nonisolated final class MemberAudioCaptureService: NSObject, AVCaptureAudioDataO
                     guard self.generation == currentGeneration else { return }
                     if self.startup != nil { self.stopOnQueue() }
                     else {
-                        self.isInterrupted = true
-                        self.onInterruption?()
+                        self.delivery?.interrupt()
                     }
                 }
             })
@@ -101,11 +95,7 @@ nonisolated final class MemberAudioCaptureService: NSObject, AVCaptureAudioDataO
 
     private func stopOnQueue() {
         generation = UUID()
-        onSampleBuffer = nil
-        onInterruption = nil
-        onResume = nil
-        isInterrupted = false
-        lastSampleTimestamp = -Double.infinity
+        delivery = nil
         observers.forEach(NotificationCenter.default.removeObserver)
         observers = []
         if session.isRunning { session.stopRunning() }
@@ -115,25 +105,52 @@ nonisolated final class MemberAudioCaptureService: NSObject, AVCaptureAudioDataO
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        guard CMSampleBufferDataIsReady(sampleBuffer), CMSampleBufferGetNumSamples(sampleBuffer) > 0,
-              let callback = onSampleBuffer, let clock = session.synchronizationClock,
-              let rate = RecordingAudioSamples.sampleRate(of: sampleBuffer),
+        guard let clock = session.synchronizationClock,
               let hostBuffer = RecordingAudioSamples.retime(sampleBuffer, convert: {
                   CMSyncConvertTime($0, from: clock, to: CMClockGetHostTimeClock())
-              }) else { return }
-        let timestamp = CMSampleBufferGetPresentationTimeStamp(hostBuffer).seconds
-        guard timestamp.isFinite, timestamp > lastSampleTimestamp else { return }
-        lastSampleTimestamp = timestamp
+              }), let rate = delivery?.append(hostBuffer) else { return }
         if let continuation = startup {
             startup = nil
             continuation.yield(rate)
             continuation.finish()
         }
-        callback(hostBuffer)
+    }
+}
+
+/// Processes host-clock samples on the capture queue, independently of microphone hardware.
+nonisolated struct MemberAudioSampleDelivery {
+    let onSampleBuffer: @Sendable (CMSampleBuffer) -> Void
+    let onInterruption: @Sendable () -> Void
+    let onResume: @Sendable () -> Void
+    private(set) var isInterrupted = false
+    private var lastSampleTimestamp = -Double.infinity
+
+    init(onSampleBuffer: @escaping @Sendable (CMSampleBuffer) -> Void,
+         onInterruption: @escaping @Sendable () -> Void,
+         onResume: @escaping @Sendable () -> Void) {
+        self.onSampleBuffer = onSampleBuffer
+        self.onInterruption = onInterruption
+        self.onResume = onResume
+    }
+
+    mutating func interrupt() {
+        isInterrupted = true
+        onInterruption()
+    }
+
+    @discardableResult
+    mutating func append(_ buffer: CMSampleBuffer) -> Double? {
+        guard CMSampleBufferDataIsReady(buffer), CMSampleBufferGetNumSamples(buffer) > 0,
+              let rate = RecordingAudioSamples.sampleRate(of: buffer) else { return nil }
+        let timestamp = CMSampleBufferGetPresentationTimeStamp(buffer).seconds
+        guard timestamp.isFinite, timestamp > lastSampleTimestamp else { return nil }
+        lastSampleTimestamp = timestamp
+        onSampleBuffer(buffer)
         // A notification ending an interruption does not prove that samples are flowing.
         if isInterrupted {
             isInterrupted = false
-            onResume?()
+            onResume()
         }
+        return rate
     }
 }

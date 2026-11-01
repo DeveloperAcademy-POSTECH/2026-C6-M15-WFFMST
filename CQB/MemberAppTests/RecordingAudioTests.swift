@@ -4,6 +4,86 @@ import XCTest
 
 @MainActor
 final class RecordingAudioTests: XCTestCase {
+    func testAudioWarningClearsOnFirstNormalSampleAfterInterruption() async throws {
+        let service = ARRecordingService()
+        defer { service.stop() }
+        let status = service.startAudioStatusUpdates()
+        var delivery = MemberAudioSampleDelivery(onSampleBuffer: { _ in },
+            onInterruption: { status.yield(true) }, onResume: { status.yield(false) })
+        let initial = try audioBuffer(start: 1000, count: 1024, rate: 48_000)
+        XCTAssertNotNil(delivery.append(initial))
+        XCTAssertNil(service.audioWarning)
+
+        delivery.interrupt()
+        await waitForAudioWarning(service, interrupted: true)
+        XCTAssertEqual(service.audioWarning, "소리 녹음이 중단되었습니다. 영상과 동선은 계속 기록합니다.")
+        XCTAssertTrue(delivery.isInterrupted)
+
+        // Replayed/out-of-order samples must not announce recovery.
+        XCTAssertNil(delivery.append(initial))
+        XCTAssertNil(delivery.append(try audioBuffer(start: 999, count: 1024, rate: 48_000)))
+        XCTAssertTrue(delivery.isInterrupted)
+        XCTAssertNotNil(service.audioWarning)
+
+        XCTAssertNotNil(delivery.append(try audioBuffer(start: 1001, count: 1024, rate: 48_000)))
+        await waitForAudioWarning(service, interrupted: false)
+        XCTAssertFalse(delivery.isInterrupted)
+        XCTAssertNil(service.audioWarning)
+
+        // A second interruption must independently display and clear the warning.
+        delivery.interrupt()
+        await waitForAudioWarning(service, interrupted: true)
+        delivery.append(try audioBuffer(start: 1002, count: 1024, rate: 48_000))
+        await waitForAudioWarning(service, interrupted: false)
+    }
+
+    func testResumeCallbackOccursOncePerInterruptionAndNeverOnInitialSample() throws {
+        let events = AudioResumeCounter()
+        var delivery = MemberAudioSampleDelivery(onSampleBuffer: { _ in }, onInterruption: {},
+                                                 onResume: { events.increment() })
+        delivery.append(try audioBuffer(start: 1000, count: 1024, rate: 48_000))
+        XCTAssertEqual(events.value, 0)
+        delivery.interrupt()
+        delivery.append(try audioBuffer(start: 1001, count: 1024, rate: 48_000))
+        delivery.append(try audioBuffer(start: 1002, count: 1024, rate: 48_000))
+        XCTAssertEqual(events.value, 1)
+        delivery.interrupt()
+        delivery.append(try audioBuffer(start: 1003, count: 1024, rate: 48_000))
+        XCTAssertEqual(events.value, 2)
+    }
+
+    func testStoppedRecordingResumeCannotClearNextRecordingsWarning() async throws {
+        let service = ARRecordingService()
+        defer { service.stop() }
+        let oldStatus = service.startAudioStatusUpdates()
+        var oldDelivery = MemberAudioSampleDelivery(onSampleBuffer: { _ in },
+            onInterruption: { oldStatus.yield(true) }, onResume: { oldStatus.yield(false) })
+        oldDelivery.interrupt()
+        await waitForAudioWarning(service, interrupted: true)
+        service.stop()
+        XCTAssertNil(service.audioWarning)
+
+        let newStatus = service.startAudioStatusUpdates()
+        newStatus.yield(true)
+        await waitForAudioWarning(service, interrupted: true)
+        // This invokes the real onResume callback, but its old consumer is cancelled.
+        oldDelivery.append(try audioBuffer(start: 1001, count: 1024, rate: 48_000))
+        XCTAssertFalse(oldDelivery.isInterrupted)
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertNotNil(service.audioWarning)
+        newStatus.yield(false)
+        await waitForAudioWarning(service, interrupted: false)
+    }
+
+    private func waitForAudioWarning(_ service: ARRecordingService, interrupted: Bool,
+                                     file: StaticString = #filePath, line: UInt = #line) async {
+        for _ in 0..<200 {
+            if (service.audioWarning != nil) == interrupted { return }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        XCTFail("Audio interruption warning did not update", file: file, line: line)
+    }
+
     func testSplittingAtFractionalBoundaryPreservesEveryPCMSample() throws {
         for rate in [44_100.0, 48_000.0] {
             let original = try audioBuffer(start: 1000, count: 4096, rate: rate)
@@ -342,4 +422,11 @@ private final class CallbackCounter: @unchecked Sendable {
     private var count = 0
     var value: Int { lock.lock(); defer { lock.unlock() }; return count }
     func increment() { lock.lock(); count += 1; lock.unlock() }
+}
+
+private final class AudioResumeCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    var value: Int { lock.withLock { count } }
+    func increment() { lock.withLock { count += 1 } }
 }

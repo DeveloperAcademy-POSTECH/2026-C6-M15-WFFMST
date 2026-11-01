@@ -179,7 +179,7 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
         if !wantsRunning { stop() }
     }
 
-    private func startAudioStatusUpdates() -> AsyncStream<Bool>.Continuation {
+    func startAudioStatusUpdates() -> AsyncStream<Bool>.Continuation {
         stopAudioStatusUpdates()
         let (updates, continuation) = AsyncStream<Bool>.makeStream()
         // One consumer preserves capture-queue ordering across repeated interruptions.
