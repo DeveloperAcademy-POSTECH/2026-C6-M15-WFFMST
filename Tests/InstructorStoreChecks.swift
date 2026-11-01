@@ -383,38 +383,74 @@ struct InstructorStoreChecks {
         let store = InstructorPreviewFixture.store(
             floorPlan: plan, participants: participants.filter(\.isReady), phase: .aar
         )
-        expect(store.phase == .aar && store.selectedParticipants.count == 3, "AAR Fixture 전체 선택")
+        expect(store.phase == .aar && store.selectedParticipants.isEmpty && store.aarScreen == .floorPlan,
+               "AAR은 선택 없는 도면 화면으로 진입")
+        expect(!store.canOpenAARVideoScreen, "선택 전 영상 화면 진입 차단")
+        store.openAARVideoScreen()
+        expect(store.aarScreen == .floorPlan, "선택 없는 직접 영상 화면 요청 차단")
+
+        let firstID = store.participants[0].id
+        let secondID = store.participants[1].id
+        store.toggleParticipantSelection(firstID)
+        expect(store.selectedParticipantIDs == [firstID] && store.videoSlotNumber(for: firstID) == 1,
+               "첫 선택을 최신 영상 슬롯 1에 배치")
+        expect(store.isParticipantMuted(firstID), "새로 선택한 영상은 기본 음소거")
+        store.toggleParticipantMute(firstID)
+        expect(!store.isParticipantMuted(firstID), "선택 영상 음소거 해제 상태 보존")
+        store.openAARVideoScreen()
+        store.toggleParticipantSelection(secondID)
+        expect(store.aarScreen == .video && store.selectedParticipantIDs == [secondID, firstID],
+               "영상 화면에서 최신 선택을 위로 배치")
+        expect(store.videoSlotNumber(for: secondID) == 1 && store.videoSlotNumber(for: firstID) == 2,
+               "선택 순서에 맞춰 영상 슬롯 번호 재할당")
+        store.showAARFloorPlan()
+        store.openAARVideoScreen()
+        expect(store.aarScreen == .video && !store.isParticipantMuted(firstID),
+               "화면 왕복에서 선택 순서와 음소거 상태 유지")
         store.setPlaybackPosition(.nan)
         expect(store.playbackPosition == 331, "유효하지 않은 재생 위치 무시")
-        store.changeAARMode(to: .video)
-        expect(store.aarMode == .video, "4명 이하 영상 전환")
         store.finishAAR()
+        expect(store.phase == .aarCompleted && store.aarScreen == .floorPlan
+                   && store.selectedParticipantIDs.isEmpty && store.unmutedParticipantIDs.isEmpty,
+               "AAR 종료 시 선택·화면·음소거 상태 초기화")
         store.returnHome()
         expect(store.phase == .home && store.participants.isEmpty, "처음으로에서 세션 상태 초기화")
 
         let aarStore = InstructorPreviewFixture.store(floorPlan: plan, phase: .aar)
-        expect(aarStore.selectedParticipants.count == 6, "AAR 동선 전체 선택")
+        let ids = aarStore.participants.map(\.id)
+        ids.prefix(4).forEach(aarStore.toggleParticipantSelection)
+        expect(aarStore.selectedParticipantIDs == Array(ids.prefix(4).reversed()),
+               "최근 선택 순서로 최대 4명 배치")
+        let oldestID = ids[0]
+        let newestID = ids[4]
+        aarStore.toggleParticipantMute(oldestID)
+        aarStore.toggleParticipantSelection(newestID)
+        expect(aarStore.selectedParticipantIDs == [newestID, ids[3], ids[2], ids[1]],
+               "다섯 번째 선택 시 가장 오래된 대원 제거")
+        expect(aarStore.videoSlotNumber(for: newestID) == 1
+                   && aarStore.videoSlotNumber(for: ids[1]) == 4,
+               "FIFO 이후 영상 슬롯 번호 갱신")
+        expect(!aarStore.unmutedParticipantIDs.contains(oldestID),
+               "FIFO로 제거된 대원의 음소거 해제 상태 삭제")
+
+        aarStore.openAARVideoScreen()
+        aarStore.toggleParticipantMute(ids[3])
+        aarStore.toggleParticipantSelection(ids[3])
+        expect(aarStore.selectedParticipantIDs == [newestID, ids[2], ids[1]]
+                   && aarStore.videoSlotNumber(for: ids[2]) == 2,
+               "중간 선택 해제 후 빈자리 없이 슬롯 번호 재할당")
+        expect(!aarStore.unmutedParticipantIDs.contains(ids[3]),
+               "직접 선택 해제한 대원의 음소거 해제 상태 삭제")
+
+        aarStore.selectedParticipantIDs.forEach(aarStore.toggleParticipantSelection)
+        expect(aarStore.selectedParticipantIDs.isEmpty && aarStore.aarScreen == .floorPlan,
+               "영상 화면에서 마지막 대원 해제 시 도면 화면 복귀")
+        aarStore.toggleParticipantMute(ids[5])
+        expect(aarStore.unmutedParticipantIDs.isEmpty, "미선택 대원의 음소거 변경 무시")
+        aarStore.toggleParticipantSelection("unknown")
+        expect(aarStore.selectedParticipantIDs.isEmpty, "참가 명단에 없는 대원 선택 무시")
+
         aarStore.setPlaybackPosition(420)
-        aarStore.changeAARMode(to: .video)
-        expect(aarStore.aarMode == .movement, "5명 이상 영상 전환 차단")
-        expect(aarStore.aarNotice != nil && aarStore.playbackPosition == 420, "영상 제한 안내와 재생 위치 유지")
-        let firstID = aarStore.participants[0].id
-        let fifthID = aarStore.participants[4].id
-        let sixthID = aarStore.participants[5].id
-        aarStore.toggleParticipantSelection(fifthID)
-        aarStore.toggleParticipantSelection(sixthID)
-        aarStore.changeAARMode(to: .video)
-        expect(aarStore.aarMode == .video && aarStore.selectedParticipants.count == 4, "4명 이하 영상 전환")
-        aarStore.toggleParticipantSelection(fifthID)
-        expect(aarStore.selectedParticipants.count == 4, "다섯 번째 영상 선택 차단")
-        aarStore.selectAllParticipants()
-        expect(aarStore.selectedParticipants.count == 4, "전체 선택으로 영상 제한 우회 차단")
-        aarStore.toggleParticipantSelection(firstID)
-        aarStore.toggleParticipantSelection(fifthID)
-        let selectedIDs = aarStore.selectedParticipantIDs
-        aarStore.changeAARMode(to: .movement)
-        aarStore.changeAARMode(to: .video)
-        expect(aarStore.selectedParticipantIDs == selectedIDs, "AAR 모드 전환에서 선택 유지")
         aarStore.setPlaybackPosition(-10)
         expect(aarStore.playbackPosition == 0, "재생 위치 하한")
         aarStore.setPlaybackPosition(10_000)

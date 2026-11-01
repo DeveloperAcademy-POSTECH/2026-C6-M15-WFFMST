@@ -19,14 +19,13 @@ struct AARSettingsView: View {
             MultiSelectionPicker(
                 title: "대원 선택",
                 options: store.aarParticipants,
-                selectedIDs: store.selectedParticipantIDs,
+                selectedIDs: Set(store.selectedParticipantIDs),
                 optionTitle: \.displayName,
                 canToggle: store.canToggleParticipant,
                 onToggle: store.toggleParticipantSelection,
                 selectedSummary: store.selectionSummary,
                 fieldBackground: InstructorColor.surfaceRaised,
-                menuFillsFieldWidth: true,
-                onSelectAll: selectAllAction
+                menuFillsFieldWidth: true
             )
             .frame(maxWidth: .infinity)
             .accessibilityIdentifier("aar.participants")
@@ -43,26 +42,26 @@ struct AARSettingsView: View {
                 Toggle(
                     "대원 바디캠",
                     isOn: Binding(
-                        get: { store.aarMode == .video },
-                        set: { store.changeAARMode(to: $0 ? .video : .movement) }
+                        get: { store.aarScreen == .video },
+                        set: { isVideoScreen in
+                            if isVideoScreen {
+                                store.openAARVideoScreen()
+                            } else {
+                                store.showAARFloorPlan()
+                            }
+                        }
                     )
                 )
                 .labelsHidden()
                 .toggleStyle(InstructorCompactToggleStyle())
+                .disabled(!store.canOpenAARVideoScreen && store.aarScreen == .floorPlan)
                 .accessibilityIdentifier("aar.bodycam")
             }
             .frame(height: 26)
 
-            Text(store.aarMode == .video ? "ON" : "OFF")
+            Text(store.aarScreen == .video ? "ON" : "OFF")
                 .font(DSTypography.caption)
                 .foregroundStyle(InstructorColor.actionPrimary)
-
-            if let notice = store.aarNotice {
-                Text(notice)
-                    .font(DSTypography.caption)
-                    .foregroundStyle(InstructorColor.actionPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
 
             rule
 
@@ -94,11 +93,6 @@ struct AARSettingsView: View {
             .fill(InstructorColor.borderDefault)
             .frame(height: 1)
             .accessibilityHidden(true)
-    }
-
-    private var selectAllAction: (() -> Void)? {
-        guard store.canSelectAllParticipants else { return nil }
-        return { store.selectAllParticipants() }
     }
 }
 

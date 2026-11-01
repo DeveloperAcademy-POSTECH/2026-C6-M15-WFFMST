@@ -5,7 +5,7 @@ struct AARContentView: View {
 
     var body: some View {
         Group {
-            if store.aarMode == .movement {
+            if store.aarScreen == .floorPlan {
                 AARMovementView()
             } else {
                 AARVideoView()

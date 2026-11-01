@@ -19,6 +19,6 @@ enum InstructorPhase: Equatable {
     }
 }
 
-enum AARMode: Equatable {
-    case movement, video
+enum AARScreen: Equatable {
+    case floorPlan, video
 }

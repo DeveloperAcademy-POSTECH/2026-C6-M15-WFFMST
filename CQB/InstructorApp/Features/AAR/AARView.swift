@@ -87,7 +87,7 @@ struct AARView: View {
     ), phase: .aar)
     store.toggleParticipantSelection("member-5")
     store.toggleParticipantSelection("member-6")
-    store.changeAARMode(to: .video)
+    store.openAARVideoScreen()
 
     return AARView()
         .environment(store)

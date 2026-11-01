@@ -96,9 +96,10 @@ enum TrainingLifecycleChecks {
                "재연결 첫 스냅샷 전 완료 판정 차단")
         repository.recordings[1].send([firstDone, record(session.id, secondID, .failed)])
         await wait("전원 종결 후 AAR") { store.phase == .aar }
-        expect(store.selectedParticipants.count == 1 && store.aarParticipants.map(\.id) == [firstID.uuidString]
-               && store.trainingRecords.failedCount == 1,
-               "failed도 종결이지만 AAR 재생 대상에서는 제외")
+        expect(store.participants.count == 2 && store.aarParticipants.map(\.id) == [firstID.uuidString]
+                   && store.selectedParticipants.isEmpty
+                   && store.trainingRecords.failedCount == 1,
+               "failed도 종결이지만 AAR 재생 대상에서 제외하고 초기 선택은 비운다")
         await wait("AAR에서 기록 구독 정리") { repository.recordings[1].terminationCount == 1 }
         expect(repository.writes == [.running, .running, .ended, .ended], "실패 재시도 외 중복 상태 쓰기 없음")
         store.returnHome()
@@ -135,8 +136,8 @@ enum TrainingLifecycleChecks {
                "미종결 대원 제외 후 완료 기록으로 진행 가능")
         store.proceedToAAR()
         expect(store.phase == .aar && store.aarParticipants.map(\.id) == [firstID.uuidString]
-               && store.selectedParticipantIDs == [firstID.uuidString],
-               "AAR 입력을 완료 대원으로 고정")
+               && store.selectedParticipantIDs.isEmpty,
+               "AAR 입력을 완료 대원으로 고정하고 초기 선택은 비움")
 
         repository.recordings[0].send([
             record(session.id, firstID, .done),

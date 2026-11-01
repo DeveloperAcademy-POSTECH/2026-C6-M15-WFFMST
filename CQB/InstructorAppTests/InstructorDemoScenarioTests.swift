@@ -130,7 +130,8 @@ final class InstructorDemoScenarioTests: XCTestCase {
         XCTAssertEqual(positions.count, 3)
         XCTAssertEqual(Set(positions.map { "\($0.x),\($0.y)" }).count, 3)
 
-        store.changeAARMode(to: .video)
+        participantIDs.reversed().forEach(store.toggleParticipantSelection)
+        store.openAARVideoScreen()
         aarStore.showVideos(for: participantIDs)
         let didLoadVideos = await waitUntil(attempts: 1_000) {
             participantIDs.allSatisfy { id in
