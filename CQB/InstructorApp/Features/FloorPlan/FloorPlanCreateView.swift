@@ -16,6 +16,20 @@ struct FloorPlanCreateView: View {
         importer.isPreparing || importer.isPresented || store.isImporting
     }
 
+    private var scanCheckpointMarkers: [LocalScanCheckpointMarker] {
+        store.scanCheckpoints.enumerated().map { index, point in
+            let state: LocalScanCheckpointState
+            if store.step == .scanning, index < store.completedScanCheckpointCount {
+                state = .completed
+            } else if store.step == .scanning, index == store.currentScanCheckpointIndex {
+                state = .current
+            } else {
+                state = .planned
+            }
+            return LocalScanCheckpointMarker(point: point, number: index + 1, state: state)
+        }
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
@@ -177,11 +191,8 @@ struct FloorPlanCreateView: View {
                 scaleLabel: nil,
                 scaleALabel: "출발",
                 scaleBLabel: "방향",
-                correspondencePoints: store.step == .scanning
-                    ? store.worldMapCorrespondences.dropFirst().map {
-                        LocalPlanPoint(x: $0.planPoint.x, y: $0.planPoint.y)
-                    }
-                    : [],
+                checkpointMarkers: store.step == .alignment || store.step == .scanning
+                    ? scanCheckpointMarkers : [],
                 importPresentation: importer,
                 layers: layers,
                 onStroke: store.stageBrushStroke,
@@ -465,23 +476,43 @@ struct FloorPlanCreateView: View {
     private var alignmentPanel: some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 0) {
                     Text("스캔 기준 설정")
                         .font(DSTypography.h2)
-                    Text("도면에서 실제 스캔을 시작할 위치와, 시작할 때 바라볼 방향을 차례로 지정하세요. 잘못 선택한 경우에만 변경 버튼을 사용하세요.")
+
+                    Text(alignmentInstruction)
                         .font(DSTypography.bodySmall)
                         .foregroundStyle(InstructorColor.textSecondary)
+                        .padding(.top, 8)
 
-                    panelButton(store.startPlanPoint == nil ? "출발점 선택" : "출발점 변경", enabled: true) {
-                        store.selectWorldMapPointTarget(.start)
+                    VStack(alignment: .leading, spacing: 12) {
+                        scanLegend(color: .red, title: "출발 위치 · 바라보는 방향")
+                        scanLegend(color: .blue, title: "추가 스캔 체크포인트")
                     }
-                    panelButton(store.directionPlanPoint == nil ? "방향 선택" : "방향 변경", enabled: store.startPlanPoint != nil) {
-                        store.selectWorldMapPointTarget(.direction)
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(InstructorColor.surfaceRaised)
+                    .clipShape(.rect(cornerRadius: 4))
+                    .padding(.top, 24)
+
+                    if store.directionPlanPoint != nil {
+                        Text("체크포인트 \(store.scanCheckpoints.count)개")
+                            .font(DSTypography.bodySmall)
+                            .foregroundStyle(InstructorColor.textPrimary)
+                            .padding(.top, 24)
+
+                        panelButton("마지막 체크포인트 삭제", enabled: !store.scanCheckpoints.isEmpty) {
+                            store.removeLastScanCheckpoint()
+                        }
+                        .padding(.top, 12)
                     }
 
-                    Text("도면의 빨간 표시에서 ‘출발’은 실제 시작 위치, ‘방향’은 시작할 때 바라볼 지점입니다.")
-                        .font(DSTypography.caption)
-                        .foregroundStyle(InstructorColor.textSecondary)
+                    if store.startPlanPoint != nil {
+                        panelButton("출발·방향 다시 설정", enabled: true) {
+                            store.resetWorldMapReference()
+                        }
+                        .padding(.top, 12)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(24)
@@ -499,56 +530,52 @@ struct FloorPlanCreateView: View {
     private var scanningPanel: some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 0) {
                     Text("공간 스캔")
                         .font(DSTypography.h2)
+
+                    Text(scanProgressTitle)
+                        .font(DSTypography.h3)
+                        .foregroundStyle(InstructorColor.actionPrimary)
+                        .padding(.top, 16)
+
                     Text("\(store.frameState.mapping.title) · \(store.frameState.trackingMessage)")
                         .font(DSTypography.bodySmall)
                         .foregroundStyle(InstructorColor.textSecondary)
+                        .padding(.top, 4)
 
                     if let session = store.worldMapPreviewSession {
                         LocalARWorldMapCameraView(previewSession: session)
                             .aspectRatio(4 / 3, contentMode: .fit)
                             .clipShape(.rect(cornerRadius: 4))
+                            .padding(.top, 20)
                     }
 
                     if store.worldMapStart == nil {
                         Text("도면의 출발점과 같은 실제 위치에서 방향점을 바라본 뒤 시작 자세를 저장하세요.")
                             .font(DSTypography.caption)
+                            .foregroundStyle(InstructorColor.textSecondary)
+                            .padding(.top, 16)
                         panelButton("시작 자세 저장", enabled: store.canCaptureStartAlignment) {
                             store.captureWorldMapStart()
                         }
-                    } else if store.pendingCorrespondencePose != nil {
-                        Text("현재 실제 위치와 같은 지점을 왼쪽 도면에서 탭하세요. 기록되면 파란색 ‘대응’ 표시가 추가됩니다.")
-                            .font(DSTypography.caption)
-                            .foregroundStyle(InstructorColor.actionPrimary)
-                    } else {
-                        Text("추가 대응점 \(max(0, store.worldMapCorrespondences.count - 1))개 기록됨")
+                        .padding(.top, 12)
+                    } else if let index = store.currentScanCheckpointIndex {
+                        Text("도면에서 노란색으로 표시된 체크포인트 \(index + 1)로 이동해 주변을 천천히 비춘 뒤 기록하세요.")
                             .font(DSTypography.bodySmall)
-                        panelButton("현재 위치 대응점 추가", enabled: store.canCaptureCorrespondence) {
-                            store.captureWorldMapCorrespondencePose()
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        completionRequirement(
-                            "실제 출발점에서 시작 자세 저장",
-                            isMet: store.worldMapStart != nil
-                        )
-                        completionRequirement(
-                            "시작점과 떨어진 위치에서 대응점 1개 이상 기록",
-                            isMet: store.worldMapCorrespondences.count >= 2
-                        )
-                        completionRequirement(
-                            "주변 공간 매핑 완료",
-                            isMet: store.frameState.mapping == .mapped
-                        )
-                    }
-
-                    if store.frameState.mapping != .mapped {
-                        Text("가만히 있으면 공간 정보가 늘지 않습니다. iPad를 천천히 움직이며 주변 벽과 모서리를 여러 위치와 각도에서 비춰주세요.")
-                            .font(DSTypography.caption)
                             .foregroundStyle(InstructorColor.textSecondary)
+                            .padding(.top, 16)
+                        panelButton("이 위치 기록", enabled: store.canCaptureScanCheckpoint) {
+                            store.captureCurrentScanCheckpoint()
+                        }
+                        .padding(.top, 12)
+                    } else {
+                        Text(store.frameState.mapping == .mapped
+                            ? "모든 체크포인트 기록이 완료되었습니다. 스캔을 완료할 수 있습니다."
+                            : "모든 체크포인트를 기록했습니다. 주변을 천천히 비추며 공간 정보를 조금 더 수집하세요.")
+                            .font(DSTypography.bodySmall)
+                            .foregroundStyle(InstructorColor.textSecondary)
+                            .padding(.top, 16)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -564,10 +591,31 @@ struct FloorPlanCreateView: View {
         }
     }
 
-    private func completionRequirement(_ title: String, isMet: Bool) -> some View {
-        Label(title, systemImage: isMet ? "checkmark.circle.fill" : "circle")
-            .font(DSTypography.caption)
-            .foregroundStyle(isMet ? InstructorColor.actionPrimary : InstructorColor.textSecondary)
+    private var alignmentInstruction: String {
+        if store.startPlanPoint == nil {
+            return "도면에서 실제 스캔을 시작할 위치를 탭하세요."
+        }
+        if store.directionPlanPoint == nil {
+            return "출발 위치에서 처음 바라볼 방향을 도면 위에서 탭하세요."
+        }
+        return "공간 정보가 많은 지점을 체크포인트로 표시하세요. 스캔할 때 번호 순서대로 안내합니다."
+    }
+
+    private var scanProgressTitle: String {
+        guard store.worldMapStart != nil else { return "시작 위치 맞추기" }
+        if let index = store.currentScanCheckpointIndex {
+            return "체크포인트 \(index + 1) / \(store.scanCheckpoints.count)"
+        }
+        return "체크포인트 \(store.scanCheckpoints.count) / \(store.scanCheckpoints.count)"
+    }
+
+    private func scanLegend(color: Color, title: String) -> some View {
+        HStack(spacing: 10) {
+            Circle().fill(color).frame(width: 12, height: 12)
+            Text(title)
+                .font(DSTypography.caption)
+                .foregroundStyle(InstructorColor.textPrimary)
+        }
     }
 
     @ViewBuilder

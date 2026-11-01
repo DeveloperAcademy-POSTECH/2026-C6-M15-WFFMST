@@ -2,7 +2,17 @@ import CQBCore
 import Foundation
 
 nonisolated enum LocalWorldMapPointTarget: Equatable, Sendable {
-    case start, direction, correspondence
+    case start, direction, checkpoint
+}
+
+nonisolated enum LocalScanCheckpointState: Equatable, Sendable {
+    case planned, current, completed
+}
+
+nonisolated struct LocalScanCheckpointMarker: Equatable, Sendable {
+    let point: LocalPlanPoint
+    let number: Int
+    let state: LocalScanCheckpointState
 }
 
 nonisolated enum LocalWorldMapMappingState: Equatable, Sendable {

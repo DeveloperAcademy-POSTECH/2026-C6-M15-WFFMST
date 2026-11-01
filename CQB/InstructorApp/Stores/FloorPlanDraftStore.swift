@@ -62,6 +62,7 @@ final class FloorPlanDraftStore {
     private(set) var extractionAlgorithm: LocalWallExtractionAlgorithm = .v13
     private(set) var startPlanPoint: LocalPlanPoint?
     private(set) var directionPlanPoint: LocalPlanPoint?
+    private(set) var scanCheckpoints: [LocalPlanPoint] = []
     private(set) var worldMapPointTarget: LocalWorldMapPointTarget = .start
     private(set) var frameState = LocalWorldMapFrameState(
         mapping: .unavailable,
@@ -69,7 +70,6 @@ final class FloorPlanDraftStore {
     )
     private(set) var worldMapStart: WorldMapStart?
     private(set) var worldMapCorrespondences: [WorldMapCorrespondence] = []
-    private(set) var pendingCorrespondencePose: ARPose?
     private(set) var worldMapDraft: LocalWorldMapScanDraft?
     private(set) var isSavingWorldMap = false
 #if canImport(UIKit)
@@ -133,17 +133,26 @@ final class FloorPlanDraftStore {
         image != nil && hasName && processingStage != .normalizingImage
     }
     var canStartWorldMapScan: Bool {
-        startPlanPoint != nil && directionPlanPoint != nil && worldMapScanner != nil
+        startPlanPoint != nil && directionPlanPoint != nil && !scanCheckpoints.isEmpty
+            && worldMapScanner != nil
     }
     var canCaptureStartAlignment: Bool {
         step == .scanning && worldMapStart == nil && frameState.trackingMessage == "추적 정상"
     }
-    var canCaptureCorrespondence: Bool {
-        step == .scanning && worldMapStart != nil && pendingCorrespondencePose == nil
-            && frameState.trackingMessage == "추적 정상"
+    var completedScanCheckpointCount: Int {
+        max(0, worldMapCorrespondences.count - (worldMapStart == nil ? 0 : 1))
+    }
+    var currentScanCheckpointIndex: Int? {
+        guard step == .scanning, worldMapStart != nil,
+              completedScanCheckpointCount < scanCheckpoints.count else { return nil }
+        return completedScanCheckpointCount
+    }
+    var canCaptureScanCheckpoint: Bool {
+        currentScanCheckpointIndex != nil && frameState.trackingMessage == "추적 정상"
     }
     var canSaveWorldMap: Bool {
         step == .scanning && worldMapStart != nil && worldMapCorrespondences.count >= 2
+            && completedScanCheckpointCount == scanCheckpoints.count
             && frameState.mapping == .mapped && !isSavingWorldMap
     }
     var worldMapPreviewSession: AnyObject? { worldMapScanner?.previewSession }
@@ -410,14 +419,36 @@ final class FloorPlanDraftStore {
     }
 
     func selectWorldMapPointTarget(_ target: LocalWorldMapPointTarget) {
-        guard step == .alignment || step == .scanning else { return }
+        guard step == .alignment else { return }
         worldMapPointTarget = target
+        tool = .alignmentPoint
+        errorMessage = nil
+    }
+
+    func removeLastScanCheckpoint() {
+        guard step == .alignment, !scanCheckpoints.isEmpty else { return }
+        scanCheckpoints.removeLast()
+        worldMapDraft = nil
+        errorMessage = nil
+    }
+
+    func resetWorldMapReference() {
+        guard step == .alignment else { return }
+        startPlanPoint = nil
+        directionPlanPoint = nil
+        worldMapStart = nil
+        worldMapCorrespondences = []
+        worldMapDraft = nil
+        worldMapPointTarget = .start
         tool = .alignmentPoint
         errorMessage = nil
     }
 
     func startWorldMapScan() async {
         guard canStartWorldMapScan, let worldMapScanner else { return }
+        worldMapStart = nil
+        worldMapCorrespondences = []
+        worldMapDraft = nil
         frameState = LocalWorldMapFrameState(
             mapping: .unavailable,
             trackingMessage: "주변을 천천히 비추며 초기화하세요"
@@ -451,12 +482,18 @@ final class FloorPlanDraftStore {
         } catch { errorMessage = error.localizedDescription }
     }
 
-    func captureWorldMapCorrespondencePose() {
-        guard canCaptureCorrespondence, let worldMapScanner else { return }
+    func captureCurrentScanCheckpoint() {
+        guard canCaptureScanCheckpoint, let index = currentScanCheckpointIndex,
+              scanCheckpoints.indices.contains(index), let worldMapScanner else { return }
         do {
-            pendingCorrespondencePose = try worldMapScanner.currentPose()
-            worldMapPointTarget = .correspondence
-            tool = .alignmentPoint
+            let pose = try worldMapScanner.currentPose()
+            let point = scanCheckpoints[index]
+            worldMapCorrespondences.append(WorldMapCorrespondence(
+                label: "checkpoint-\(index + 1)",
+                planPoint: NormalizedPoint(x: point.x, y: point.y),
+                arPose: pose,
+                capturedAt: .now
+            ))
             errorMessage = nil
         } catch { errorMessage = error.localizedDescription }
     }
@@ -510,7 +547,8 @@ final class FloorPlanDraftStore {
             tool = .move
         case .scanning:
             worldMapScanner?.stop()
-            pendingCorrespondencePose = nil
+            worldMapStart = nil
+            worldMapCorrespondences = []
             step = .alignment
             tool = .alignmentPoint
         case .editing:
@@ -560,16 +598,13 @@ final class FloorPlanDraftStore {
                 return
             }
             directionPlanPoint = point
-        case .correspondence:
-            guard let pose = pendingCorrespondencePose else { return }
-            worldMapCorrespondences.append(WorldMapCorrespondence(
-                label: "point-\(worldMapCorrespondences.count)",
-                planPoint: NormalizedPoint(x: point.x, y: point.y),
-                arPose: pose,
-                capturedAt: .now
-            ))
-            pendingCorrespondencePose = nil
-            tool = .move
+            worldMapPointTarget = .checkpoint
+        case .checkpoint:
+            guard scanCheckpoints.allSatisfy({ hypot(point.x - $0.x, point.y - $0.y) > 0.01 }) else {
+                errorMessage = "이미 지정한 체크포인트와 떨어진 위치를 선택해주세요."
+                return
+            }
+            scanCheckpoints.append(point)
         }
         errorMessage = nil
     }
@@ -714,11 +749,11 @@ final class FloorPlanDraftStore {
         distanceText = ""
         startPlanPoint = nil
         directionPlanPoint = nil
+        scanCheckpoints = []
         worldMapPointTarget = .start
         frameState = LocalWorldMapFrameState(mapping: .unavailable, trackingMessage: "스캔을 시작해주세요")
         worldMapStart = nil
         worldMapCorrespondences = []
-        pendingCorrespondencePose = nil
         worldMapDraft = nil
         isSavingWorldMap = false
         maskPNGData = nil

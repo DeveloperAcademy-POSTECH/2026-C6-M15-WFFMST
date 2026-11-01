@@ -17,7 +17,7 @@ struct LocalFloorPlanCanvas: UIViewRepresentable {
     var scaleLabel: String? = nil
     var scaleALabel = "A"
     var scaleBLabel = "B"
-    var correspondencePoints: [LocalPlanPoint] = []
+    var checkpointMarkers: [LocalScanCheckpointMarker] = []
     var importPresentation: FloorPlanImportPresentation? = nil
     var layers = FloorPlanLayerDisplay()
     var onStroke: (LocalEditStroke) -> Void
@@ -42,7 +42,7 @@ struct LocalFloorPlanCanvas: UIViewRepresentable {
                     pendingBrushStrokes: pendingBrushStrokes,
                     scaleA: scaleA, scaleB: scaleB, scaleLabel: scaleLabel,
                     scaleALabel: scaleALabel, scaleBLabel: scaleBLabel,
-                    correspondencePoints: correspondencePoints, layers: layers)
+                    checkpointMarkers: checkpointMarkers, layers: layers)
     }
 
     static func dismantleUIView(_ view: LocalFloorPlanCanvasView, coordinator: ()) {
@@ -107,7 +107,7 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
                 pendingBrushStrokes: [LocalEditStroke],
                 scaleA: LocalPlanPoint?, scaleB: LocalPlanPoint?, scaleLabel: String?,
                 scaleALabel: String, scaleBLabel: String,
-                correspondencePoints: [LocalPlanPoint],
+                checkpointMarkers: [LocalScanCheckpointMarker],
                 layers: FloorPlanLayerDisplay = FloorPlanLayerDisplay()) {
         let imageChanged = imageView.image !== image
         if imageChanged {
@@ -137,7 +137,7 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
         markersView.update(selection: selection, pendingBrushStrokes: pendingBrushStrokes,
                            brushDiameter: diameter, scaleA: scaleA, scaleB: scaleB,
                            scaleLabel: scaleLabel, scaleALabel: scaleALabel,
-                           scaleBLabel: scaleBLabel, correspondencePoints: correspondencePoints)
+                           scaleBLabel: scaleBLabel, checkpointMarkers: checkpointMarkers)
         if toolChanged || imageChanged { updateInteraction() }
         else if diameterChanged { updateInkTool() }
         if imageChanged { setNeedsLayout() }
@@ -411,19 +411,19 @@ private final class LocalFloorPlanMarkersView: UIView {
     var scaleLabel: String?
     var scaleALabel = "A"
     var scaleBLabel = "B"
-    var correspondencePoints: [LocalPlanPoint] = []
+    var checkpointMarkers: [LocalScanCheckpointMarker] = []
     var viewScale: CGFloat = 1 { didSet { if viewScale != oldValue { setNeedsDisplay() } } }
 
     func update(selection: [LocalPlanPoint],
                 pendingBrushStrokes: [LocalEditStroke], brushDiameter: Double,
                 scaleA: LocalPlanPoint?, scaleB: LocalPlanPoint?, scaleLabel: String?,
                 scaleALabel: String, scaleBLabel: String,
-                correspondencePoints: [LocalPlanPoint]) {
+                checkpointMarkers: [LocalScanCheckpointMarker]) {
         guard self.selection != selection
                 || self.pendingBrushStrokes != pendingBrushStrokes || self.brushDiameter != brushDiameter
                 || self.scaleA != scaleA || self.scaleB != scaleB || self.scaleLabel != scaleLabel
                 || self.scaleALabel != scaleALabel || self.scaleBLabel != scaleBLabel
-                || self.correspondencePoints != correspondencePoints else { return }
+                || self.checkpointMarkers != checkpointMarkers else { return }
         self.selection = selection
         self.pendingBrushStrokes = pendingBrushStrokes
         self.brushDiameter = brushDiameter
@@ -432,7 +432,7 @@ private final class LocalFloorPlanMarkersView: UIView {
         self.scaleLabel = scaleLabel
         self.scaleALabel = scaleALabel
         self.scaleBLabel = scaleBLabel
-        self.correspondencePoints = correspondencePoints
+        self.checkpointMarkers = checkpointMarkers
         setNeedsDisplay()
     }
 
@@ -480,8 +480,20 @@ private final class LocalFloorPlanMarkersView: UIView {
         }
         if let scaleA { scaleMarker(scaleA, label: scaleALabel, unit: unit, context: context) }
         if let scaleB { scaleMarker(scaleB, label: scaleBLabel, unit: unit, context: context) }
-        for (index, point) in correspondencePoints.enumerated() {
-            marker(point, label: "대응 \(index + 1)", color: .systemBlue, unit: unit, context: context)
+        if let currentIndex = checkpointMarkers.firstIndex(where: { $0.state == .current }) {
+            let origin = currentIndex > 0 ? checkpointMarkers[currentIndex - 1].point : scaleA
+            if let origin {
+                context.setStrokeColor(UIColor.systemYellow.cgColor)
+                context.setLineWidth(3 * unit)
+                context.setLineDash(phase: 0, lengths: [8 * unit, 6 * unit])
+                context.move(to: cg(origin))
+                context.addLine(to: cg(checkpointMarkers[currentIndex].point))
+                context.strokePath()
+                context.setLineDash(phase: 0, lengths: [])
+            }
+        }
+        for checkpoint in checkpointMarkers {
+            checkpointMarker(checkpoint, unit: unit, context: context)
         }
     }
 
@@ -527,5 +539,52 @@ private final class LocalFloorPlanMarkersView: UIView {
                 .paragraphStyle: paragraph
             ]
         )
+    }
+
+    private func checkpointMarker(_ checkpoint: LocalScanCheckpointMarker,
+                                  unit: CGFloat, context: CGContext) {
+        let position = cg(checkpoint.point)
+        let diameter = 34 * unit
+        let circle = CGRect(
+            x: position.x - diameter / 2,
+            y: position.y - diameter / 2,
+            width: diameter,
+            height: diameter
+        )
+        let fillColor: UIColor = checkpoint.state == .completed
+            ? UIColor.systemBlue.withAlphaComponent(0.45)
+            : .systemBlue
+        context.setFillColor(fillColor.cgColor)
+        context.fillEllipse(in: circle)
+        context.setStrokeColor((checkpoint.state == .current
+            ? UIColor.systemYellow : UIColor.white.withAlphaComponent(0.9)).cgColor)
+        context.setLineWidth((checkpoint.state == .current ? 5 : 2) * unit)
+        context.strokeEllipse(in: circle.insetBy(dx: unit, dy: unit))
+
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        let label = checkpoint.state == .completed ? "✓" : String(checkpoint.number)
+        let font = UIFont.boldSystemFont(ofSize: 16 * unit)
+        (label as NSString).draw(
+            in: CGRect(x: circle.minX, y: position.y - font.lineHeight / 2,
+                       width: circle.width, height: font.lineHeight),
+            withAttributes: [
+                .font: font,
+                .foregroundColor: UIColor.white,
+                .paragraphStyle: paragraph
+            ]
+        )
+
+        if checkpoint.state == .current {
+            let title = "현재 스캔 위치" as NSString
+            title.draw(
+                at: CGPoint(x: circle.maxX + 6 * unit, y: position.y - 9 * unit),
+                withAttributes: [
+                    .font: UIFont.boldSystemFont(ofSize: 14 * unit),
+                    .foregroundColor: UIColor.black,
+                    .backgroundColor: UIColor.systemYellow
+                ]
+            )
+        }
     }
 }
