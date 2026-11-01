@@ -1,4 +1,5 @@
 import CQBDesignSystem
+import CQBCore
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -174,6 +175,13 @@ struct FloorPlanCreateView: View {
                 scaleB: store.step == .alignment || store.step == .scanning
                     ? store.directionPlanPoint : nil,
                 scaleLabel: nil,
+                scaleALabel: "출발",
+                scaleBLabel: "방향",
+                correspondencePoints: store.step == .scanning
+                    ? store.worldMapCorrespondences.dropFirst().map {
+                        LocalPlanPoint(x: $0.planPoint.x, y: $0.planPoint.y)
+                    }
+                    : [],
                 importPresentation: importer,
                 layers: layers,
                 onStroke: store.stageBrushStroke,
@@ -460,18 +468,18 @@ struct FloorPlanCreateView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("스캔 기준 설정")
                         .font(DSTypography.h2)
-                    Text("도면에서 실제 스캔을 시작할 출발점과 바라볼 방향점을 차례로 지정하세요.")
+                    Text("도면에서 실제 스캔을 시작할 위치와, 시작할 때 바라볼 방향을 차례로 지정하세요. 잘못 선택한 경우에만 변경 버튼을 사용하세요.")
                         .font(DSTypography.bodySmall)
                         .foregroundStyle(InstructorColor.textSecondary)
 
-                    panelButton(store.startPlanPoint == nil ? "출발점 지정" : "출발점 다시 지정", enabled: true) {
+                    panelButton(store.startPlanPoint == nil ? "출발점 선택" : "출발점 변경", enabled: true) {
                         store.selectWorldMapPointTarget(.start)
                     }
-                    panelButton(store.directionPlanPoint == nil ? "방향점 지정" : "방향점 다시 지정", enabled: store.startPlanPoint != nil) {
+                    panelButton(store.directionPlanPoint == nil ? "방향 선택" : "방향 변경", enabled: store.startPlanPoint != nil) {
                         store.selectWorldMapPointTarget(.direction)
                     }
 
-                    Text("수동 축척 입력은 받지 않습니다. 스캔 대응점의 실제 거리와 도면 좌표로 축척을 자동 계산합니다.")
+                    Text("도면의 빨간 표시에서 ‘출발’은 실제 시작 위치, ‘방향’은 시작할 때 바라볼 지점입니다.")
                         .font(DSTypography.caption)
                         .foregroundStyle(InstructorColor.textSecondary)
                 }
@@ -511,15 +519,36 @@ struct FloorPlanCreateView: View {
                             store.captureWorldMapStart()
                         }
                     } else if store.pendingCorrespondencePose != nil {
-                        Text("방금 기록한 실제 위치와 같은 지점을 왼쪽 도면에서 탭하세요.")
+                        Text("현재 실제 위치와 같은 지점을 왼쪽 도면에서 탭하세요. 기록되면 파란색 ‘대응’ 표시가 추가됩니다.")
                             .font(DSTypography.caption)
                             .foregroundStyle(InstructorColor.actionPrimary)
                     } else {
-                        Text("저장된 대응점 \(store.worldMapCorrespondences.count)개")
+                        Text("추가 대응점 \(max(0, store.worldMapCorrespondences.count - 1))개 기록됨")
                             .font(DSTypography.bodySmall)
                         panelButton("현재 위치 대응점 추가", enabled: store.canCaptureCorrespondence) {
                             store.captureWorldMapCorrespondencePose()
                         }
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        completionRequirement(
+                            "실제 출발점에서 시작 자세 저장",
+                            isMet: store.worldMapStart != nil
+                        )
+                        completionRequirement(
+                            "시작점과 떨어진 위치에서 대응점 1개 이상 기록",
+                            isMet: store.worldMapCorrespondences.count >= 2
+                        )
+                        completionRequirement(
+                            "주변 공간 매핑 완료",
+                            isMet: store.frameState.mapping == .mapped
+                        )
+                    }
+
+                    if store.frameState.mapping != .mapped {
+                        Text("가만히 있으면 공간 정보가 늘지 않습니다. iPad를 천천히 움직이며 주변 벽과 모서리를 여러 위치와 각도에서 비춰주세요.")
+                            .font(DSTypography.caption)
+                            .foregroundStyle(InstructorColor.textSecondary)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -533,6 +562,12 @@ struct FloorPlanCreateView: View {
             .padding(.horizontal, 24)
             .padding(.bottom, 32)
         }
+    }
+
+    private func completionRequirement(_ title: String, isMet: Bool) -> some View {
+        Label(title, systemImage: isMet ? "checkmark.circle.fill" : "circle")
+            .font(DSTypography.caption)
+            .foregroundStyle(isMet ? InstructorColor.actionPrimary : InstructorColor.textSecondary)
     }
 
     @ViewBuilder

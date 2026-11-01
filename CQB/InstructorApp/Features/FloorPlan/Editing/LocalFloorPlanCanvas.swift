@@ -15,6 +15,9 @@ struct LocalFloorPlanCanvas: UIViewRepresentable {
     var scaleA: LocalPlanPoint?
     var scaleB: LocalPlanPoint?
     var scaleLabel: String? = nil
+    var scaleALabel = "A"
+    var scaleBLabel = "B"
+    var correspondencePoints: [LocalPlanPoint] = []
     var importPresentation: FloorPlanImportPresentation? = nil
     var layers = FloorPlanLayerDisplay()
     var onStroke: (LocalEditStroke) -> Void
@@ -37,7 +40,9 @@ struct LocalFloorPlanCanvas: UIViewRepresentable {
         view.update(image: image, mask: mask, tool: tool,
                     normalizedDiameter: normalizedDiameter, selection: selection,
                     pendingBrushStrokes: pendingBrushStrokes,
-                    scaleA: scaleA, scaleB: scaleB, scaleLabel: scaleLabel, layers: layers)
+                    scaleA: scaleA, scaleB: scaleB, scaleLabel: scaleLabel,
+                    scaleALabel: scaleALabel, scaleBLabel: scaleBLabel,
+                    correspondencePoints: correspondencePoints, layers: layers)
     }
 
     static func dismantleUIView(_ view: LocalFloorPlanCanvasView, coordinator: ()) {
@@ -101,6 +106,8 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
                 normalizedDiameter: Double, selection: [LocalPlanPoint],
                 pendingBrushStrokes: [LocalEditStroke],
                 scaleA: LocalPlanPoint?, scaleB: LocalPlanPoint?, scaleLabel: String?,
+                scaleALabel: String, scaleBLabel: String,
+                correspondencePoints: [LocalPlanPoint],
                 layers: FloorPlanLayerDisplay = FloorPlanLayerDisplay()) {
         let imageChanged = imageView.image !== image
         if imageChanged {
@@ -128,7 +135,9 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
         let diameterChanged = self.normalizedDiameter != diameter
         self.normalizedDiameter = diameter
         markersView.update(selection: selection, pendingBrushStrokes: pendingBrushStrokes,
-                           brushDiameter: diameter, scaleA: scaleA, scaleB: scaleB, scaleLabel: scaleLabel)
+                           brushDiameter: diameter, scaleA: scaleA, scaleB: scaleB,
+                           scaleLabel: scaleLabel, scaleALabel: scaleALabel,
+                           scaleBLabel: scaleBLabel, correspondencePoints: correspondencePoints)
         if toolChanged || imageChanged { updateInteraction() }
         else if diameterChanged { updateInkTool() }
         if imageChanged { setNeedsLayout() }
@@ -400,20 +409,30 @@ private final class LocalFloorPlanMarkersView: UIView {
     var scaleA: LocalPlanPoint?
     var scaleB: LocalPlanPoint?
     var scaleLabel: String?
+    var scaleALabel = "A"
+    var scaleBLabel = "B"
+    var correspondencePoints: [LocalPlanPoint] = []
     var viewScale: CGFloat = 1 { didSet { if viewScale != oldValue { setNeedsDisplay() } } }
 
     func update(selection: [LocalPlanPoint],
                 pendingBrushStrokes: [LocalEditStroke], brushDiameter: Double,
-                scaleA: LocalPlanPoint?, scaleB: LocalPlanPoint?, scaleLabel: String?) {
+                scaleA: LocalPlanPoint?, scaleB: LocalPlanPoint?, scaleLabel: String?,
+                scaleALabel: String, scaleBLabel: String,
+                correspondencePoints: [LocalPlanPoint]) {
         guard self.selection != selection
                 || self.pendingBrushStrokes != pendingBrushStrokes || self.brushDiameter != brushDiameter
-                || self.scaleA != scaleA || self.scaleB != scaleB || self.scaleLabel != scaleLabel else { return }
+                || self.scaleA != scaleA || self.scaleB != scaleB || self.scaleLabel != scaleLabel
+                || self.scaleALabel != scaleALabel || self.scaleBLabel != scaleBLabel
+                || self.correspondencePoints != correspondencePoints else { return }
         self.selection = selection
         self.pendingBrushStrokes = pendingBrushStrokes
         self.brushDiameter = brushDiameter
         self.scaleA = scaleA
         self.scaleB = scaleB
         self.scaleLabel = scaleLabel
+        self.scaleALabel = scaleALabel
+        self.scaleBLabel = scaleBLabel
+        self.correspondencePoints = correspondencePoints
         setNeedsDisplay()
     }
 
@@ -459,8 +478,11 @@ private final class LocalFloorPlanMarkersView: UIView {
                                      .foregroundColor: UIColor.white])
             }
         }
-        if let scaleA { scaleMarker(scaleA, label: "A", unit: unit, context: context) }
-        if let scaleB { scaleMarker(scaleB, label: "B", unit: unit, context: context) }
+        if let scaleA { scaleMarker(scaleA, label: scaleALabel, unit: unit, context: context) }
+        if let scaleB { scaleMarker(scaleB, label: scaleBLabel, unit: unit, context: context) }
+        for (index, point) in correspondencePoints.enumerated() {
+            marker(point, label: "대응 \(index + 1)", color: .systemBlue, unit: unit, context: context)
+        }
     }
 
     private func cg(_ point: LocalPlanPoint) -> CGPoint {
@@ -480,7 +502,7 @@ private final class LocalFloorPlanMarkersView: UIView {
 
     private func scaleMarker(_ point: LocalPlanPoint, label: String, unit: CGFloat, context: CGContext) {
         let position = cg(point)
-        let diameter = 36 * unit
+        let diameter = (label.count > 1 ? 52 : 36) * unit
         let circle = CGRect(
             x: position.x - diameter / 2,
             y: position.y - diameter / 2,
@@ -495,10 +517,12 @@ private final class LocalFloorPlanMarkersView: UIView {
 
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
+        let font = UIFont.boldSystemFont(ofSize: (label.count > 1 ? 13 : 16) * unit)
         (label as NSString).draw(
-            in: circle.offsetBy(dx: 0, dy: 6 * unit),
+            in: CGRect(x: circle.minX, y: position.y - font.lineHeight / 2,
+                       width: circle.width, height: font.lineHeight),
             withAttributes: [
-                .font: UIFont.boldSystemFont(ofSize: 16 * unit),
+                .font: font,
                 .foregroundColor: UIColor.white,
                 .paragraphStyle: paragraph
             ]
