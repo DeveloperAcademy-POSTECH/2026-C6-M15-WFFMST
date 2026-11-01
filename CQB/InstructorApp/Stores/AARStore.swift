@@ -58,6 +58,7 @@ final class AARStore {
     private(set) var playbackDuration = 0.0
     private(set) var isPlaying = false
     private(set) var isLoading = false
+    private(set) var isFloorPlanUnavailable = false
     /// 동선 좌표의 기준이 되는 도면 이미지 크기(픽셀)
     private(set) var floorPlanImageSize: CGSize?
 #if canImport(UIKit)
@@ -86,6 +87,15 @@ final class AARStore {
     func position(for participantID: String) -> AARTrackPath.Position? {
         guard case .ready(let path, _) = tracks[participantID] else { return nil }
         return path.position(at: playbackPosition)
+    }
+
+    /// 보정 결과를 받지 못했거나 결과에 꼭짓점이 없어 표시할 좌표가 전혀 없는지 알려준다.
+    func hasNoTrackPosition(for participantID: String) -> Bool {
+        switch tracks[participantID] {
+        case .ready(let path, _): path.vertices.isEmpty
+        case .unavailable: true
+        case .loading, nil: false
+        }
     }
 
     /// 현재 재생 위치에서 대원 영상의 장면. 영상이 준비되지 않았으면 nil
@@ -120,7 +130,11 @@ final class AARStore {
 
         // 도면과 동선은 서로 기다릴 필요가 없어 함께 받기 시작한다.
         // 세션 시작 시각과 기록 목록은 AAR에 들어갈 때 한 번만 받는다.
-        async let floorPlanLoaded: Void = loadFloorPlan(session.floorPlan, local: localFloorPlan)
+        async let floorPlanLoaded: Void = loadFloorPlan(
+            session.floorPlan,
+            local: localFloorPlan,
+            sessionID: session.id
+        )
         async let latestSession = Self.first(sessionRepository.observeSession(id: session.id))
         async let recordings = Self.first(recordingRepository.observeRecordings(sessionID: session.id))
         do {
@@ -185,6 +199,7 @@ final class AARStore {
         sessionRecordings = []
         playbackPosition = 0
         playbackDuration = 0
+        isFloorPlanUnavailable = false
         floorPlanImageSize = nil
 #if canImport(UIKit)
         floorPlanImage = nil
@@ -360,8 +375,13 @@ final class AARStore {
         updatePlaybackDuration()
     }
 
-    private func loadFloorPlan(_ reference: FloorPlanReference, local: LocalRegisteredFloorPlan?) async {
+    private func loadFloorPlan(
+        _ reference: FloorPlanReference,
+        local: LocalRegisteredFloorPlan?,
+        sessionID: UUID
+    ) async {
         if let local, local.id == reference.floorPlanID {
+            guard loadedSessionID == sessionID else { return }
             floorPlanImageSize = CGSize(width: local.image.width, height: local.image.height)
 #if canImport(UIKit)
             floorPlanImage = UIImage(data: local.image.pngData)
@@ -371,13 +391,16 @@ final class AARStore {
         // 이 기기에 없는 도면(앱 재설치, 다른 iPad)은 Storage에서 받는다.
         do {
             let files = try await floorPlanFileRepository.download(reference)
+            guard loadedSessionID == sessionID else { return }
             let manifest = try JSONDecoder().decode(FloorPlanManifest.self, from: files.navigationMapJSON)
             floorPlanImageSize = CGSize(width: manifest.imageWidth, height: manifest.imageHeight)
 #if canImport(UIKit)
             floorPlanImage = UIImage(data: files.imagePNG)
 #endif
         } catch {
+            guard loadedSessionID == sessionID else { return }
             Self.logger.error("AAR 도면 불러오기 실패: \(error.localizedDescription, privacy: .private)")
+            isFloorPlanUnavailable = true
         }
     }
 
@@ -413,6 +436,24 @@ final class AARStore {
 
 #if DEBUG
 extension AARStore {
+    #if canImport(UIKit)
+    /// SwiftUI Preview에서 동선 성공·실패 표시를 서버 없이 구성한다.
+    func configureMovementPreview(
+        floorPlanImage: UIImage,
+        tracks: [String: TrackState],
+        playbackPosition: Double
+    ) {
+        self.floorPlanImage = floorPlanImage
+        floorPlanImageSize = floorPlanImage.size
+        self.tracks = tracks
+        self.playbackPosition = playbackPosition
+        playbackDuration = tracks.values.compactMap { state in
+            guard case .ready(let path, _) = state else { return nil }
+            return path.endTime
+        }.max() ?? 0
+    }
+    #endif
+
     /// 시험 데이터로 AAR을 바로 열 때 세션과 참가자를 한 번 받는다.
     func debugSnapshot(sessionID: UUID) async -> (session: Session, members: [Member])? {
         do {
