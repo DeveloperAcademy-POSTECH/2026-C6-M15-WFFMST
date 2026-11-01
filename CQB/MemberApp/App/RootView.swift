@@ -81,10 +81,12 @@ struct RootView: View {
                 isDemo: store.isDemoMode,
                 progress: store.uploadProgress,
                 isComplete: store.isUploadComplete,
+                isAbandoned: store.isUploadAbandoned,
                 statusMessage: store.uploadStatusMessage,
                 errorMessage: store.uploadErrorMessage,
-                isUploading: store.isUploading,
+                isUploading: store.isUploading || store.isFinalizingUploadFailure,
                 onRetry: { await store.retryUploading() },
+                onAbandon: { await store.abandonUploading() },
                 onHome: finishDemoOrReturnHome
             )
             .task { await store.uploadRecording() }

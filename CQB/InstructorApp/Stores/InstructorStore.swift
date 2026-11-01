@@ -61,6 +61,7 @@ final class InstructorStore {
     private(set) var selectedFloorPlanID: String?
     private(set) var participants: [InstructorParticipant] = []
     private(set) var aarMode: AARMode = .movement
+    private(set) var aarParticipantIDs: Set<String> = []
     private(set) var selectedParticipantIDs: Set<String> = []
     private(set) var playbackPosition = 331.0
     private(set) var aarNotice: String?
@@ -118,6 +119,7 @@ final class InstructorStore {
             memberConnectionState = .connected
             if previewPhase != .teamReadiness {
                 trainingParticipants = previewParticipants
+                aarParticipantIDs = Set(previewParticipants.map(\.id))
                 selectedParticipantIDs = Set(previewParticipants.map(\.id))
             }
         }
@@ -163,12 +165,13 @@ final class InstructorStore {
         guard trainingStartedAt != nil else { return nil }
         return formattedTrainingElapsed(at: now)
     }
-    var selectedParticipants: [InstructorParticipant] { participants.filter { selectedParticipantIDs.contains($0.id) } }
+    var aarParticipants: [InstructorParticipant] { participants.filter { aarParticipantIDs.contains($0.id) } }
+    var selectedParticipants: [InstructorParticipant] { aarParticipants.filter { selectedParticipantIDs.contains($0.id) } }
     var selectionSummary: String {
-        if selectedParticipantIDs.count == participants.count && !participants.isEmpty { return "전체 대원" }
+        if selectedParticipantIDs.count == aarParticipants.count && !aarParticipants.isEmpty { return "전체 대원" }
         return selectedParticipants.isEmpty ? "대원 선택" : "대원 " + selectedParticipants.map { String($0.number) }.joined(separator: ", ")
     }
-    var canSelectAllParticipants: Bool { aarMode == .movement || participants.count <= maximumVideoCount }
+    var canSelectAllParticipants: Bool { aarMode == .movement || aarParticipants.count <= maximumVideoCount }
 
     func formattedTrainingElapsed(at date: Date) -> String {
         guard let trainingStartedAt else { return Self.formatTrainingElapsed(0) }
@@ -382,11 +385,24 @@ final class InstructorStore {
         trainingRecords.retry()
     }
 
+    func excludeParticipantFromAAR(_ id: String) {
+        guard phase == .resultsPreparation else { return }
+        trainingRecords.excludeParticipant(id)
+    }
+
+    func proceedToAAR() {
+        guard phase == .resultsPreparation, trainingRecords.canProceedToAAR else { return }
+        enterAAR()
+    }
+
     private func enterAAR() {
-        guard phase == .resultsPreparation, trainingRecords.isReadyForAAR else { return }
+        guard phase == .resultsPreparation, trainingRecords.canProceedToAAR else { return }
+        let eligibleIDs = trainingRecords.aarEligibleParticipantIDs
+        guard !eligibleIDs.isEmpty else { return }
         trainingRecords.stop()
         aarMode = .movement
-        selectedParticipantIDs = Set(participants.map(\.id))
+        aarParticipantIDs = eligibleIDs
+        selectedParticipantIDs = eligibleIDs
         playbackPosition = 331
         aarNotice = nil
         phase = .aar
@@ -401,7 +417,7 @@ final class InstructorStore {
     }
     func isParticipantSelected(_ id: String) -> Bool { selectedParticipantIDs.contains(id) }
     func canToggleParticipant(_ id: String) -> Bool {
-        guard participants.contains(where: { $0.id == id }) else { return false }
+        guard aarParticipantIDs.contains(id) else { return false }
         return aarMode == .movement || selectedParticipantIDs.contains(id) || selectedParticipantIDs.count < maximumVideoCount
     }
     func toggleParticipantSelection(_ id: String) {
@@ -418,7 +434,7 @@ final class InstructorStore {
     }
     func selectAllParticipants() {
         guard canSelectAllParticipants else { return }
-        selectedParticipantIDs = Set(participants.map(\.id))
+        selectedParticipantIDs = aarParticipantIDs
         aarNotice = nil
     }
     func setPlaybackPosition(_ value: Double) {
@@ -434,6 +450,7 @@ final class InstructorStore {
         trainingName = "샘플 훈련"
         selectFloorPlan(floorPlans.first?.id)
         participants = []
+        aarParticipantIDs = []
         selectedParticipantIDs = []
         aarMode = .movement
         aarNotice = nil
@@ -739,7 +756,8 @@ final class InstructorStore {
             selectFloorPlan(plan.id)
         }
         aarMode = .movement
-        selectedParticipantIDs = Set(participants.map(\.id))
+        aarParticipantIDs = Set(participants.map(\.id))
+        selectedParticipantIDs = aarParticipantIDs
         aarNotice = nil
         phase = .aar
     }

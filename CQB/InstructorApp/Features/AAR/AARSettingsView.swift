@@ -18,7 +18,7 @@ struct AARSettingsView: View {
 
             MultiSelectionPicker(
                 title: "대원 선택",
-                options: store.participants,
+                options: store.aarParticipants,
                 selectedIDs: store.selectedParticipantIDs,
                 optionTitle: \.displayName,
                 canToggle: store.canToggleParticipant,
