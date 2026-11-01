@@ -16,6 +16,8 @@
 - [Issue #80 데모 실행 환경](issue-80-implementation.md): TestFlight 심사용 메모리 저장소와 세션 흐름
 - [Issue #82 데모 AAR 샘플](issue-82-implementation.md): 결과 처리 완료, 3인 동선과 번들 영상 흐름
 - [Issue #102 이동 불가 영역 자동 보정](issue-102-blocked-region-autofill.md): 원본 선 보조, flood fill과 안전한 수동 fallback
+- [Issue #115 도면 파일 로컬 캐시](issue-115-floor-plan-cache.md): 불변 도면 파일의 메모리·디스크 캐시와 무결성 정책
+- [Issue #116 도면 목록 선택 미리보기](issue-116-floor-plan-list-preview.md): 목록 선택 상태, 썸네일 재사용과 비동기 취소 정책
 
 작업 기록은 당시의 이력이다. 현재 동작은 `flows.md`를 기준으로 관리하고, 정책이 바뀌면 관련 이슈와 함께 갱신한다.
 

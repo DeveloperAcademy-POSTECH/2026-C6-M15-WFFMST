@@ -23,6 +23,11 @@ final class InstructorStore {
         case failed(String)
     }
 
+    enum FloorPlanListPreviewState: Equatable {
+        case idle, loading, loaded
+        case failed(String)
+    }
+
     private enum FloorPlanRegistrationError: Error, Equatable {
         case localSave
     }
@@ -32,12 +37,14 @@ final class InstructorStore {
     let floorPlanDraft: FloorPlanDraftStore
     let trainingRecords: TrainingRecordStore
     @ObservationIgnored private let floorPlanFileRepository: any FloorPlanFileRepository
+    @ObservationIgnored private let floorPlanListPreviewLoader: any FloorPlanListPreviewLoading
     @ObservationIgnored private let floorPlanCatalogRepository: any FloorPlanCatalogRepository
     @ObservationIgnored private let sessionRepository: any SessionRepository
     @ObservationIgnored private let memberRepository: any MemberRepository
     @ObservationIgnored private let pinGenerator: () -> String
     @ObservationIgnored private var floorPlanUploadTask: Task<Void, Never>?
     @ObservationIgnored private var floorPlanDetailTask: Task<Void, Never>?
+    @ObservationIgnored private var floorPlanListPreviewTask: Task<Void, Never>?
     @ObservationIgnored private var sessionCreationTask: Task<Void, Never>?
     @ObservationIgnored private var memberObservationTask: Task<Void, Never>?
     @ObservationIgnored private var sessionEndTask: Task<Void, Never>?
@@ -50,12 +57,16 @@ final class InstructorStore {
     private(set) var selectedPlanImage: UIImage?
     private(set) var floorPlanDetailImage: UIImage?
     private(set) var floorPlanDetailMaskImage: UIImage?
+    private(set) var floorPlanListPreviewImage: UIImage?
+    private(set) var floorPlanListPreviewMaskImage: UIImage?
 #endif
     private(set) var phase: InstructorPhase = .home
     private(set) var floorPlans: [InstructorFloorPlan]
     private(set) var floorPlanCatalogState: FloorPlanCatalogState
     private(set) var floorPlanDetailState: FloorPlanDetailState = .idle
+    private(set) var floorPlanListPreviewState: FloorPlanListPreviewState = .idle
     private(set) var viewedFloorPlanID: String?
+    private(set) var previewedFloorPlanID: String?
     private(set) var floorPlanDeletionError: String?
     private(set) var trainingName = "샘플 훈련"
     private(set) var selectedFloorPlanID: String?
@@ -92,6 +103,7 @@ final class InstructorStore {
         floorPlans: [InstructorFloorPlan] = [],
         floorPlanDraft: FloorPlanDraftStore? = nil,
         floorPlanFileRepository: any FloorPlanFileRepository = DemoFloorPlanFileRepository(),
+        floorPlanListPreviewLoader: (any FloorPlanListPreviewLoading)? = nil,
         floorPlanCatalogRepository: (any FloorPlanCatalogRepository)? = nil,
         sessionRepository: any SessionRepository = DemoSessionRepository(),
         memberRepository: any MemberRepository = DemoMemberRepository(),
@@ -103,6 +115,8 @@ final class InstructorStore {
     ) {
         self.floorPlanDraft = floorPlanDraft ?? FloorPlanDraftStore()
         self.floorPlanFileRepository = floorPlanFileRepository
+        self.floorPlanListPreviewLoader = floorPlanListPreviewLoader
+            ?? LocalFloorPlanListPreviewLoader(repository: floorPlanFileRepository)
         self.floorPlanCatalogRepository = floorPlanCatalogRepository ?? DemoFloorPlanCatalogRepository()
         self.sessionRepository = sessionRepository
         self.memberRepository = memberRepository
@@ -126,6 +140,7 @@ final class InstructorStore {
 
     var selectedFloorPlan: InstructorFloorPlan? { floorPlans.first { $0.id == selectedFloorPlanID } }
     var viewedFloorPlan: InstructorFloorPlan? { floorPlans.first { $0.id == viewedFloorPlanID } }
+    var previewedFloorPlan: InstructorFloorPlan? { floorPlans.first { $0.id == previewedFloorPlanID } }
     var isEditingFloorPlan: Bool { phase == .floorPlanEditing }
     var canOpenSessionCreation: Bool { floorPlanCatalogState == .loaded && !floorPlans.isEmpty }
     var isLoadingFloorPlans: Bool { floorPlanCatalogState == .loading }
@@ -206,6 +221,23 @@ final class InstructorStore {
         loadFloorPlans()
     }
 
+    func selectFloorPlanPreview(_ id: String) {
+        guard phase == .floorPlanList,
+              let floorPlan = floorPlans.first(where: { $0.id == id }) else { return }
+        if previewedFloorPlanID == id,
+           (floorPlanListPreviewState == .loading || floorPlanListPreviewState == .loaded) {
+            return
+        }
+        loadFloorPlanListPreview(floorPlan)
+    }
+
+    func retryFloorPlanListPreview() {
+        guard phase == .floorPlanList,
+              case .failed = floorPlanListPreviewState,
+              let floorPlan = previewedFloorPlan else { return }
+        loadFloorPlanListPreview(floorPlan)
+    }
+
     func openFloorPlanDetail(_ id: String) {
         guard floorPlanCatalogState == .loaded,
               let plan = floorPlans.first(where: { $0.id == id }) else { return }
@@ -251,6 +283,9 @@ final class InstructorStore {
         do {
             try floorPlanCatalogRepository.delete(id: id)
             floorPlans.removeAll { $0.id == id }
+            if previewedFloorPlanID == id {
+                clearFloorPlanListPreview()
+            }
             if selectedFloorPlanID == id {
                 selectFloorPlan(floorPlans.first?.id)
             }
@@ -445,6 +480,7 @@ final class InstructorStore {
 
     /// 화면 트리에서 Store를 제거하기 전에 진행 중인 앱 내부 작업을 모두 정리한다.
     func shutdown() {
+        clearFloorPlanListPreview()
         cancelFloorPlanDetailLoad()
         clearFloorPlanUpload()
         floorPlanDraft.reset()
@@ -454,7 +490,9 @@ final class InstructorStore {
     func goBack() {
         guard !isUploadingFloorPlan, !isCreatingSession, !isEndingSession, !isStartingTraining else { return }
         switch phase {
-        case .floorPlanList: phase = .home
+        case .floorPlanList:
+            clearFloorPlanListPreview()
+            phase = .home
         case .floorPlanDetail:
             cancelFloorPlanDetailLoad()
             clearFloorPlanDetail()
@@ -791,6 +829,64 @@ final class InstructorStore {
         }
     }
 
+    private func loadFloorPlanListPreview(_ floorPlan: InstructorFloorPlan) {
+        floorPlanListPreviewTask?.cancel()
+        previewedFloorPlanID = floorPlan.id
+        floorPlanListPreviewState = .loading
+#if canImport(UIKit)
+        floorPlanListPreviewImage = nil
+        floorPlanListPreviewMaskImage = nil
+#endif
+        let loader = floorPlanListPreviewLoader
+        let expectedReference = floorPlan.reference
+        floorPlanListPreviewTask = Task { [weak self] in
+            do {
+                let snapshot = try await loader.load(floorPlan)
+                try Task.checkCancellation()
+                guard let self,
+                      self.phase == .floorPlanList,
+                      self.previewedFloorPlanID == floorPlan.id,
+                      self.previewedFloorPlan?.reference == expectedReference else { return }
+#if canImport(UIKit)
+                guard let image = UIImage(data: snapshot.imagePNGData),
+                      let mask = UIImage(
+                        data: snapshot.maskPNGData,
+                        scale: snapshot.maskScale
+                      ) else {
+                    self.floorPlanListPreviewState = .failed("도면 미리보기를 표시하지 못했습니다.")
+                    self.floorPlanListPreviewTask = nil
+                    return
+                }
+                self.floorPlanListPreviewImage = image
+                self.floorPlanListPreviewMaskImage = mask
+#endif
+                self.floorPlanListPreviewState = .loaded
+                self.floorPlanListPreviewTask = nil
+            } catch {
+                guard let self, !(error is CancellationError),
+                      self.phase == .floorPlanList,
+                      self.previewedFloorPlanID == floorPlan.id,
+                      self.previewedFloorPlan?.reference == expectedReference else { return }
+                Self.logger.error("도면 목록 미리보기 실패: \(error.localizedDescription, privacy: .private)")
+                self.floorPlanListPreviewState = .failed(
+                    "도면 미리보기를 불러오지 못했습니다. 연결을 확인한 뒤 다시 시도해주세요."
+                )
+                self.floorPlanListPreviewTask = nil
+            }
+        }
+    }
+
+    private func clearFloorPlanListPreview() {
+        floorPlanListPreviewTask?.cancel()
+        floorPlanListPreviewTask = nil
+        previewedFloorPlanID = nil
+        floorPlanListPreviewState = .idle
+#if canImport(UIKit)
+        floorPlanListPreviewImage = nil
+        floorPlanListPreviewMaskImage = nil
+#endif
+    }
+
     private func applyFloorPlanDetail(_ snapshot: LocalFloorPlanSnapshot, for id: String) {
         guard viewedFloorPlanID == id else { return }
 #if canImport(UIKit)
@@ -882,6 +978,9 @@ final class InstructorStore {
                     self.floorPlans[index] = plan
                 } else {
                     self.floorPlans.append(plan)
+                }
+                if self.previewedFloorPlanID == plan.id {
+                    self.clearFloorPlanListPreview()
                 }
                 self.floorPlans.sort { ($0.createdAt, $0.id) < ($1.createdAt, $1.id) }
                 self.floorPlanCatalogState = .loaded
