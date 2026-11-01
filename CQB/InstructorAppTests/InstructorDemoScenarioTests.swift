@@ -43,8 +43,11 @@ final class InstructorDemoScenarioTests: XCTestCase {
         }
         XCTAssertTrue(didCreateSession)
         XCTAssertEqual(store.currentSession?.pin, "012345")
-        XCTAssertEqual(store.participants.map(\.name), ["데모 대원 1", "데모 대원 2", "데모 대원 3"])
-        XCTAssertEqual(store.readyCount, 3)
+        XCTAssertEqual(
+            store.participants.map(\.name),
+            ["데모 대원 1", "데모 대원 2", "데모 대원 3", "데모 대원 4", "데모 대원 5"]
+        )
+        XCTAssertEqual(store.readyCount, 5)
 
         store.startTraining()
 
@@ -57,7 +60,7 @@ final class InstructorDemoScenarioTests: XCTestCase {
 
         let didReachResultsPreparation = await waitUntil {
             store.phase == .resultsPreparation
-                && store.trainingRecords.rows.count == 3
+                && store.trainingRecords.rows.count == 5
                 && store.trainingRecords.rows.allSatisfy { $0.state.title == "기록 처리·업로드 중" }
         }
         XCTAssertTrue(didReachResultsPreparation)
@@ -89,7 +92,7 @@ final class InstructorDemoScenarioTests: XCTestCase {
         restartedStore.shutdown()
     }
 
-    func testDemoScenarioLoadsThreeTracksAndBundledVideosInAAR() async {
+    func testDemoScenarioLoadsFiveTracksAndFourSelectedVideosInAAR() async {
         let environment = InstructorDemoScenario.makeEnvironment(processingDelay: .milliseconds(20))
         let store = environment.store
         let aarStore = environment.aarStore
@@ -118,7 +121,7 @@ final class InstructorDemoScenarioTests: XCTestCase {
 
         XCTAssertEqual(aarStore.floorPlanImageSize?.width, 1_200)
         XCTAssertEqual(aarStore.floorPlanImageSize?.height, 800)
-        XCTAssertEqual(aarStore.tracks.count, 3)
+        XCTAssertEqual(aarStore.tracks.count, 5)
         XCTAssertTrue(aarStore.tracks.values.allSatisfy { state in
             if case .ready = state { return true }
             return false
@@ -127,19 +130,27 @@ final class InstructorDemoScenarioTests: XCTestCase {
 
         aarStore.setPlaybackPosition(6)
         let positions = participantIDs.compactMap { aarStore.position(for: $0)?.point }
-        XCTAssertEqual(positions.count, 3)
-        XCTAssertEqual(Set(positions.map { "\($0.x),\($0.y)" }).count, 3)
+        XCTAssertEqual(positions.count, 5)
+        XCTAssertEqual(Set(positions.map { "\($0.x),\($0.y)" }).count, 5)
 
-        participantIDs.reversed().forEach(store.toggleParticipantSelection)
+        participantIDs.prefix(4).reversed().forEach(store.toggleParticipantSelection)
+        XCTAssertEqual(store.selectedParticipantIDs, Array(participantIDs.prefix(4)))
+
+        store.toggleParticipantSelection(participantIDs[4])
+        XCTAssertEqual(
+            store.selectedParticipantIDs,
+            [participantIDs[4], participantIDs[0], participantIDs[1], participantIDs[2]]
+        )
+        let selectedParticipantIDs = store.selectedParticipantIDs
         store.openAARVideoScreen()
-        aarStore.showVideos(for: participantIDs)
+        aarStore.showVideos(for: selectedParticipantIDs)
         let didLoadVideos = await waitUntil(attempts: 1_000) {
-            participantIDs.allSatisfy { id in
+            selectedParticipantIDs.allSatisfy { id in
                 if case .ready? = aarStore.videos[id] { return true }
                 return false
             }
         }
-        let videoDiagnostics = participantIDs.map { id -> String in
+        let videoDiagnostics = selectedParticipantIDs.map { id -> String in
             switch aarStore.videos[id] {
             case .loading?: return "\(id): loading"
             case .ready?: return "\(id): ready"
@@ -149,7 +160,7 @@ final class InstructorDemoScenarioTests: XCTestCase {
         }.joined(separator: ", ")
         XCTAssertTrue(didLoadVideos, videoDiagnostics)
         XCTAssertEqual(aarStore.playbackDuration, 12, accuracy: 0.1)
-        XCTAssertTrue(participantIDs.allSatisfy { id in
+        XCTAssertTrue(selectedParticipantIDs.allSatisfy { id in
             if case .playing? = aarStore.videoFrame(for: id) { return true }
             return false
         })

@@ -9,7 +9,9 @@ enum InstructorDemoScenario {
     private static let memberIDs = [
         UUID(uuidString: "20000000-0000-0000-0000-000000000081")!,
         UUID(uuidString: "20000000-0000-0000-0000-000000000082")!,
-        UUID(uuidString: "20000000-0000-0000-0000-000000000083")!
+        UUID(uuidString: "20000000-0000-0000-0000-000000000083")!,
+        UUID(uuidString: "20000000-0000-0000-0000-000000000084")!,
+        UUID(uuidString: "20000000-0000-0000-0000-000000000085")!
     ]
 
     @MainActor
@@ -274,12 +276,11 @@ private struct InstructorDemoMemberRepository: MemberRepository {
     func updateReadiness(of member: Member) async throws {}
 
     func observeMembers(sessionID: UUID) -> AsyncThrowingStream<[Member], Error> {
-        let names = ["데모 대원 1", "데모 대원 2", "데모 대원 3"]
-        let members = zip(memberIDs, names).map { id, name in
+        let members = memberIDs.enumerated().map { index, id in
             Member(
                 id: id,
                 sessionID: sessionID,
-                name: name,
+                name: "데모 대원 \(index + 1)",
                 isReady: true,
                 lastActiveAt: .now
             )
@@ -425,6 +426,20 @@ private struct InstructorDemoTrackResultRepository: TrackResultRepository {
             ImagePoint(x: 610, y: 330), ImagePoint(x: 570, y: 460),
             ImagePoint(x: 500, y: 600), ImagePoint(x: 680, y: 650),
             ImagePoint(x: 880, y: 640)
+        ],
+        [
+            ImagePoint(x: 1040, y: 140), ImagePoint(x: 900, y: 170),
+            ImagePoint(x: 790, y: 230), ImagePoint(x: 690, y: 330),
+            ImagePoint(x: 630, y: 440), ImagePoint(x: 720, y: 540),
+            ImagePoint(x: 820, y: 600), ImagePoint(x: 970, y: 590),
+            ImagePoint(x: 1080, y: 520)
+        ],
+        [
+            ImagePoint(x: 580, y: 700), ImagePoint(x: 570, y: 610),
+            ImagePoint(x: 550, y: 520), ImagePoint(x: 520, y: 430),
+            ImagePoint(x: 500, y: 340), ImagePoint(x: 480, y: 250),
+            ImagePoint(x: 520, y: 160), ImagePoint(x: 610, y: 120),
+            ImagePoint(x: 700, y: 150)
         ]
     ]
 }

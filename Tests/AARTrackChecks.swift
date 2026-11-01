@@ -27,7 +27,7 @@ enum AARTrackChecks {
             )]
         ))
 
-        check(path.position(at: -1) == nil, "첫 꼭짓점 이전에는 점을 숨긴다")
+        check(path.position(at: -1) == .init(point: ImagePoint(x: 0, y: 0), presence: .uncertain), "첫 꼭짓점 이전에는 첫 위치에 흐리게 표시한다")
         check(path.position(at: 0) == .init(point: ImagePoint(x: 0, y: 0), presence: .tracked), "첫 꼭짓점 위치")
         check(path.position(at: 1) == .init(point: ImagePoint(x: 50, y: 50), presence: .tracked), "같은 구간은 직선으로 잇는다 (정렬 전 입력)")
         check(path.position(at: 3) == .init(point: ImagePoint(x: 100, y: 100), presence: .uncertain), "구간이 바뀌는 사이는 마지막 위치에 흐리게")
@@ -48,7 +48,7 @@ enum AARTrackChecks {
             result: result(vertices: [vertex(t: 0, x: 0, y: 0, part: 0), vertex(t: 10, x: 100, y: 0, part: 0)]),
             recordingOffset: 3
         )
-        check(path.position(at: 2) == nil, "세션 시각이 기록 시작 전이면 숨긴다")
+        check(path.position(at: 2) == .init(point: ImagePoint(x: 0, y: 0), presence: .uncertain), "세션 시각이 기록 시작 전이면 첫 위치에 흐리게 표시한다")
         check(path.position(at: 8)?.point == ImagePoint(x: 50, y: 0), "세션 시각에서 기록 시작 오프셋을 뺀다")
         check(path.endTime == 13, "타임라인 길이는 세션 시각 기준")
     }
