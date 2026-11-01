@@ -1,10 +1,13 @@
 import CQBCore
 import CQBDesignSystem
 import SwiftUI
+import UIKit
 
 struct AARMovementView: View {
     @Environment(InstructorStore.self) private var store
     @Environment(AARStore.self) private var aarStore
+    @State private var pinchStartViewport: AARFloorPlanViewport?
+    @GestureState private var gestureTranslation: CGSize = .zero
 
     // Figma(노드 762:3230 map canvas): 도면은 여백 없이 영역에 비율을 유지해 맞춘다.
     private let floorPlanPadding: CGFloat = 0
@@ -15,31 +18,15 @@ struct AARMovementView: View {
                 RoundedRectangle(cornerRadius: 4)
                     .fill(InstructorColor.surfaceBase)
 
-                floorPlan
-
                 if let imageSize = aarStore.floorPlanImageSize {
                     let layout = AARFloorPlanLayout(
                         imageSize: imageSize,
                         container: geometry.size,
                         padding: floorPlanPadding
                     )
-                    ForEach(store.aarParticipants) { participant in
-                        if let position = aarStore.position(for: participant.id) {
-                            Button {
-                                store.toggleParticipantSelection(participant.id)
-                            } label: {
-                                participantMarker(participant)
-                            }
-                            .buttonStyle(.plain)
-                                .opacity(position.presence == .tracked ? 1 : 0.35)
-                                .position(layout.viewPoint(for: position.point))
-                            .accessibilityLabel(markerAccessibilityLabel(participant))
-                            .accessibilityHint(store.isParticipantSelected(participant.id)
-                                ? "선택을 해제합니다"
-                                : "영상 패널에 추가합니다")
-                            .accessibilityIdentifier("aar.marker.\(participant.id)")
-                        }
-                    }
+                    viewportContent(layout: layout, container: geometry.size)
+                } else {
+                    floorPlanUnavailableState
                 }
             }
             .overlay(alignment: .topTrailing) {
@@ -52,7 +39,104 @@ struct AARMovementView: View {
                     .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
             }
         }
+        .accessibilityValue("도면 확대 \(store.aarFloorPlanViewport.scale.formatted())배")
         .accessibilityIdentifier("aar.movement")
+    }
+
+    private func viewportContent(
+        layout: AARFloorPlanLayout,
+        container: CGSize
+    ) -> some View {
+        let viewport = store.aarFloorPlanViewport.applying(
+            drag: pinchStartViewport == nil ? gestureTranslation : .zero,
+            layout: layout,
+            container: container
+        )
+
+        return ZStack {
+            floorPlanImage(layout: layout, viewport: viewport)
+
+            ForEach(store.aarParticipants) { participant in
+                if let position = aarStore.position(for: participant.id) {
+                    Button {
+                        store.toggleParticipantSelection(participant.id)
+                    } label: {
+                        participantMarker(
+                            participant,
+                            showsName: viewport.showsParticipantNames
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .opacity(position.presence == .tracked ? 1 : 0.35)
+                    .position(viewport.viewPoint(for: position.point, layout: layout))
+                    .accessibilityLabel(markerAccessibilityLabel(participant))
+                    .accessibilityHint(store.isParticipantSelected(participant.id)
+                        ? "선택을 해제합니다"
+                        : "영상 패널에 추가합니다")
+                    .accessibilityIdentifier("aar.marker.\(participant.id)")
+                }
+            }
+        }
+        .frame(width: container.width, height: container.height)
+        .contentShape(.rect)
+        .background {
+            AARPinchGestureAnchor { update in
+                updateViewportForPinch(update, layout: layout, container: container)
+            }
+        }
+        .simultaneousGesture(translationGesture(layout: layout, container: container))
+    }
+
+    private func updateViewportForPinch(
+        _ update: AARPinchGestureUpdate,
+        layout: AARFloorPlanLayout,
+        container: CGSize
+    ) {
+        if update.phase == .began {
+            pinchStartViewport = store.aarFloorPlanViewport
+        }
+        guard let startViewport = pinchStartViewport else { return }
+
+        let viewport = startViewport.applying(
+            magnification: update.magnification,
+            anchor: update.startLocation,
+            drag: CGSize(
+                width: update.location.x - update.startLocation.x,
+                height: update.location.y - update.startLocation.y
+            ),
+            layout: layout,
+            container: container
+        )
+        store.updateAARFloorPlanViewport(
+            scale: viewport.scale,
+            translation: viewport.translation,
+            layout: layout,
+            container: container
+        )
+
+        if update.phase == .ended {
+            pinchStartViewport = nil
+        }
+    }
+
+    private func translationGesture(
+        layout: AARFloorPlanLayout,
+        container: CGSize
+    ) -> some Gesture {
+        DragGesture(minimumDistance: 10)
+            .updating($gestureTranslation) { value, state, _ in state = value.translation }
+            .onEnded { value in
+                guard pinchStartViewport == nil else { return }
+                store.updateAARFloorPlanViewport(
+                    scale: store.aarFloorPlanViewport.scale,
+                    translation: CGSize(
+                        width: store.aarFloorPlanViewport.translation.width + value.translation.width,
+                        height: store.aarFloorPlanViewport.translation.height + value.translation.height
+                    ),
+                    layout: layout,
+                    container: container
+                )
+            }
     }
 
     @ViewBuilder
@@ -69,7 +153,7 @@ struct AARMovementView: View {
                         store.toggleParticipantSelection(participant.id)
                     } label: {
                         HStack(spacing: 4) {
-                            participantMarker(participant)
+                            participantMarker(participant, showsName: false)
                                 .opacity(0.35)
                             Text(participant.displayName)
                                 .font(.caption)
@@ -104,15 +188,26 @@ struct AARMovementView: View {
     }
 
     @ViewBuilder
-    private var floorPlan: some View {
+    private func floorPlanImage(
+        layout: AARFloorPlanLayout,
+        viewport: AARFloorPlanViewport
+    ) -> some View {
         if let image = aarStore.floorPlanImage ?? store.selectedPlanImage {
             Image(uiImage: image)
                 .resizable()
-                .scaledToFit()
+                .frame(width: layout.imageFrame.width, height: layout.imageFrame.height)
+                .scaleEffect(viewport.scale)
+                .offset(viewport.translation)
                 .opacity(0.5)
-                .padding(floorPlanPadding)
                 .accessibilityLabel("선택한 훈련 도면")
-        } else if aarStore.isLoading {
+        } else {
+            floorPlanUnavailableState
+        }
+    }
+
+    @ViewBuilder
+    private var floorPlanUnavailableState: some View {
+        if aarStore.isLoading {
             ProgressView("도면과 동선을 불러오는 중")
                 .foregroundStyle(InstructorColor.textSecondary)
         } else {
@@ -125,7 +220,10 @@ struct AARMovementView: View {
         }
     }
 
-    private func participantMarker(_ participant: InstructorParticipant) -> some View {
+    private func participantMarker(
+        _ participant: InstructorParticipant,
+        showsName: Bool
+    ) -> some View {
         let slotNumber = store.videoSlotNumber(for: participant.id)
 
         return ZStack {
@@ -146,6 +244,21 @@ struct AARMovementView: View {
         }
         .frame(width: 48, height: 48)
         .contentShape(.circle)
+        .overlay(alignment: .top) {
+            if showsName {
+                Text(participant.name)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(InstructorColor.textPrimary)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.horizontal, 8)
+                    .frame(height: 28)
+                    .background(InstructorColor.surfaceRaised.opacity(0.94))
+                    .clipShape(.capsule)
+                    .offset(y: -32)
+                    .allowsHitTesting(false)
+            }
+        }
     }
 
     private func markerAccessibilityLabel(_ participant: InstructorParticipant) -> String {
@@ -158,6 +271,128 @@ struct AARMovementView: View {
     private var markerFont: Font {
         DSFonts.register()
         return .custom("NotoSansKR-Bold", size: 14, relativeTo: .body)
+    }
+}
+
+private struct AARPinchGestureUpdate {
+    enum Phase { case began, changed, ended }
+
+    let phase: Phase
+    let magnification: CGFloat
+    let startLocation: CGPoint
+    let location: CGPoint
+}
+
+/// UIKit의 핀치 중심 좌표를 사용해 확대와 두 손가락 이동을 한 동작으로 전달한다.
+private struct AARPinchGestureAnchor: UIViewRepresentable {
+    let onUpdate: (AARPinchGestureUpdate) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onUpdate: onUpdate) }
+
+    func makeUIView(context: Context) -> AnchorView {
+        let view = AnchorView()
+        view.isUserInteractionEnabled = false
+        view.onWindowChange = context.coordinator.attach
+        return view
+    }
+
+    func updateUIView(_ uiView: AnchorView, context: Context) {
+        context.coordinator.onUpdate = onUpdate
+        context.coordinator.anchorView = uiView
+        context.coordinator.attach(to: uiView.window)
+    }
+
+    static func dismantleUIView(_ uiView: AnchorView, coordinator: Coordinator) {
+        coordinator.detach()
+    }
+
+    final class AnchorView: UIView {
+        var onWindowChange: ((UIWindow?) -> Void)?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.onWindowChange?(self.window)
+            }
+        }
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var onUpdate: (AARPinchGestureUpdate) -> Void
+        weak var anchorView: UIView?
+        private weak var window: UIWindow?
+        private var startLocation = CGPoint.zero
+        private lazy var recognizer: UIPinchGestureRecognizer = {
+            let recognizer = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch))
+            recognizer.cancelsTouchesInView = false
+            recognizer.delegate = self
+            return recognizer
+        }()
+
+        init(onUpdate: @escaping (AARPinchGestureUpdate) -> Void) {
+            self.onUpdate = onUpdate
+        }
+
+        func attach(to window: UIWindow?) {
+            guard self.window !== window else { return }
+            detach()
+            guard let window else { return }
+            window.addGestureRecognizer(recognizer)
+            self.window = window
+        }
+
+        func detach() {
+            window?.removeGestureRecognizer(recognizer)
+            window = nil
+        }
+
+        @objc private func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
+            guard let anchorView else { return }
+            let location = recognizer.location(in: anchorView)
+            switch recognizer.state {
+            case .began:
+                startLocation = location
+                onUpdate(.init(
+                    phase: .began,
+                    magnification: recognizer.scale,
+                    startLocation: startLocation,
+                    location: location
+                ))
+            case .changed:
+                onUpdate(.init(
+                    phase: .changed,
+                    magnification: recognizer.scale,
+                    startLocation: startLocation,
+                    location: location
+                ))
+            case .ended, .cancelled, .failed:
+                onUpdate(.init(
+                    phase: .ended,
+                    magnification: recognizer.scale,
+                    startLocation: startLocation,
+                    location: location
+                ))
+            default:
+                break
+            }
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            true
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldReceive touch: UITouch
+        ) -> Bool {
+            guard let anchorView, anchorView.window != nil else { return false }
+            return anchorView.bounds.contains(touch.location(in: anchorView))
+        }
     }
 }
 

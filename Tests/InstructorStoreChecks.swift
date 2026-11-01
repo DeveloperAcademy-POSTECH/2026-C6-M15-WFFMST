@@ -397,6 +397,18 @@ struct InstructorStoreChecks {
         expect(store.isParticipantMuted(firstID), "새로 선택한 영상은 기본 음소거")
         store.toggleParticipantMute(firstID)
         expect(!store.isParticipantMuted(firstID), "선택 영상 음소거 해제 상태 보존")
+        let viewportContainer = CGSize(width: 1_000, height: 600)
+        let viewportLayout = AARFloorPlanLayout(
+            imageSize: CGSize(width: 1_000, height: 600),
+            container: viewportContainer,
+            padding: 0
+        )
+        store.updateAARFloorPlanViewport(
+            scale: 2,
+            translation: CGSize(width: 50, height: -25),
+            layout: viewportLayout,
+            container: viewportContainer
+        )
         store.openAARVideoScreen()
         store.toggleParticipantSelection(secondID)
         expect(store.aarScreen == .video && store.selectedParticipantIDs == [secondID, firstID],
@@ -405,14 +417,19 @@ struct InstructorStoreChecks {
                "선택 순서에 맞춰 영상 슬롯 번호 재할당")
         store.showAARFloorPlan()
         store.openAARVideoScreen()
-        expect(store.aarScreen == .video && !store.isParticipantMuted(firstID),
-               "화면 왕복에서 선택 순서와 음소거 상태 유지")
+        expect(store.aarScreen == .video && !store.isParticipantMuted(firstID)
+                   && store.aarFloorPlanViewport == AARFloorPlanViewport(
+                       scale: 2,
+                       translation: CGSize(width: 50, height: -25)
+                   ),
+               "화면 왕복에서 선택 순서, 음소거와 도면 뷰포트 유지")
         store.setPlaybackPosition(.nan)
         expect(store.playbackPosition == 331, "유효하지 않은 재생 위치 무시")
         store.finishAAR()
         expect(store.phase == .aarCompleted && store.aarScreen == .floorPlan
-                   && store.selectedParticipantIDs.isEmpty && store.unmutedParticipantIDs.isEmpty,
-               "AAR 종료 시 선택·화면·음소거 상태 초기화")
+                   && store.selectedParticipantIDs.isEmpty && store.unmutedParticipantIDs.isEmpty
+                   && store.aarFloorPlanViewport == .identity,
+               "AAR 종료 시 선택·화면·음소거·도면 뷰포트 초기화")
         store.returnHome()
         expect(store.phase == .home && store.participants.isEmpty, "처음으로에서 세션 상태 초기화")
 

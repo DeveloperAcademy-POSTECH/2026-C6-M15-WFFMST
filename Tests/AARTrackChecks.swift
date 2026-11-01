@@ -68,6 +68,59 @@ enum AARTrackChecks {
 
         let broken = AARFloorPlanLayout(imageSize: .zero, container: CGSize(width: 100, height: 100), padding: 20)
         check(broken.viewPoint(for: ImagePoint(x: 5, y: 5)) == CGPoint(x: 20, y: 20), "크기를 모르는 도면에서도 멈추지 않는다")
+
+        let oneX = AARFloorPlanViewport(
+            scale: 0.5,
+            translation: CGSize(width: 100, height: -100)
+        ).clamped(layout: wide, container: CGSize(width: 1000, height: 600))
+        check(oneX == .identity, "1배 미만과 화면 맞춤 상태의 이동을 제한한다")
+        check(oneX.viewPoint(for: ImagePoint(x: 1000, y: 500), layout: wide) == CGPoint(x: 500, y: 300),
+              "1배에서는 기존 화면 맞춤 좌표를 유지한다")
+
+        let belowNameThreshold = AARFloorPlanViewport(scale: 1.499)
+        let nameThreshold = AARFloorPlanViewport(scale: 1.5)
+        check(!belowNameThreshold.showsParticipantNames && nameThreshold.showsParticipantNames,
+              "1.5배에서 대원 이름 표시를 전환한다")
+
+        let oneAndHalfX = AARFloorPlanViewport(
+            scale: 1.5,
+            translation: CGSize(width: 999, height: -999)
+        ).clamped(layout: wide, container: CGSize(width: 1000, height: 600))
+        check(oneAndHalfX.translation == CGSize(width: 220, height: -60), "1.5배 패닝을 도면 경계로 제한한다")
+        check(oneAndHalfX.viewPoint(for: ImagePoint(x: 0, y: 0), layout: wide) == CGPoint(x: 0, y: -120),
+              "1.5배에서 도면 좌표와 확대·이동을 함께 적용한다")
+
+        let anchoredZoom = AARFloorPlanViewport.identity.applying(
+            magnification: 2,
+            anchor: CGPoint(x: 260, y: 300),
+            layout: wide,
+            container: CGSize(width: 1000, height: 600)
+        )
+        check(anchoredZoom.translation == CGSize(width: 240, height: 0),
+              "핀치 시작점을 기준으로 확대 위치를 함께 이동한다")
+        check(anchoredZoom.viewPoint(for: ImagePoint(x: 500, y: 500), layout: wide) == CGPoint(x: 260, y: 300),
+              "핀치 중심 아래의 도면 좌표를 화면의 같은 위치에 유지한다")
+
+        let movingPinch = AARFloorPlanViewport.identity.applying(
+            magnification: 2,
+            anchor: CGPoint(x: 260, y: 300),
+            drag: CGSize(width: 40, height: -30),
+            layout: wide,
+            container: CGSize(width: 1000, height: 600)
+        )
+        check(movingPinch.translation == CGSize(width: 280, height: -30),
+              "확대 중 두 손가락 중심 이동을 패닝으로 함께 적용한다")
+        check(movingPinch.viewPoint(for: ImagePoint(x: 500, y: 500), layout: wide) == CGPoint(x: 300, y: 270),
+              "핀치 중심 이동량만큼 기준 도면 좌표도 함께 이동한다")
+
+        let fourX = AARFloorPlanViewport(
+            scale: 10,
+            translation: CGSize(width: -10_000, height: 10_000)
+        ).clamped(layout: wide, container: CGSize(width: 1000, height: 600))
+        check(fourX.scale == 4, "4배를 확대 상한으로 제한한다")
+        check(fourX.translation == CGSize(width: -1_420, height: 660), "4배 패닝을 도면 경계로 제한한다")
+        check(fourX.viewPoint(for: ImagePoint(x: 2000, y: 1000), layout: wide) == CGPoint(x: 1_000, y: 1_920),
+              "4배에서 도면 가장자리 좌표를 같은 변환으로 계산한다")
     }
 
     // MARK: - 다운로드
