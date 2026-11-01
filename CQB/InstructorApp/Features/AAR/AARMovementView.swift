@@ -6,8 +6,7 @@ import UIKit
 struct AARMovementView: View {
     @Environment(InstructorStore.self) private var store
     @Environment(AARStore.self) private var aarStore
-    @State private var pinchStartViewport: AARFloorPlanViewport?
-    @GestureState private var gestureTranslation: CGSize = .zero
+    @State private var gestureStartViewport: AARFloorPlanViewport?
 
     // Figma(노드 762:3230 map canvas): 도면은 여백 없이 영역에 비율을 유지해 맞춘다.
     private let floorPlanPadding: CGFloat = 0
@@ -47,11 +46,7 @@ struct AARMovementView: View {
         layout: AARFloorPlanLayout,
         container: CGSize
     ) -> some View {
-        let viewport = store.aarFloorPlanViewport.applying(
-            drag: pinchStartViewport == nil ? gestureTranslation : .zero,
-            layout: layout,
-            container: container
-        )
+        let viewport = store.aarFloorPlanViewport
 
         return ZStack {
             floorPlanImage(layout: layout, viewport: viewport)
@@ -80,22 +75,21 @@ struct AARMovementView: View {
         .frame(width: container.width, height: container.height)
         .contentShape(.rect)
         .background {
-            AARPinchGestureAnchor { update in
-                updateViewportForPinch(update, layout: layout, container: container)
+            AARViewportGestureAnchor { update in
+                updateViewport(update, layout: layout, container: container)
             }
         }
-        .simultaneousGesture(translationGesture(layout: layout, container: container))
     }
 
-    private func updateViewportForPinch(
-        _ update: AARPinchGestureUpdate,
+    private func updateViewport(
+        _ update: AARViewportGestureUpdate,
         layout: AARFloorPlanLayout,
         container: CGSize
     ) {
         if update.phase == .began {
-            pinchStartViewport = store.aarFloorPlanViewport
+            gestureStartViewport = store.aarFloorPlanViewport
         }
-        guard let startViewport = pinchStartViewport else { return }
+        guard let startViewport = gestureStartViewport else { return }
 
         let viewport = startViewport.applying(
             magnification: update.magnification,
@@ -115,28 +109,8 @@ struct AARMovementView: View {
         )
 
         if update.phase == .ended {
-            pinchStartViewport = nil
+            gestureStartViewport = nil
         }
-    }
-
-    private func translationGesture(
-        layout: AARFloorPlanLayout,
-        container: CGSize
-    ) -> some Gesture {
-        DragGesture(minimumDistance: 10)
-            .updating($gestureTranslation) { value, state, _ in state = value.translation }
-            .onEnded { value in
-                guard pinchStartViewport == nil else { return }
-                store.updateAARFloorPlanViewport(
-                    scale: store.aarFloorPlanViewport.scale,
-                    translation: CGSize(
-                        width: store.aarFloorPlanViewport.translation.width + value.translation.width,
-                        height: store.aarFloorPlanViewport.translation.height + value.translation.height
-                    ),
-                    layout: layout,
-                    container: container
-                )
-            }
     }
 
     @ViewBuilder
@@ -274,7 +248,7 @@ struct AARMovementView: View {
     }
 }
 
-private struct AARPinchGestureUpdate {
+private struct AARViewportGestureUpdate {
     enum Phase { case began, changed, ended }
 
     let phase: Phase
@@ -283,9 +257,9 @@ private struct AARPinchGestureUpdate {
     let location: CGPoint
 }
 
-/// UIKit의 핀치 중심 좌표를 사용해 확대와 두 손가락 이동을 한 동작으로 전달한다.
-private struct AARPinchGestureAnchor: UIViewRepresentable {
-    let onUpdate: (AARPinchGestureUpdate) -> Void
+/// UIKit에서 1-finger pan과 pinch를 분리해 한 물리 제스처를 한 번만 뷰포트에 반영한다.
+private struct AARViewportGestureAnchor: UIViewRepresentable {
+    let onUpdate: (AARViewportGestureUpdate) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(onUpdate: onUpdate) }
 
@@ -320,18 +294,31 @@ private struct AARPinchGestureAnchor: UIViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
-        var onUpdate: (AARPinchGestureUpdate) -> Void
+        var onUpdate: (AARViewportGestureUpdate) -> Void
         weak var anchorView: UIView?
         private weak var window: UIWindow?
-        private var startLocation = CGPoint.zero
-        private lazy var recognizer: UIPinchGestureRecognizer = {
+        private var pinchStartLocation = CGPoint.zero
+        private var lastPinchLocation = CGPoint.zero
+        private var lastPinchMagnification: CGFloat = 1
+        private var panStartLocation = CGPoint.zero
+        private var isPinching = false
+        private var isPanning = false
+        private lazy var pinchRecognizer: UIPinchGestureRecognizer = {
             let recognizer = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch))
             recognizer.cancelsTouchesInView = false
             recognizer.delegate = self
             return recognizer
         }()
+        private lazy var panRecognizer: UIPanGestureRecognizer = {
+            let recognizer = UIPanGestureRecognizer(target: self, action: #selector(handlePan))
+            recognizer.minimumNumberOfTouches = 1
+            recognizer.maximumNumberOfTouches = 1
+            recognizer.cancelsTouchesInView = false
+            recognizer.delegate = self
+            return recognizer
+        }()
 
-        init(onUpdate: @escaping (AARPinchGestureUpdate) -> Void) {
+        init(onUpdate: @escaping (AARViewportGestureUpdate) -> Void) {
             self.onUpdate = onUpdate
         }
 
@@ -339,12 +326,17 @@ private struct AARPinchGestureAnchor: UIViewRepresentable {
             guard self.window !== window else { return }
             detach()
             guard let window else { return }
-            window.addGestureRecognizer(recognizer)
+            window.addGestureRecognizer(pinchRecognizer)
+            window.addGestureRecognizer(panRecognizer)
             self.window = window
         }
 
         func detach() {
-            window?.removeGestureRecognizer(recognizer)
+            window?.removeGestureRecognizer(pinchRecognizer)
+            window?.removeGestureRecognizer(panRecognizer)
+            isPinching = false
+            isPanning = false
+            panRecognizer.isEnabled = true
             window = nil
         }
 
@@ -353,25 +345,74 @@ private struct AARPinchGestureAnchor: UIViewRepresentable {
             let location = recognizer.location(in: anchorView)
             switch recognizer.state {
             case .began:
-                startLocation = location
+                // 첫 손가락부터 추적하던 pan을 reset해 pinch 종료 후 남은 손가락이
+                // 같은 터치 시퀀스의 드래그로 이어지지 않게 한다.
+                panRecognizer.isEnabled = false
+                isPinching = true
+                pinchStartLocation = location
+                lastPinchLocation = location
+                lastPinchMagnification = recognizer.scale
                 onUpdate(.init(
                     phase: .began,
                     magnification: recognizer.scale,
-                    startLocation: startLocation,
+                    startLocation: pinchStartLocation,
                     location: location
                 ))
             case .changed:
+                guard isPinching, recognizer.numberOfTouches >= 2 else { return }
+                lastPinchLocation = location
+                lastPinchMagnification = recognizer.scale
                 onUpdate(.init(
                     phase: .changed,
                     magnification: recognizer.scale,
-                    startLocation: startLocation,
+                    startLocation: pinchStartLocation,
                     location: location
                 ))
             case .ended, .cancelled, .failed:
+                guard isPinching else { return }
+                isPinching = false
                 onUpdate(.init(
                     phase: .ended,
-                    magnification: recognizer.scale,
-                    startLocation: startLocation,
+                    magnification: lastPinchMagnification,
+                    startLocation: pinchStartLocation,
+                    location: lastPinchLocation
+                ))
+                // 현재 남아 있는 손가락은 pan의 touchesBegan을 거치지 않았으므로
+                // 완전히 떼었다가 새로 누른 터치부터 패닝을 시작한다.
+                panRecognizer.isEnabled = true
+            default:
+                break
+            }
+        }
+
+        @objc private func handlePan(_ recognizer: UIPanGestureRecognizer) {
+            guard let anchorView else { return }
+            let location = recognizer.location(in: anchorView)
+            switch recognizer.state {
+            case .began:
+                isPanning = true
+                panStartLocation = location
+                onUpdate(.init(
+                    phase: .began,
+                    magnification: 1,
+                    startLocation: panStartLocation,
+                    location: location
+                ))
+            case .changed:
+                guard isPanning else { return }
+                onUpdate(.init(
+                    phase: .changed,
+                    magnification: 1,
+                    startLocation: panStartLocation,
+                    location: location
+                ))
+            case .ended, .cancelled, .failed:
+                guard isPanning else { return }
+                isPanning = false
+                onUpdate(.init(
+                    phase: .ended,
+                    magnification: 1,
+                    startLocation: panStartLocation,
                     location: location
                 ))
             default:
@@ -383,7 +424,10 @@ private struct AARPinchGestureAnchor: UIViewRepresentable {
             _ gestureRecognizer: UIGestureRecognizer,
             shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
         ) -> Bool {
-            true
+            if isViewportRecognizer(gestureRecognizer), isViewportRecognizer(otherGestureRecognizer) {
+                return false
+            }
+            return true
         }
 
         func gestureRecognizer(
@@ -392,6 +436,10 @@ private struct AARPinchGestureAnchor: UIViewRepresentable {
         ) -> Bool {
             guard let anchorView, anchorView.window != nil else { return false }
             return anchorView.bounds.contains(touch.location(in: anchorView))
+        }
+
+        private func isViewportRecognizer(_ recognizer: UIGestureRecognizer) -> Bool {
+            recognizer === pinchRecognizer || recognizer === panRecognizer
         }
     }
 }
