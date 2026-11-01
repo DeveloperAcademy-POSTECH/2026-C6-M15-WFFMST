@@ -45,9 +45,9 @@ final class InstructorDemoScenarioTests: XCTestCase {
         XCTAssertEqual(store.currentSession?.pin, "012345")
         XCTAssertEqual(
             store.participants.map(\.name),
-            ["데모 대원 1", "데모 대원 2", "데모 대원 3", "데모 대원 4", "데모 대원 5"]
+            ["데모 대원 1", "데모 대원 2", "데모 대원 3", "데모 대원 4", "데모 대원 5", "데모 대원 6"]
         )
-        XCTAssertEqual(store.readyCount, 5)
+        XCTAssertEqual(store.readyCount, 6)
 
         store.startTraining()
 
@@ -60,7 +60,7 @@ final class InstructorDemoScenarioTests: XCTestCase {
 
         let didReachResultsPreparation = await waitUntil {
             store.phase == .resultsPreparation
-                && store.trainingRecords.rows.count == 5
+                && store.trainingRecords.rows.count == 6
                 && store.trainingRecords.rows.allSatisfy { $0.state.title == "기록 처리·업로드 중" }
         }
         XCTAssertTrue(didReachResultsPreparation)
@@ -92,7 +92,7 @@ final class InstructorDemoScenarioTests: XCTestCase {
         restartedStore.shutdown()
     }
 
-    func testDemoScenarioLoadsFiveTracksAndFourSelectedVideosInAAR() async {
+    func testDemoScenarioLoadsSixTracksAndFourSelectedVideosInAAR() async {
         let environment = InstructorDemoScenario.makeEnvironment(processingDelay: .milliseconds(20))
         let store = environment.store
         let aarStore = environment.aarStore
@@ -121,7 +121,7 @@ final class InstructorDemoScenarioTests: XCTestCase {
 
         XCTAssertEqual(aarStore.floorPlanImageSize?.width, 1_200)
         XCTAssertEqual(aarStore.floorPlanImageSize?.height, 800)
-        XCTAssertEqual(aarStore.tracks.count, 5)
+        XCTAssertEqual(aarStore.tracks.count, 6)
         XCTAssertTrue(aarStore.tracks.values.allSatisfy { state in
             if case .ready = state { return true }
             return false
@@ -130,8 +130,8 @@ final class InstructorDemoScenarioTests: XCTestCase {
 
         aarStore.setPlaybackPosition(6)
         let positions = participantIDs.compactMap { aarStore.position(for: $0)?.point }
-        XCTAssertEqual(positions.count, 5)
-        XCTAssertEqual(Set(positions.map { "\($0.x),\($0.y)" }).count, 5)
+        XCTAssertEqual(positions.count, 6)
+        XCTAssertEqual(Set(positions.map { "\($0.x),\($0.y)" }).count, 6)
 
         participantIDs.prefix(4).reversed().forEach(store.toggleParticipantSelection)
         XCTAssertEqual(store.selectedParticipantIDs, Array(participantIDs.prefix(4)))
@@ -165,8 +165,39 @@ final class InstructorDemoScenarioTests: XCTestCase {
             return false
         })
 
+        let reselectedParticipantID = selectedParticipantIDs[3]
+        guard case .ready(let uninterruptedPlayer, _)? = aarStore.videos[selectedParticipantIDs[0]],
+              case .ready(let reselectedPlayer, _)? = aarStore.videos[reselectedParticipantID],
+              let uninterruptedItem = uninterruptedPlayer.currentItem
+        else {
+            return XCTFail("기존 영상과 재선택할 영상 플레이어가 준비되어야 합니다.")
+        }
+        let didReachPlaybackPosition = await waitUntil(attempts: 100) {
+            abs(uninterruptedPlayer.currentTime().seconds - 6) < 0.1
+        }
+        XCTAssertTrue(didReachPlaybackPosition)
+
+        store.toggleParticipantMute(selectedParticipantIDs[0])
+        store.toggleParticipantMute(reselectedParticipantID)
+        uninterruptedPlayer.isMuted = false
+        reselectedPlayer.isMuted = false
         aarStore.togglePlayback()
         XCTAssertTrue(aarStore.isPlaying)
+
+        let unexpectedTimeJump = expectation(
+            forNotification: .AVPlayerItemTimeJumped,
+            object: uninterruptedItem
+        )
+        unexpectedTimeJump.isInverted = true
+        store.toggleParticipantSelection(reselectedParticipantID)
+        aarStore.showVideos(for: store.selectedParticipantIDs)
+        await fulfillment(of: [unexpectedTimeJump], timeout: 0.2)
+
+        store.toggleParticipantSelection(reselectedParticipantID)
+        aarStore.showVideos(for: store.selectedParticipantIDs)
+        XCTAssertTrue(reselectedPlayer.isMuted)
+        XCTAssertFalse(uninterruptedPlayer.isMuted)
+
         aarStore.togglePlayback()
         XCTAssertFalse(aarStore.isPlaying)
 
@@ -177,17 +208,43 @@ final class InstructorDemoScenarioTests: XCTestCase {
         XCTAssertTrue(aarStore.videos.isEmpty)
     }
 
+    func testBundledDemoVideosContainMonoAACAudio() async throws {
+        for memberNumber in 1...6 {
+            guard let url = Bundle.main.url(
+                forResource: "DEBRIEF-Demo-AAR-\(memberNumber)",
+                withExtension: "mp4"
+            ) else {
+                return XCTFail("\(memberNumber)번 데모 영상이 앱 번들에 포함되어야 합니다.")
+            }
+
+            let asset = AVURLAsset(url: url)
+            let duration = try await asset.load(.duration).seconds
+            XCTAssertEqual(duration, 12, accuracy: 0.1)
+            let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+            XCTAssertEqual(audioTracks.count, 1)
+            let audioTrack = try XCTUnwrap(
+                audioTracks.first,
+                "\(memberNumber)번 데모 영상에 오디오 트랙이 있어야 합니다."
+            )
+            let descriptions = try await audioTrack.load(.formatDescriptions)
+            let audioDescription = try XCTUnwrap(descriptions.first)
+            let streamDescription = try XCTUnwrap(
+                CMAudioFormatDescriptionGetStreamBasicDescription(audioDescription)?.pointee
+            )
+            XCTAssertEqual(streamDescription.mFormatID, kAudioFormatMPEG4AAC)
+            XCTAssertEqual(streamDescription.mChannelsPerFrame, 1)
+        }
+    }
+
     func testBundledDemoVideoMakesPlaybackProgressVisible() async throws {
         guard let url = Bundle.main.url(
-            forResource: "DEBRIEF-Demo-AAR",
+            forResource: "DEBRIEF-Demo-AAR-1",
             withExtension: "mp4"
         ) else {
             return XCTFail("데모 영상이 앱 번들에 포함되어야 합니다.")
         }
 
         let asset = AVURLAsset(url: url)
-        let duration = try await asset.load(.duration).seconds
-        XCTAssertEqual(duration, 12, accuracy: 0.1)
 
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true

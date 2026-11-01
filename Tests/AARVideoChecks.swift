@@ -82,14 +82,21 @@ enum AARVideoChecks {
 
         let chunks = try [2.0, 3.0].enumerated().map { index, seconds in
             let url = directory.appendingPathComponent("chunk_\(index).mp4")
-            try run(ffmpeg, ["-loglevel", "error", "-f", "lavfi", "-i", "color=c=gray:s=160x90:r=10:d=\(seconds)",
-                             "-c:v", "libx264", "-pix_fmt", "yuv420p", url.path])
+            try run(ffmpeg, [
+                "-loglevel", "error",
+                "-f", "lavfi", "-i", "color=c=gray:s=160x90:r=10:d=\(seconds)",
+                "-f", "lavfi", "-i", "sine=frequency=\(440 + index * 20):sample_rate=48000:duration=\(seconds)",
+                "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                "-c:a", "aac", "-profile:a", "aac_low", "-ac", "1", "-b:a", "64k",
+                "-shortest", url.path
+            ])
             return url
         }
         let composition = try await AARVideoComposer.compose(chunks)
         let duration = try await composition.load(.duration).seconds
         check(abs(duration - 5) < 0.2, "조각 길이를 합친 영상이 된다 (\(duration)초)")
         check(try await composition.loadTracks(withMediaType: .video).count == 1, "영상 트랙 하나로 이어진다")
+        check(try await composition.loadTracks(withMediaType: .audio).count == 1, "오디오 트랙 하나로 이어진다")
 
         let empty = try await AARVideoComposer.compose([])
         check(try await empty.load(.duration) == .zero, "조각이 없으면 빈 영상")

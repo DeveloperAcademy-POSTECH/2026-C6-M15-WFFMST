@@ -83,14 +83,17 @@ def upload_file(host, path, data, content_type="application/json"):
     request("POST", f"http://{host}:9199/v0/b/{BUCKET}/o?uploadType=media&name={name}", data, content_type)
 
 
-def make_chunks(ffmpeg, directory, name, durations):
-    """대원 이름과 영상 시각(초)이 보이는 mp4 조각을 만든다."""
+def make_chunks(ffmpeg, directory, name, durations, audio_frequency):
+    """대원 이름·영상 시각과 구분 가능한 AAC 시험음이 있는 mp4 조각을 만든다."""
     files, elapsed = [], 0.0
     for index, seconds in enumerate(durations):
         path = f"{directory}/{name.replace(' ', '')}_{index}.mp4"
         label = f"drawtext=text='{name.replace(' ', '')}  %{{eif\\:t+{elapsed}\\:d}}s':fontsize=48:fontcolor=white:x=40:y=40"
-        command = [ffmpeg, "-loglevel", "error", "-y", "-f", "lavfi", "-i", f"testsrc2=s=640x360:r=15:d={seconds}",
-                   "-vf", label, "-c:v", "libx264", "-pix_fmt", "yuv420p", path]
+        command = [ffmpeg, "-loglevel", "error", "-y",
+                   "-f", "lavfi", "-i", f"testsrc2=s=640x360:r=15:d={seconds}",
+                   "-f", "lavfi", "-i", f"sine=frequency={audio_frequency}:sample_rate=48000:duration={seconds}",
+                   "-vf", label, "-filter:a", "volume=0.35", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                   "-c:a", "aac", "-profile:a", "aac_low", "-ac", "1", "-b:a", "64k", "-shortest", path]
         if subprocess.run(command, stderr=subprocess.DEVNULL).returncode != 0:
             # 글자를 그릴 수 없는 ffmpeg(drawtext 없음)면 조각마다 0초부터 세는 시계가 있는 기본 화면으로 만든다.
             command[command.index("-vf"):command.index("-vf") + 2] = []
@@ -219,24 +222,28 @@ def main():
     broken, unresolved = broken_path(args.width, args.height)
     # (이름, 기록 시작 오프셋, 보정 결과, 꼭짓점, 끊긴 구간, 영상 조각 길이)
     members = [
-        ("대원 1", 2.0, "done", square_path(args.width, args.height, 40), [], [20, 20]),
-        ("대원 2", 3.5, "partial", broken, unresolved, [15, 15]),
-        ("대원 3", 5.0, "failed", [], [], [10]),
-        ("대원 4", 1.0, None, None, [], []),
+        ("대원 1", 2.0, "done", square_path(args.width, args.height, 40), [], [20, 20], 420),
+        ("대원 2", 3.5, "partial", broken, unresolved, [15, 15], 440),
+        ("대원 3", 5.0, "failed", [], [], [10], 460),
+        ("대원 4", 1.0, None, None, [], [12], 640),
+        ("대원 5", 2.5, "done", square_path(args.width, args.height, 60), [], [12], 660),
+        ("대원 6", 4.0, "done", square_path(args.width, args.height, 80), [], [12], 680),
     ]
     summary = {"sessionID": session_id, "pin": pin, "floorPlan": floor_plan, "members": []}
 
     # 중간에 실패해도 만든 영상 조각을 지운다.
     video_dir = tempfile.mkdtemp(prefix="cqb-aar-seed-")
     try:
-        for name, offset, status, vertices, gaps, chunk_seconds in members:
+        for name, offset, status, vertices, gaps, chunk_seconds, audio_frequency in members:
             member_id, recording_id = str(uuid.uuid4()).upper(), str(uuid.uuid4()).upper()
             identity = {"sessionID": session_id, "memberID": member_id, "recordingID": recording_id}
             write_document(args.host, f"sessions/{session_id}/members/{member_id}", {
                 "id": member_id, "sessionID": session_id, "name": name, "isReady": True,
                 "lastActiveAt": started_at, "uid": f"seed-{member_id}", "pin": pin,
             })
-            chunks = make_chunks(ffmpeg, video_dir, name, chunk_seconds) if ffmpeg and chunk_seconds else []
+            chunks = make_chunks(
+                ffmpeg, video_dir, name, chunk_seconds, audio_frequency
+            ) if ffmpeg and chunk_seconds else []
             for index, chunk in enumerate(chunks):
                 with open(chunk, "rb") as file:
                     upload_file(args.host, f"sessions/{session_id}/recordings/{recording_id}/video/chunk_{index:04d}.mp4",
