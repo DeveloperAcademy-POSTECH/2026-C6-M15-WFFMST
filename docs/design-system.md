@@ -102,7 +102,7 @@ Figma의 기기별 이름을 Package API에 노출하지 않고 시각적 역할
 
 Text Field의 Focused 상태는 `@FocusState` 값을 `DSTextFieldStyle`에 함께 전달한다. Focused 테두리와 cursor는 `Gray/50`을 사용하며, Error와 Focused가 동시에 참이면 Error 표현을 우선한다.
 
-`DSGuideToast`는 문구를 외부에서 받고 Store와 앱 도메인에 의존하지 않는다. 기존 `DSFloatingBanner`는 호환성을 위해 유지하며 내부에서 `DSGuideToast(type: .regular)`에 위임한다. 신규 코드는 `DSGuideToast`를 사용하고 기존 화면의 일괄 마이그레이션과 `DSFloatingBanner` 제거는 별도 이슈에서 진행한다.
+`DSGuideToast`는 문구를 외부에서 받고 Store와 앱 도메인에 의존하지 않는다. Compact와 Card는 최대 두 줄까지 표시한다. 기존 `DSFloatingBanner`는 호환성을 위해 유지하며 내부에서 `DSGuideToast(type: .regular)`에 위임한다. 신규 코드는 `DSGuideToast`를 사용하고 기존 화면의 일괄 마이그레이션과 `DSFloatingBanner` 제거는 별도 이슈에서 진행한다.
 
 ## 마이그레이션
 

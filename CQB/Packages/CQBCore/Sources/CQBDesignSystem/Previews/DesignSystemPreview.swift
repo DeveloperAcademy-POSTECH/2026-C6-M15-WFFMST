@@ -102,9 +102,12 @@ private struct DesignSystemPreview: View {
                 "추가/지우기 버튼을 먼저 누른 후 필요한 영역을 그리듯 조작하세요. 긴 안내 문구도 잘리지 않고 여러 줄로 표시됩니다.",
                 type: .regular
             )
-            DSGuideToast("포인트를 선택해 주세요", type: .compact)
             DSGuideToast(
-                "화면에 표시된 안내를 확인하고 다음 단계로 이동하세요.",
+                "출발 위치를 선택한 후\n바라보는 방향을 설정해 주세요",
+                type: .compact
+            )
+            DSGuideToast(
+                "주변 공간을 천천히 스캔해 주세요.\n인식이 완료되면 다음 단계로 이동합니다.",
                 type: .card
             )
 
