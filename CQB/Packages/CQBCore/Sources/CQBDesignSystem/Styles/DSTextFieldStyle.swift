@@ -16,7 +16,7 @@ public struct DSTextFieldStyle: TextFieldStyle {
             .font(DSTypography.headingSemiBold20.font)
             .lineSpacing(10)
             .foregroundStyle(isEnabled ? DSColor.contentPrimary : DSColor.contentDisabled)
-            .tint(DSColor.actionPrimary)
+            .tint(DSColor.contentPrimary)
             .padding(.horizontal, DSSpacing.s20)
             .frame(minHeight: DSSize.controlHeight)
             .background(DSColor.surfacePrimary)
@@ -30,7 +30,7 @@ public struct DSTextFieldStyle: TextFieldStyle {
 
     private var borderColor: Color {
         if hasError { return DSColor.statusError }
-        if isFocused { return DSColor.actionPrimary }
+        if isFocused { return DSColor.contentPrimary }
         return DSColor.borderPrimary
     }
 }
