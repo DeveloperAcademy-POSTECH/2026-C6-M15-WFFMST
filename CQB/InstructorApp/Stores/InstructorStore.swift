@@ -77,6 +77,8 @@ final class InstructorStore {
     private(set) var selectedFloorPlanID: String?
     private(set) var participants: [InstructorParticipant] = []
     private(set) var aarScreen: AARScreen = .floorPlan
+    /// 도면 화면의 확대 배율과 이동량. 영상 화면 왕복 중에는 유지하고 새 AAR에서 초기화한다.
+    private(set) var aarFloorPlanViewport = AARFloorPlanViewport.identity
     /// 기록 업로드를 완료했거나 결과 준비 화면에서 명시적으로 포함된 AAR 재생 대상.
     private(set) var aarParticipantIDs: Set<String> = []
     /// 최근 선택한 대원부터 영상 슬롯 1, 2, 3, 4에 배치한다.
@@ -469,6 +471,19 @@ final class InstructorStore {
         aarScreen = .floorPlan
     }
 
+    func updateAARFloorPlanViewport(
+        scale: CGFloat,
+        translation: CGSize,
+        layout: AARFloorPlanLayout,
+        container: CGSize
+    ) {
+        guard phase == .aar else { return }
+        aarFloorPlanViewport = AARFloorPlanViewport(
+            scale: scale,
+            translation: translation
+        ).clamped(layout: layout, container: container)
+    }
+
     func isParticipantSelected(_ id: String) -> Bool { selectedParticipantIDs.contains(id) }
 
     func videoSlotNumber(for participantID: String) -> Int? {
@@ -834,6 +849,7 @@ final class InstructorStore {
 
     private func resetAARPresentationState() {
         aarScreen = .floorPlan
+        aarFloorPlanViewport = .identity
         aarParticipantIDs = []
         selectedParticipantIDs = []
         unmutedParticipantIDs = []
