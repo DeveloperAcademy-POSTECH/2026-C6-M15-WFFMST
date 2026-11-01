@@ -586,7 +586,8 @@ final class MemberStore {
 
     /// 종료 후 미전송 조각을 재시도하고 보정 결과를 올린 뒤 기록을 완료한다.
     func uploadRecording() async {
-        guard phase == .uploading, !isUploading, !isUploadComplete, !isUploadAbandoned else { return }
+        guard phase == .uploading, !isUploading, !isFinalizingUploadFailure,
+              !isUploadComplete, !isUploadAbandoned else { return }
 
         if isDemoMode {
             await completeDemoUpload()
@@ -855,5 +856,33 @@ final class MemberStore {
         }
     }
 }
+
+#if DEBUG
+extension MemberStore {
+    /// 업로드 실패 종결과 재시도의 경합을 검증하기 위한 최소 상태를 구성한다.
+    /// 테스트 타깃에서만 사용하며 실제 사용자 흐름에는 노출하지 않는다.
+    func prepareUploadFailureRaceTest(
+        identity: TrackIdentity,
+        correction: RouteCorrectionOutput,
+        files: LocalRecordingFiles,
+        chunkURL: URL
+    ) async throws {
+        self.identity = identity
+        self.correction = correction
+        recordingFiles = files
+        savedRecordingURLs = [chunkURL]
+        filesSaved = true
+        recordingMetadataStarted = true
+        recordingMarkedFinishing = true
+        phase = .uploading
+        try startVideoChunkUploadQueue(identity: identity, files: files)
+        await enqueueVideoChunk(index: 0, url: chunkURL)
+        await videoChunkUploadQueue?.waitForInitialUploads()
+        await Task.yield()
+        uploadErrorMessage = "업로드 실패"
+        uploadStatusMessage = "업로드에 실패했습니다."
+    }
+}
+#endif
 
 private struct SessionFloorPlanLoadFailure: Error {}
