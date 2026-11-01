@@ -13,6 +13,7 @@ enum MemberExecutionEnvironment: Sendable, Equatable {
 @Observable
 final class MemberStore {
     @ObservationIgnored let cameraService: ARRecordingService
+    @ObservationIgnored private let recordingStarter: any MemberRecordingStarting
     @ObservationIgnored private let executionEnvironment: MemberExecutionEnvironment
     @ObservationIgnored private let recordingFileStore: LocalRecordingFileStore
     @ObservationIgnored private let demoUploadSimulator: MemberDemoUploadSimulator
@@ -37,6 +38,8 @@ final class MemberStore {
     @ObservationIgnored private var sessionID: UUID?
     @ObservationIgnored private let memberID: UUID
     @ObservationIgnored private var sessionObservationTask: Task<Void, Never>?
+    @ObservationIgnored private var recordingStartTask: Task<Void, Never>?
+    @ObservationIgnored private var recordingStartID: UUID?
     @ObservationIgnored private var readinessHeartbeatTask: Task<Void, Never>?
     @ObservationIgnored private var readinessReportTask: Task<Void, Never>?
     @ObservationIgnored private var shouldReportReadiness = false
@@ -76,6 +79,7 @@ final class MemberStore {
         videoChunkRepository: any VideoChunkRepository,
         trackResultRepository: any TrackResultRepository,
         cameraService: ARRecordingService? = nil,
+        recordingStarter: (any MemberRecordingStarting)? = nil,
         executionEnvironment: MemberExecutionEnvironment = .operational,
         demoUploadSimulator: MemberDemoUploadSimulator = MemberDemoUploadSimulator()
     ) {
@@ -85,7 +89,9 @@ final class MemberStore {
         self.recordingRepository = recordingRepository
         self.videoChunkRepository = videoChunkRepository
         self.trackResultRepository = trackResultRepository
-        self.cameraService = cameraService ?? ARRecordingService()
+        let resolvedCamera = cameraService ?? ARRecordingService()
+        self.cameraService = resolvedCamera
+        self.recordingStarter = recordingStarter ?? resolvedCamera
         self.executionEnvironment = executionEnvironment
         self.demoUploadSimulator = demoUploadSimulator
         switch executionEnvironment {
@@ -271,21 +277,52 @@ final class MemberStore {
             scheduleReadinessReport()
         }
         if isReady, startRequestedBySession {
-            Task { await startRecordingFromSessionSignal() }
+            scheduleRecordingStart()
         }
     }
 
-    private func startRecordingFromSessionSignal() async {
-        guard phase == .waiting, !isStarting, let map = trainingMap,
-              isReady, startRequestedBySession,
-              let sessionID, let startPoint, let directionPoint else { return }
+    private func scheduleRecordingStart() {
+        guard phase == .waiting, recordingStartTask == nil, isReady,
+              startRequestedBySession, let sessionID else { return }
+        let attemptID = UUID()
+        recordingStartID = attemptID
         isStarting = true
-        defer { isStarting = false }
+        recordingStartTask = Task { @MainActor [weak self] in
+            await self?.startRecordingFromSessionSignal(attemptID: attemptID, sessionID: sessionID)
+        }
+    }
+
+    private func cancelRecordingStart() {
+        recordingStartTask?.cancel()
+        // Keep task ownership until cleanup finishes, preventing two starts on one recorder.
+        isStarting = false
+        canRetryRecordingStart = false
+    }
+
+    private func isCurrentRecordingStart(_ attemptID: UUID, sessionID: UUID) -> Bool {
+        !Task.isCancelled && recordingStartID == attemptID && self.sessionID == sessionID
+            && phase == .waiting && startRequestedBySession
+    }
+
+    private func startRecordingFromSessionSignal(attemptID: UUID, sessionID: UUID) async {
+        defer {
+            if recordingStartID == attemptID {
+                recordingStartID = nil
+                recordingStartTask = nil
+                isStarting = false
+                // A new session may have requested a start while the cancelled attempt drained.
+                if Task.isCancelled { scheduleRecordingStart() }
+            }
+        }
+        guard isCurrentRecordingStart(attemptID, sessionID: sessionID), let map = trainingMap,
+              isReady, let startPoint, let directionPoint else { return }
         canRetryRecordingStart = false
         errorMessage = nil
+        var pendingFiles: LocalRecordingFiles?
         do {
             let identity = TrackIdentity(sessionID: sessionID, memberID: memberID, recordingID: UUID())
             let files = try recordingFileStore.makeFiles(recordingID: identity.recordingID)
+            pendingFiles = files
             if isDemoMode {
                 cameraService.onVideoChunkReady = nil
             } else {
@@ -296,8 +333,18 @@ final class MemberStore {
                     }
                 }
             }
-            try cameraService.startRecording(to: files.videoChunksDirectory,
-                start: map.pixel(startPoint), direction: map.pixel(directionPoint))
+            try await recordingStarter.startRecording(to: files.videoChunksDirectory,
+                start: map.pixel(startPoint), direction: map.pixel(directionPoint),
+                shouldStart: { [weak self] in
+                    self?.isCurrentRecordingStart(attemptID, sessionID: sessionID) == true
+                })
+            guard isCurrentRecordingStart(attemptID, sessionID: sessionID) else {
+                await recordingStarter.cancelUncommittedRecording()
+                videoChunkUploadQueue = nil
+                cameraService.onVideoChunkReady = nil
+                try? recordingFileStore.discardUncommittedFiles(files)
+                return
+            }
             self.identity = identity
             recordingFiles = files
             savedRecordingURLs = []
@@ -322,8 +369,11 @@ final class MemberStore {
                 }
             }
         } catch {
+            await recordingStarter.cancelUncommittedRecording()
             videoChunkUploadQueue = nil
             cameraService.onVideoChunkReady = nil
+            if let pendingFiles { try? recordingFileStore.discardUncommittedFiles(pendingFiles) }
+            guard isCurrentRecordingStart(attemptID, sessionID: sessionID) else { return }
             // Keep the session start request pending so the member can retry while the
             // session is running, or tracking recovery can trigger another attempt.
             canRetryRecordingStart = true
@@ -365,7 +415,7 @@ final class MemberStore {
     func retryStartingRecording() async {
         guard canRetryRecordingStart, startRequestedBySession,
               phase == .waiting, isReady, !isStarting else { return }
-        await startRecordingFromSessionSignal()
+        scheduleRecordingStart()
     }
 
     private func observeSession(id: UUID) {
@@ -414,13 +464,14 @@ final class MemberStore {
                 return
             }
             startRequestedBySession = true
-            if isReady { await startRecordingFromSessionSignal() }
+            if isReady { scheduleRecordingStart() }
         case .ended:
             readinessHeartbeatTask?.cancel()
             readinessHeartbeatTask = nil
             sessionObservationTask?.cancel()
             sessionObservationTask = nil
             startRequestedBySession = false
+            cancelRecordingStart()
             if phase == .recording {
                 await finishRecording()
             } else if phase == .setup || phase == .waiting {
@@ -477,6 +528,8 @@ final class MemberStore {
     }
 
     private func leaveSessionWithoutRecording(message: String) {
+        startRequestedBySession = false
+        cancelRecordingStart()
         sessionObservationTask?.cancel()
         sessionObservationTask = nil
         readinessHeartbeatTask?.cancel()
@@ -751,6 +804,8 @@ final class MemberStore {
 
     /// 화면 구성 해제 시 세션 구독과 카메라를 정리한다. 녹화 중에는 기존 종료 흐름을 먼저 완료해야 한다.
     func shutdown() {
+        startRequestedBySession = false
+        cancelRecordingStart()
         sessionObservationTask?.cancel()
         sessionObservationTask = nil
         readinessHeartbeatTask?.cancel()
@@ -796,6 +851,8 @@ final class MemberStore {
     }
 
     private func resetToJoin() {
+        startRequestedBySession = false
+        cancelRecordingStart()
         sessionObservationTask?.cancel()
         sessionObservationTask = nil
         readinessHeartbeatTask?.cancel()
