@@ -121,6 +121,104 @@ final class FloorPlanListPreviewTests: XCTestCase {
         XCTAssertEqual(downloadCount, 1)
     }
 
+    func testCancelingAllWaitersCancelsSharedWorkAndAllowsRetry() async throws {
+        let registration = try makeRegistration(width: 64, height: 32)
+        let upload = try LocalFloorPlanFileBuilder.build(from: registration)
+        let remote = ControllablePreviewRemoteStub(files: upload.files)
+        let loader = LocalFloorPlanListPreviewLoader(repository: remote)
+        let plan = makePlan(id: "cancelled", reference: upload.reference)
+
+        let first = Task { try await loader.load(plan) }
+        let second = Task { try await loader.load(plan) }
+        let didStart = await waitUntilAsync { await remote.downloadCount == 1 }
+        XCTAssertTrue(didStart)
+
+        first.cancel()
+        try? await Task.sleep(for: .milliseconds(30))
+        let cancellationCountWithWaiter = await remote.cancellationCount
+        XCTAssertEqual(cancellationCountWithWaiter, 0, "남은 waiter가 있으면 공유 작업을 유지해야 합니다.")
+
+        second.cancel()
+        let didCancel = await waitUntilAsync { await remote.cancellationCount == 1 }
+        XCTAssertTrue(didCancel)
+        await assertCancellation(of: first)
+        await assertCancellation(of: second)
+
+        await remote.allowCompletion()
+        _ = try await loader.load(plan)
+        let retryDownloadCount = await remote.downloadCount
+        XCTAssertEqual(retryDownloadCount, 2, "취소된 in-flight 요청은 재시도를 막지 않아야 합니다.")
+    }
+
+    func testPreviewMemoryCacheEvictsLeastRecentlyUsedEntry() async throws {
+        let registrations = try [
+            makeRegistration(width: 64, height: 32),
+            makeRegistration(width: 80, height: 48),
+            makeRegistration(width: 96, height: 64)
+        ]
+        let uploads = try registrations.map { try LocalFloorPlanFileBuilder.build(from: $0) }
+        let previews = try registrations.map {
+            try LocalFloorPlanListPreviewRenderer.render(
+                imagePNG: $0.image.pngData,
+                grid: $0.resolvedGrid,
+                maximumPixelSize: 320
+            )
+        }
+        let sizes = previews.map { $0.imagePNGData.count + $0.maskPNGData.count }
+        let twoEntryLimit = [
+            sizes[0] + sizes[1],
+            sizes[0] + sizes[2],
+            sizes[1] + sizes[2]
+        ].max()!
+        let remote = PreviewRemoteMapStub(uploads: uploads)
+        let loader = LocalFloorPlanListPreviewLoader(
+            repository: remote,
+            maximumPixelSize: 320,
+            memoryLimitBytes: twoEntryLimit
+        )
+        let plans = uploads.enumerated().map { index, upload in
+            makePlan(id: "lru-\(index)", reference: upload.reference)
+        }
+
+        _ = try await loader.load(plans[0])
+        _ = try await loader.load(plans[1])
+        _ = try await loader.load(plans[0])
+        _ = try await loader.load(plans[2])
+        _ = try await loader.load(plans[0])
+        _ = try await loader.load(plans[1])
+
+        let firstCount = await remote.count(for: uploads[0].reference)
+        let secondCount = await remote.count(for: uploads[1].reference)
+        let thirdCount = await remote.count(for: uploads[2].reference)
+        XCTAssertEqual(firstCount, 1)
+        XCTAssertEqual(secondCount, 2)
+        XCTAssertEqual(thirdCount, 1)
+    }
+
+    func testPreviewLargerThanMemoryLimitIsNotRetained() async throws {
+        let registration = try makeRegistration(width: 64, height: 32)
+        let upload = try LocalFloorPlanFileBuilder.build(from: registration)
+        let preview = try LocalFloorPlanListPreviewRenderer.render(
+            imagePNG: registration.image.pngData,
+            grid: registration.resolvedGrid,
+            maximumPixelSize: 320
+        )
+        let byteCount = preview.imagePNGData.count + preview.maskPNGData.count
+        let remote = PreviewRemoteMapStub(uploads: [upload])
+        let loader = LocalFloorPlanListPreviewLoader(
+            repository: remote,
+            maximumPixelSize: 320,
+            memoryLimitBytes: max(0, byteCount - 1)
+        )
+        let plan = makePlan(id: "oversized", reference: upload.reference)
+
+        _ = try await loader.load(plan)
+        _ = try await loader.load(plan)
+
+        let downloadCount = await remote.count(for: upload.reference)
+        XCTAssertEqual(downloadCount, 2)
+    }
+
     func testPreviewRendererDownsamplesImage() throws {
         let registration = try makeRegistration(width: 2_000, height: 1_000)
         let preview = try LocalFloorPlanListPreviewRenderer.render(
@@ -252,6 +350,30 @@ final class FloorPlanListPreviewTests: XCTestCase {
         }
         return condition()
     }
+
+    private func waitUntilAsync(
+        attempts: Int = 200,
+        condition: @escaping () async -> Bool
+    ) async -> Bool {
+        for _ in 0..<attempts {
+            if await condition() { return true }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return await condition()
+    }
+
+    private func assertCancellation(
+        of task: Task<FloorPlanListPreviewSnapshot, Error>,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        do {
+            _ = try await task.value
+            XCTFail("취소된 waiter는 성공하면 안 됩니다.", file: file, line: line)
+        } catch {
+            XCTAssertTrue(error is CancellationError, file: file, line: line)
+        }
+    }
 }
 
 private actor PreviewLoaderStub: FloorPlanListPreviewLoading {
@@ -324,6 +446,57 @@ private actor PreviewRemoteStub: FloorPlanFileRepository {
 
     func count() -> Int {
         downloadCount
+    }
+}
+
+private actor ControllablePreviewRemoteStub: FloorPlanFileRepository {
+    private let files: FloorPlanFiles
+    private var canComplete = false
+    private(set) var downloadCount = 0
+    private(set) var cancellationCount = 0
+
+    init(files: FloorPlanFiles) {
+        self.files = files
+    }
+
+    func upload(_ files: FloorPlanFiles, for reference: FloorPlanReference) async throws {}
+
+    func download(_ reference: FloorPlanReference) async throws -> FloorPlanFiles {
+        downloadCount += 1
+        do {
+            while !canComplete {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            return files
+        } catch {
+            if error is CancellationError { cancellationCount += 1 }
+            throw error
+        }
+    }
+
+    func allowCompletion() {
+        canComplete = true
+    }
+}
+
+private actor PreviewRemoteMapStub: FloorPlanFileRepository {
+    private let filesByReference: [FloorPlanReference: FloorPlanFiles]
+    private var downloadCounts: [FloorPlanReference: Int] = [:]
+
+    init(uploads: [LocalFloorPlanUpload]) {
+        filesByReference = Dictionary(uniqueKeysWithValues: uploads.map { ($0.reference, $0.files) })
+    }
+
+    func upload(_ files: FloorPlanFiles, for reference: FloorPlanReference) async throws {}
+
+    func download(_ reference: FloorPlanReference) async throws -> FloorPlanFiles {
+        downloadCounts[reference, default: 0] += 1
+        guard let files = filesByReference[reference] else { throw RepositoryError.notFound }
+        return files
+    }
+
+    func count(for reference: FloorPlanReference) -> Int {
+        downloadCounts[reference, default: 0]
     }
 }
 

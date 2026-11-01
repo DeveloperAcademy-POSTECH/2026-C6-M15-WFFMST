@@ -15,27 +15,46 @@ nonisolated protocol FloorPlanListPreviewLoading: Sendable {
 
 /// 목록에서 사용할 축소 도면과 최종 마스크를 reference 단위로 한 번만 준비한다.
 actor LocalFloorPlanListPreviewLoader: FloorPlanListPreviewLoading {
+    static let defaultMemoryLimit = 32 * 1_024 * 1_024
+
+    private struct MemoryEntry: Sendable {
+        let snapshot: FloorPlanListPreviewSnapshot
+        let byteCount: Int
+        let access: UInt64
+    }
+
     private struct InFlight: Sendable {
         let id: UUID
         let task: Task<FloorPlanListPreviewSnapshot, Error>
+        var waiters: Set<UUID>
     }
 
     private let repository: any FloorPlanFileRepository
     private let maximumPixelSize: Int
-    private var memory: [String: FloorPlanListPreviewSnapshot] = [:]
+    private let memoryLimitBytes: Int
+    private var memory: [String: MemoryEntry] = [:]
     private var inFlight: [String: InFlight] = [:]
+    private var accessCounter: UInt64 = 0
 
-    init(repository: any FloorPlanFileRepository, maximumPixelSize: Int = 1_600) {
+    init(
+        repository: any FloorPlanFileRepository,
+        maximumPixelSize: Int = 1_600,
+        memoryLimitBytes: Int = defaultMemoryLimit
+    ) {
         self.repository = repository
         self.maximumPixelSize = max(1, maximumPixelSize)
+        self.memoryLimitBytes = max(0, memoryLimitBytes)
     }
 
     func load(_ floorPlan: InstructorFloorPlan) async throws -> FloorPlanListPreviewSnapshot {
         let key = CachedFloorPlanFileRepository.cacheKey(for: floorPlan.reference)
-        if let cached = memory[key] { return cached }
+        if let cached = loadFromMemory(key: key) { return cached }
 
+        let waiterID = UUID()
         let request: InFlight
-        if let existing = inFlight[key] {
+        if var existing = inFlight[key] {
+            existing.waiters.insert(waiterID)
+            inFlight[key] = existing
             request = existing
         } else {
             let repository = repository
@@ -61,25 +80,75 @@ actor LocalFloorPlanListPreviewLoader: FloorPlanListPreviewLoading {
                     maximumPixelSize: maximumPixelSize
                 )
             }
-            request = InFlight(id: UUID(), task: task)
+            request = InFlight(id: UUID(), task: task, waiters: [waiterID])
             inFlight[key] = request
         }
 
-        do {
-            let snapshot = try await request.task.value
-            clearInFlight(key: key, id: request.id)
-            memory[key] = snapshot
-            try Task.checkCancellation()
-            return snapshot
-        } catch {
-            clearInFlight(key: key, id: request.id)
-            throw error
+        return try await withTaskCancellationHandler {
+            do {
+                let snapshot = try await request.task.value
+                try Task.checkCancellation()
+                finishWaiter(key: key, requestID: request.id, waiterID: waiterID)
+                storeInMemory(snapshot, key: key)
+                return snapshot
+            } catch {
+                finishWaiter(key: key, requestID: request.id, waiterID: waiterID)
+                throw error
+            }
+        } onCancel: {
+            Task {
+                await self.cancelWaiter(
+                    key: key,
+                    requestID: request.id,
+                    waiterID: waiterID
+                )
+            }
         }
     }
 
-    private func clearInFlight(key: String, id: UUID) {
-        guard inFlight[key]?.id == id else { return }
-        inFlight[key] = nil
+    private func finishWaiter(key: String, requestID: UUID, waiterID: UUID) {
+        guard var request = inFlight[key], request.id == requestID,
+              request.waiters.remove(waiterID) != nil else { return }
+        if request.waiters.isEmpty {
+            inFlight[key] = nil
+        } else {
+            inFlight[key] = request
+        }
+    }
+
+    private func cancelWaiter(key: String, requestID: UUID, waiterID: UUID) {
+        guard var request = inFlight[key], request.id == requestID,
+              request.waiters.remove(waiterID) != nil else { return }
+        if request.waiters.isEmpty {
+            inFlight[key] = nil
+            request.task.cancel()
+        } else {
+            inFlight[key] = request
+        }
+    }
+
+    private func loadFromMemory(key: String) -> FloorPlanListPreviewSnapshot? {
+        guard let entry = memory[key] else { return nil }
+        accessCounter &+= 1
+        memory[key] = MemoryEntry(
+            snapshot: entry.snapshot,
+            byteCount: entry.byteCount,
+            access: accessCounter
+        )
+        return entry.snapshot
+    }
+
+    private func storeInMemory(_ snapshot: FloorPlanListPreviewSnapshot, key: String) {
+        accessCounter &+= 1
+        let byteCount = snapshot.imagePNGData.count + snapshot.maskPNGData.count
+        memory[key] = MemoryEntry(snapshot: snapshot, byteCount: byteCount, access: accessCounter)
+
+        var total = memory.values.reduce(0) { $0 + $1.byteCount }
+        while total > memoryLimitBytes,
+              let oldest = memory.min(by: { $0.value.access < $1.value.access }) {
+            memory.removeValue(forKey: oldest.key)
+            total -= oldest.value.byteCount
+        }
     }
 }
 
