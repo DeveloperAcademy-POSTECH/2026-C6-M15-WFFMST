@@ -11,6 +11,7 @@
 ## 작업 기록
 
 - [Issue #8 로컬 도면 등록](issue-8-implementation.md): 구현 과정, 검증 결과와 제약
+- [Issue #141 도면 관리 하이파이 사전 정의](issue-141-hifi-spec.md): 목록·상세·삭제·수정 흐름의 layout, token, 상태 기준
 - [Issue #49 세션·준비 상태 연동](issue-49-implementation.md): 구현 범위, 경계 조건 회귀 검사와 실제 앱 검증
 - [Issue #56 훈련·기록 생명주기 연동](issue-56-implementation.md): 서버 상태 전환, 기록 종결 대기, 회귀·에뮬레이터 검증
 - [Issue #80 데모 실행 환경](issue-80-implementation.md): TestFlight 심사용 메모리 저장소와 세션 흐름

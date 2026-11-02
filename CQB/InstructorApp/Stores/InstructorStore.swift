@@ -219,7 +219,10 @@ final class InstructorStore {
         return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
     }
 
-    func openFloorPlanList() { phase = .floorPlanList }
+    func openFloorPlanList() {
+        phase = .floorPlanList
+        selectDefaultFloorPlanPreviewIfNeeded()
+    }
     func loadFloorPlans() {
         guard floorPlanCatalogState == .idle || floorPlanCatalogError != nil else { return }
         floorPlanCatalogState = .loading
@@ -231,6 +234,7 @@ final class InstructorStore {
             } ?? restored.first?.id
             selectFloorPlan(nextSelection)
             floorPlanCatalogState = .loaded
+            selectDefaultFloorPlanPreviewIfNeeded()
         } catch {
             Self.logger.error("도면 목록 복원 실패: \(error.localizedDescription, privacy: .private)")
             floorPlanCatalogState = .failed("등록한 도면을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.")
@@ -299,19 +303,26 @@ final class InstructorStore {
 
     func deleteViewedFloorPlan() {
         guard phase == .floorPlanDetail, !isUploadingFloorPlan,
-              let id = viewedFloorPlanID else { return }
+              let id = viewedFloorPlanID,
+              let deletedIndex = floorPlans.firstIndex(where: { $0.id == id }) else { return }
         floorPlanDeletionError = nil
         do {
             try floorPlanCatalogRepository.delete(id: id)
             floorPlans.removeAll { $0.id == id }
+            let adjacentID = floorPlans.isEmpty
+                ? nil
+                : floorPlans[min(deletedIndex, floorPlans.count - 1)].id
             if previewedFloorPlanID == id {
                 clearFloorPlanListPreview()
             }
             if selectedFloorPlanID == id {
-                selectFloorPlan(floorPlans.first?.id)
+                selectFloorPlan(adjacentID)
             }
             clearFloorPlanDetail()
             phase = .floorPlanList
+            if let adjacentID {
+                selectFloorPlanPreview(adjacentID)
+            }
         } catch {
             Self.logger.error("도면 목록 삭제 실패: \(error.localizedDescription, privacy: .private)")
             floorPlanDeletionError = "도면을 목록에서 삭제하지 못했습니다. 잠시 후 다시 시도해주세요."
@@ -946,6 +957,14 @@ final class InstructorStore {
                 self.floorPlanListPreviewTask = nil
             }
         }
+    }
+
+    private func selectDefaultFloorPlanPreviewIfNeeded() {
+        guard phase == .floorPlanList,
+              floorPlanCatalogState == .loaded,
+              previewedFloorPlanID == nil,
+              let first = floorPlans.first else { return }
+        loadFloorPlanListPreview(first)
     }
 
     private func clearFloorPlanListPreview() {

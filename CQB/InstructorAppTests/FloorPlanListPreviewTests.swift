@@ -6,6 +6,48 @@ import XCTest
 
 @MainActor
 final class FloorPlanListPreviewTests: XCTestCase {
+    func testOpeningListSelectsAndLoadsFirstPreview() async throws {
+        let first = makePlan(id: "first")
+        let second = makePlan(id: "second")
+        let loader = PreviewLoaderStub()
+        let store = InstructorStore(
+            floorPlans: [first, second],
+            floorPlanListPreviewLoader: loader
+        )
+
+        store.openFloorPlanList()
+
+        XCTAssertEqual(store.previewedFloorPlanID, first.id)
+        XCTAssertEqual(store.floorPlanListPreviewState, .loading)
+        let didLoad = await waitUntil { store.floorPlanListPreviewState == .loaded }
+        XCTAssertTrue(didLoad)
+        let callCount = await loader.callCount(for: first.id)
+        XCTAssertEqual(callCount, 1)
+    }
+
+    func testDeletingPlanSelectsAdjacentPreview() async throws {
+        let first = makePlan(id: "first")
+        let second = makePlan(id: "second")
+        let third = makePlan(id: "third")
+        let catalog = DemoFloorPlanCatalogRepository(floorPlans: [first, second, third])
+        let loader = PreviewLoaderStub()
+        let store = InstructorStore(
+            floorPlans: [first, second, third],
+            floorPlanListPreviewLoader: loader,
+            floorPlanCatalogRepository: catalog
+        )
+        store.openFloorPlanList()
+        store.openFloorPlanDetail(second.id)
+
+        store.deleteViewedFloorPlan()
+
+        XCTAssertEqual(store.phase, .floorPlanList)
+        XCTAssertEqual(store.floorPlans.map(\.id), [first.id, third.id])
+        XCTAssertEqual(store.previewedFloorPlanID, third.id)
+        let didLoad = await waitUntil { store.floorPlanListPreviewState == .loaded }
+        XCTAssertTrue(didLoad)
+    }
+
     func testSelectingFloorPlanLoadsPreviewAndKeepsSessionSelectionIndependent() async throws {
         let first = makePlan(id: "first")
         let second = makePlan(id: "second")
