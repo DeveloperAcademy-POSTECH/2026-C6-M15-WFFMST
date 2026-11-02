@@ -463,14 +463,7 @@ private struct InstructorDemoVideoChunkRepository: VideoChunkRepository {
     func downloadVideo(_ identity: TrackIdentity, chunkCount: Int, to directory: URL) async throws -> [URL] {
         guard chunkCount == 1,
               let memberIndex = memberIDs.firstIndex(of: identity.memberID),
-              let source = [Bundle.main, Bundle(for: InstructorDemoBundleToken.self)]
-                .compactMap({ bundle in
-                    bundle.url(
-                        forResource: "DEBRIEF-Demo-AAR-\(memberIndex + 1)",
-                        withExtension: "mp4"
-                    )
-                })
-                .first else {
+              let source = demoVideoURL(memberIndex: memberIndex) else {
             throw RepositoryError.notFound
         }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -480,4 +473,19 @@ private struct InstructorDemoVideoChunkRepository: VideoChunkRepository {
     }
 
     func deleteVideo(_ identity: TrackIdentity, chunkCount: Int) async throws {}
+
+    private func demoVideoURL(memberIndex: Int) -> URL? {
+        let suffix = memberIndex + 1
+        let resourceNames = [
+            "CQB-Private-Demo-AAR-\(suffix)",
+            "DEBRIEF-Demo-AAR-\(suffix)"
+        ]
+        let bundles = [Bundle.main, Bundle(for: InstructorDemoBundleToken.self)]
+
+        return resourceNames.lazy.compactMap { resourceName in
+            bundles.lazy.compactMap { bundle in
+                bundle.url(forResource: resourceName, withExtension: "mp4")
+            }.first
+        }.first
+    }
 }
