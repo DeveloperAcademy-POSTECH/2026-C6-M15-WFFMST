@@ -5,13 +5,30 @@ struct FloorPlanDetailView: View {
     @Environment(InstructorStore.self) private var store
     @State private var showsDeleteConfirmation = false
 
-    var body: some View {
-        HStack(spacing: 0) {
-            previewRegion
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+    private let referenceScreenWidth: CGFloat = 1_366
+    private let referenceSidebarWidth: CGFloat = 404
+    private let minimumSidebarWidth: CGFloat = 360
+    private let maximumPreviewWidth: CGFloat = 409
+    private let maximumPreviewHeight: CGFloat = 864
 
-            detailPanel
-                .frame(width: 404)
+    var body: some View {
+        GeometryReader { proxy in
+            let sidebarWidth = min(
+                referenceSidebarWidth,
+                max(
+                    minimumSidebarWidth,
+                    proxy.size.width * referenceSidebarWidth / referenceScreenWidth
+                )
+            )
+
+            HStack(spacing: 0) {
+                previewRegion
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+
+                detailPanel
+                    .frame(width: sidebarWidth)
+            }
         }
         .background(DSColor.backgroundPrimary.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
@@ -28,21 +45,14 @@ struct FloorPlanDetailView: View {
             DSColor.backgroundPrimary
 
             preview
-                .frame(maxWidth: 409, maxHeight: 864)
-                .padding(.top, 77)
-                .padding(.bottom, 83)
+                .frame(maxWidth: maximumPreviewWidth, maxHeight: maximumPreviewHeight)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
 
-            HStack(spacing: DSSpacing.s8) {
-                FloorPlanBackButton(action: store.goBack)
-                    .disabled(!store.canGoBack)
-
-                Text("훈련 도면")
-                    .dsTextStyle(DSTypography.bodyRegular16)
-                    .foregroundStyle(DSColor.contentPrimary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(.top, DSSpacing.s40)
-            .padding(.leading, DSSpacing.s40)
+            FloorPlanBackButton(action: store.goBack)
+                .disabled(!store.canGoBack)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(.top, DSSpacing.s40)
+                .padding(.leading, DSSpacing.s40)
         }
     }
 
@@ -124,23 +134,29 @@ struct FloorPlanDetailView: View {
             Spacer()
 
             HStack(spacing: DSSpacing.s12) {
-                Button("삭제") {
+                Button {
                     showsDeleteConfirmation = true
+                } label: {
+                    Text("삭제")
+                        .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.dsSecondary)
                 .frame(width: 132, height: DSSize.controlHeight)
                 .accessibilityIdentifier("floorPlan.delete")
 
-                Button("도면 수정", action: store.beginFloorPlanMaskEditing)
-                    .buttonStyle(.dsPrimary)
-                    .frame(maxWidth: .infinity, minHeight: DSSize.controlHeight)
-                    .disabled(store.floorPlanDetailState != .loaded)
-                    .accessibilityIdentifier("floorPlan.edit")
+                Button(action: store.beginFloorPlanMaskEditing) {
+                    Text("도면 수정")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.dsPrimary)
+                .frame(maxWidth: .infinity, minHeight: DSSize.controlHeight)
+                .disabled(store.floorPlanDetailState != .loaded)
+                .accessibilityIdentifier("floorPlan.edit")
             }
         }
         .padding(.horizontal, DSSpacing.s20)
         .padding(.top, DSSpacing.s40)
-        .padding(.bottom, 30)
+        .padding(.bottom, DSSpacing.s40)
         .frame(maxHeight: .infinity, alignment: .topLeading)
         .background(DSColor.surfacePrimary)
     }
