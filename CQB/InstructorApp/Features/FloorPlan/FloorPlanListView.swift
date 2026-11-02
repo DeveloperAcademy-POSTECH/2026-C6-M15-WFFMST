@@ -17,8 +17,8 @@ struct FloorPlanListView: View {
                 .dsTextStyle(DSTypography.headingBold36)
                 .foregroundStyle(DSColor.contentPrimary)
                 .padding(.horizontal, DSSpacing.s40)
-                .padding(.top, 99)
-                .padding(.bottom, 18)
+                .padding(.top, 100)
+                .padding(.bottom, 25)
 
             catalogContent
                 .padding(.horizontal, DSSpacing.s40)
@@ -31,14 +31,8 @@ struct FloorPlanListView: View {
 
     private var navigationBar: some View {
         HStack(spacing: 0) {
-            HStack(spacing: DSSpacing.s8) {
-                FloorPlanBackButton(action: store.goBack)
-                    .disabled(!store.canGoBack)
-
-                Text("훈련 도면")
-                    .dsTextStyle(DSTypography.bodyRegular16)
-                    .foregroundStyle(DSColor.contentPrimary)
-            }
+            FloorPlanBackButton(action: store.goBack)
+                .disabled(!store.canGoBack)
 
             Spacer()
 
