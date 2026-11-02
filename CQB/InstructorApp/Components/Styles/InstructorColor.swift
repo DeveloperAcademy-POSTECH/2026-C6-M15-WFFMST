@@ -17,6 +17,9 @@ enum InstructorColor {
     /// Figma: `color/surface/raised`
     static let surfaceRaised = DSColor.area2
 
+    /// Figma: `Liquid Glass - Regular - Medium`의 불투명 기본 면(#1A1A1A).
+    static let savingOverlaySurface = Color("InstructorSavingOverlaySurface")
+
     // MARK: - Actions and borders
 
     /// Figma: `color/action/primary`
@@ -27,6 +30,10 @@ enum InstructorColor {
 
     /// Figma: `color/border/default`
     static let borderDefault = DSColor.area3
+
+    /// 도면 목록의 미선택 indicator와 미리보기 action border에 쓰는 Figma Gray/200.
+    static let floorPlanSelectionIdle = DSPalette.Gray.g200
+    static let floorPlanPreviewActionBorder = DSPalette.Gray.g200
 
     // MARK: - Content
 
@@ -63,4 +70,13 @@ enum InstructorColor {
 
     /// Figma: `color/player/play`
     static let playerPlay = Color("InstructorPlayerPlay")
+
+    // MARK: - Floor plan preview
+
+    /// Figma: preview image overlay, `#747474` at 20% opacity.
+    static let floorPlanPreviewOverlay = Color(
+        red: 116.0 / 255.0,
+        green: 116.0 / 255.0,
+        blue: 116.0 / 255.0
+    ).opacity(0.2)
 }

@@ -25,6 +25,10 @@ final class MemberUploadFailureTests: XCTestCase {
         let files = try fileStore.makeFiles(recordingID: identity.recordingID)
         addTeardownBlock { try? FileManager.default.removeItem(at: files.directory.deletingLastPathComponent()) }
         let chunkURL = files.videoChunk(index: 0)
+        try FileManager.default.createDirectory(
+            at: chunkURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
         try Data("video".utf8).write(to: chunkURL)
         let floorPlan = FloorPlanReference(floorPlanID: UUID(), navigationSHA256: "floor-plan")
         let correction = RouteCorrectionOutput(

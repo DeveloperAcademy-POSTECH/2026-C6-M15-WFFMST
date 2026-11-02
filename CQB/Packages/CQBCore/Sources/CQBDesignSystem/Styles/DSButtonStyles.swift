@@ -2,8 +2,11 @@ import SwiftUI
 
 public struct DSPrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
+    private let disabledBackground: Color
 
-    public init() {}
+    public init(disabledBackground: Color = DSColor.actionPrimaryDisabled) {
+        self.disabledBackground = disabledBackground
+    }
 
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -22,7 +25,7 @@ public struct DSPrimaryButtonStyle: ButtonStyle {
     }
 
     private func backgroundColor(isPressed: Bool) -> Color {
-        guard isEnabled else { return DSColor.actionPrimaryDisabled }
+        guard isEnabled else { return disabledBackground }
         return isPressed ? DSColor.actionPrimaryPressed : DSColor.actionPrimary
     }
 }
@@ -64,9 +67,11 @@ public struct DSCircularButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
     private let size: DSCircularButtonSize
+    private let showsBorder: Bool
 
-    public init(size: DSCircularButtonSize = .regular) {
+    public init(size: DSCircularButtonSize = .regular, showsBorder: Bool = false) {
         self.size = size
+        self.showsBorder = showsBorder
     }
 
     public func makeBody(configuration: Configuration) -> some View {
@@ -75,6 +80,9 @@ public struct DSCircularButtonStyle: ButtonStyle {
             .frame(width: size.dimension, height: size.dimension)
             .background(DSColor.surfacePrimary)
             .clipShape(Circle())
+            .overlay {
+                if showsBorder { Circle().strokeBorder(DSColor.borderPrimary, lineWidth: 1) }
+            }
             .opacity(configuration.isPressed ? 0.78 : 1)
             .contentShape(Circle())
             .dsButtonShadow()
@@ -115,6 +123,10 @@ public struct DSSelectablePillStyle: ButtonStyle {
 
 public extension ButtonStyle where Self == DSPrimaryButtonStyle {
     static var dsPrimary: DSPrimaryButtonStyle { DSPrimaryButtonStyle() }
+
+    static func dsPrimary(disabledBackground: Color) -> DSPrimaryButtonStyle {
+        DSPrimaryButtonStyle(disabledBackground: disabledBackground)
+    }
 }
 
 public extension ButtonStyle where Self == DSSecondaryButtonStyle {
@@ -124,7 +136,7 @@ public extension ButtonStyle where Self == DSSecondaryButtonStyle {
 public extension ButtonStyle where Self == DSCircularButtonStyle {
     static var dsCircular: DSCircularButtonStyle { DSCircularButtonStyle() }
 
-    static func dsCircular(size: DSCircularButtonSize) -> DSCircularButtonStyle {
-        DSCircularButtonStyle(size: size)
+    static func dsCircular(size: DSCircularButtonSize, showsBorder: Bool = false) -> DSCircularButtonStyle {
+        DSCircularButtonStyle(size: size, showsBorder: showsBorder)
     }
 }
