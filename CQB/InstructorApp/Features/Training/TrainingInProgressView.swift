@@ -41,7 +41,7 @@ struct TrainingInProgressView: View {
             Button {
                 isShowingFinishConfirmation = true
             } label: {
-                Text(store.isFinishingTraining ? "훈련 종료 중…" : "훈련 종료")
+                Text(finishButtonTitle)
                     .dsTextStyle(DSTypography.headingBold20)
                     .frame(width: 180, height: 55)
             }
@@ -77,7 +77,9 @@ struct TrainingInProgressView: View {
     @ViewBuilder
     private var statusContent: some View {
         VStack(spacing: DSSpacing.s16) {
-            if let error = store.trainingActionError {
+            if store.phase == .resultsPreparation {
+                resultsPreparationStatus
+            } else if let error = store.trainingActionError {
                 Text(error)
                     .dsTextStyle(DSTypography.bodyRegular16)
                     .foregroundStyle(DSColor.statusError)
@@ -101,6 +103,33 @@ struct TrainingInProgressView: View {
                 .foregroundStyle(DSColor.contentSecondary)
             }
         }
+    }
+
+    @ViewBuilder
+    private var resultsPreparationStatus: some View {
+        if store.trainingRecords.connectionState == .failed,
+           let error = store.trainingRecords.errorMessage {
+            HStack(spacing: DSSpacing.s16) {
+                Text(error)
+                    .dsTextStyle(DSTypography.bodyRegular16)
+
+                Button("다시 연결", action: store.retryRecordingObservation)
+                    .buttonStyle(.dsSecondary)
+                    .disabled(!store.trainingRecords.canRetry)
+                    .accessibilityIdentifier("results.reconnect")
+            }
+            .foregroundStyle(DSColor.contentSecondary)
+        } else {
+            ProgressView("AAR 준비 중…")
+                .tint(DSColor.contentPrimary)
+                .foregroundStyle(DSColor.contentSecondary)
+                .accessibilityIdentifier("results.preparing")
+        }
+    }
+
+    private var finishButtonTitle: String {
+        if store.phase == .resultsPreparation { return "AAR 준비 중…" }
+        return store.isFinishingTraining ? "훈련 종료 중…" : "훈련 종료"
     }
 }
 
