@@ -175,10 +175,6 @@ struct FloorPlanListView: View {
             Text("도면 미리보기")
                 .dsTextStyle(DSTypography.headingBold20)
                 .foregroundStyle(DSColor.surfaceSelected)
-                .padding(.horizontal, DSSpacing.s8)
-                .padding(.vertical, DSSpacing.s4)
-                .background(DSColor.contentPrimary.opacity(0.72))
-                .clipShape(.rect(cornerRadius: DSRadius.small))
                 .padding(DSSpacing.s20)
 
             if let floorPlan = store.previewedFloorPlan {
