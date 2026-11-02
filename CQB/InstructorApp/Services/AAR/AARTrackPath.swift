@@ -23,8 +23,20 @@ nonisolated struct AARTrackPath: Equatable, Sendable {
     let recordingOffset: Double
 
     init(result: TrackResultDocument, recordingOffset: Double = 0) {
-        vertices = result.vertices.sorted { $0.t < $1.t }
-        unresolvedIntervals = result.unresolvedIntervals
+        self.init(
+            vertices: result.vertices,
+            unresolvedIntervals: result.unresolvedIntervals,
+            recordingOffset: recordingOffset
+        )
+    }
+
+    init(
+        vertices: [TrackResultVertex],
+        unresolvedIntervals: [TrackUnresolvedInterval] = [],
+        recordingOffset: Double = 0
+    ) {
+        self.vertices = vertices.sorted { $0.t < $1.t }
+        self.unresolvedIntervals = unresolvedIntervals
         self.recordingOffset = recordingOffset
     }
 
@@ -33,10 +45,14 @@ nonisolated struct AARTrackPath: Equatable, Sendable {
         vertices.last.map { $0.t + recordingOffset }
     }
 
-    /// 세션 시각 `sessionTime`(초)에 점이 있어야 할 위치. 첫 꼭짓점 이전이거나 꼭짓점이 없으면 nil
+    /// 세션 시각 `sessionTime`(초)에 점이 있어야 할 위치.
+    /// 첫 꼭짓점 이전에는 첫 위치를 흐리게 표시하고, 꼭짓점이 없으면 nil을 반환한다.
     func position(at sessionTime: Double) -> Position? {
         let time = sessionTime - recordingOffset
-        guard let first = vertices.first, time >= first.t else { return nil }
+        guard let first = vertices.first else { return nil }
+        guard time >= first.t else {
+            return Position(point: first.point, presence: .uncertain)
+        }
 
         let index = lastIndex(atOrBefore: time)
         let current = vertices[index]

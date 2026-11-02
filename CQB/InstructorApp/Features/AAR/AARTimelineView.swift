@@ -6,6 +6,12 @@ struct AARTimelineView: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            skipButton(
+                seconds: -10,
+                systemImage: "gobackward.10",
+                accessibilityLabel: "10초 전"
+            )
+
             Button(action: aarStore.togglePlayback) {
                 Text(aarStore.isPlaying ? "❚❚" : "▶")
                     .font(playbackFont)
@@ -16,6 +22,12 @@ struct AARTimelineView: View {
             .buttonStyle(.plain)
             .disabled(!aarStore.canPlay)
             .accessibilityLabel(aarStore.isPlaying ? "일시정지" : "재생")
+
+            skipButton(
+                seconds: 10,
+                systemImage: "goforward.10",
+                accessibilityLabel: "10초 후"
+            )
 
             Text(timeLabel(aarStore.playbackPosition))
                 .frame(minWidth: 53)
@@ -37,6 +49,26 @@ struct AARTimelineView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(InstructorColor.playerSurface)
         .clipShape(.rect(cornerRadius: 4))
+    }
+
+    private func skipButton(
+        seconds: Double,
+        systemImage: String,
+        accessibilityLabel: String
+    ) -> some View {
+        Button {
+            aarStore.skipPlayback(by: seconds)
+        } label: {
+            Image(systemName: systemImage)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(InstructorColor.textPrimary)
+                .frame(width: 44, height: 44)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .disabled(!aarStore.canPlay)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityIdentifier(seconds < 0 ? "aar.skipBackward10" : "aar.skipForward10")
     }
 
     private var playbackFont: Font {

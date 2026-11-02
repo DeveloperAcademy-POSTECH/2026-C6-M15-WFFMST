@@ -21,6 +21,7 @@ public extension DSColor {
 
     static let actionPrimary = DSPalette.Primary.p500
     static let actionPrimaryPressed = DSPalette.Primary.p600
+    static let actionPrimaryDisabled = DSPalette.Gray.g600
     static let actionSecondary = DSPalette.Gray.g300
     static let actionDisabled = DSPalette.Gray.g800
     static let borderPrimary = DSPalette.Gray.g600

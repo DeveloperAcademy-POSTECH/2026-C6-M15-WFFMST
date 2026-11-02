@@ -21,4 +21,5 @@ public enum DSRadius {
 
 public enum DSSize {
     public static let controlHeight: CGFloat = 56
+    public static let compactControlHeight: CGFloat = 44
 }

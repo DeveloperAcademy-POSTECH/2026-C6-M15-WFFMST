@@ -29,12 +29,14 @@ CQB의 신규 UI는 Figma의 `디자인 시스템` 섹션을 단일 기준으로
 | `Yellow/50...900` | `DSPalette.Yellow.y50...y900` |
 | `Blue/50...900` | `DSPalette.Blue.b50...b900` |
 | `Primary/500` | `DSColor.actionPrimary` |
+| Primary Button `Disabled` 배경 | `DSColor.actionPrimaryDisabled` (`Gray/600`) |
 | `Spacing/4...60` | `DSSpacing.s4...s60` |
 | `radius/sm` | `DSRadius.small` |
 | `radius/md` | `DSRadius.medium` |
 | `radius/lg` | `DSRadius.large` |
 | `radius/full` | `DSRadius.full` |
 | `Size/control-height` | `DSSize.controlHeight` |
+| `Size/compact-control-height` | `DSSize.compactControlHeight` |
 | `Shadow/Button` | `View.dsButtonShadow()` |
 | `Shadow/Floating` | `View.dsFloatingShadow()` |
 
@@ -81,7 +83,26 @@ TextField("훈련명", text: $name)
     .textFieldStyle(.dsDefault)
 ```
 
-`DSSegmentedControl`, `DSLabeledSlider`, `DSStepIndicator`, `DSStatusBadge`, `DSFloatingBanner`는 Store와 도메인 모델에 의존하지 않는다.
+`DSSegmentedControl`, `DSLabeledSlider`, `DSStepIndicator`, `DSStatusBadge`, `DSGuideToast`, `DSFloatingBanner`는 Store와 도메인 모델에 의존하지 않는다.
+
+### Control variant
+
+Figma의 기기별 이름을 Package API에 노출하지 않고 시각적 역할을 `Size`와 `Type`으로 표현한다.
+
+| Figma | Swift |
+| --- | --- |
+| Circular Button / Size=Regular | `.buttonStyle(.dsCircular(size: .regular))` |
+| Circular Button / Size=Compact | `.buttonStyle(.dsCircular(size: .compact))` |
+| Text Field / Focused | `.textFieldStyle(.ds(isFocused: focusedField))` |
+| Guide Toast / Type=Regular | `DSGuideToast(message, type: .regular)` |
+| Guide Toast / Type=Compact | `DSGuideToast(message, type: .compact)` |
+| Guide Toast / Type=Card | `DSGuideToast(message, type: .card)` |
+
+원형 버튼의 action과 화면 전환은 사용하는 화면이 소유한다. `DSCircularButtonStyle`은 외형과 상태 표현만 담당한다.
+
+Text Field의 Focused 상태는 `@FocusState` 값을 `DSTextFieldStyle`에 함께 전달한다. Focused 테두리와 cursor는 `Gray/50`을 사용하며, Error와 Focused가 동시에 참이면 Error 표현을 우선한다.
+
+`DSGuideToast`는 문구를 외부에서 받고 Store와 앱 도메인에 의존하지 않는다. Compact와 Card는 최대 두 줄까지 표시한다. 기존 `DSFloatingBanner`는 호환성을 위해 유지하며 내부에서 `DSGuideToast(type: .regular)`에 위임한다. 신규 코드는 `DSGuideToast`를 사용하고 기존 화면의 일괄 마이그레이션과 `DSFloatingBanner` 제거는 별도 이슈에서 진행한다.
 
 ## 마이그레이션
 

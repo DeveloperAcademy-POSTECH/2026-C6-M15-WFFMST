@@ -9,7 +9,10 @@ enum InstructorDemoScenario {
     private static let memberIDs = [
         UUID(uuidString: "20000000-0000-0000-0000-000000000081")!,
         UUID(uuidString: "20000000-0000-0000-0000-000000000082")!,
-        UUID(uuidString: "20000000-0000-0000-0000-000000000083")!
+        UUID(uuidString: "20000000-0000-0000-0000-000000000083")!,
+        UUID(uuidString: "20000000-0000-0000-0000-000000000084")!,
+        UUID(uuidString: "20000000-0000-0000-0000-000000000085")!,
+        UUID(uuidString: "20000000-0000-0000-0000-000000000086")!
     ]
 
     @MainActor
@@ -48,7 +51,7 @@ enum InstructorDemoScenario {
                 floorPlan: plan.reference
             ),
             floorPlanFileRepository: DemoFloorPlanFileRepository(),
-            videoChunkRepository: InstructorDemoVideoChunkRepository()
+            videoChunkRepository: InstructorDemoVideoChunkRepository(memberIDs: memberIDs)
         )
         return Environment(store: store, aarStore: aarStore)
     }
@@ -274,12 +277,11 @@ private struct InstructorDemoMemberRepository: MemberRepository {
     func updateReadiness(of member: Member) async throws {}
 
     func observeMembers(sessionID: UUID) -> AsyncThrowingStream<[Member], Error> {
-        let names = ["데모 대원 1", "데모 대원 2", "데모 대원 3"]
-        let members = zip(memberIDs, names).map { id, name in
+        let members = memberIDs.enumerated().map { index, id in
             Member(
                 id: id,
                 sessionID: sessionID,
-                name: name,
+                name: "데모 대원 \(index + 1)",
                 isReady: true,
                 lastActiveAt: .now
             )
@@ -350,7 +352,8 @@ private final class InstructorDemoRecordingRepository: RecordingRepository, @unc
                 identity: TrackIdentity(
                     sessionID: sessionID,
                     memberID: memberID,
-                    recordingID: UUID(uuidString: "30000000-0000-0000-0000-00000000008\(index + 1)")!
+                    // 30초 영상으로 교체하기 전의 12초 데모 캐시와 구분한다.
+                    recordingID: UUID(uuidString: "30000000-0000-0000-0000-00000000019\(index + 1)")!
                 ),
                 state: state,
                 startedAt: startedAt,
@@ -374,7 +377,7 @@ private struct InstructorDemoTrackResultRepository: TrackResultRepository {
         let points = Self.paths[index]
         let vertices = points.enumerated().map { offset, point in
             TrackResultVertex(
-                t: Double(offset) * 1.5,
+                t: Double(offset) * 3.75,
                 point: point,
                 part: 0,
                 sampleIndex: offset,
@@ -425,6 +428,27 @@ private struct InstructorDemoTrackResultRepository: TrackResultRepository {
             ImagePoint(x: 610, y: 330), ImagePoint(x: 570, y: 460),
             ImagePoint(x: 500, y: 600), ImagePoint(x: 680, y: 650),
             ImagePoint(x: 880, y: 640)
+        ],
+        [
+            ImagePoint(x: 1040, y: 140), ImagePoint(x: 900, y: 170),
+            ImagePoint(x: 790, y: 230), ImagePoint(x: 690, y: 330),
+            ImagePoint(x: 630, y: 440), ImagePoint(x: 720, y: 540),
+            ImagePoint(x: 820, y: 600), ImagePoint(x: 970, y: 590),
+            ImagePoint(x: 1080, y: 520)
+        ],
+        [
+            ImagePoint(x: 580, y: 700), ImagePoint(x: 570, y: 610),
+            ImagePoint(x: 550, y: 520), ImagePoint(x: 520, y: 430),
+            ImagePoint(x: 500, y: 340), ImagePoint(x: 480, y: 250),
+            ImagePoint(x: 520, y: 160), ImagePoint(x: 610, y: 120),
+            ImagePoint(x: 700, y: 150)
+        ],
+        [
+            ImagePoint(x: 220, y: 700), ImagePoint(x: 300, y: 620),
+            ImagePoint(x: 370, y: 530), ImagePoint(x: 390, y: 420),
+            ImagePoint(x: 470, y: 350), ImagePoint(x: 590, y: 350),
+            ImagePoint(x: 690, y: 290), ImagePoint(x: 790, y: 220),
+            ImagePoint(x: 940, y: 170)
         ]
     ]
 }
@@ -432,12 +456,20 @@ private struct InstructorDemoTrackResultRepository: TrackResultRepository {
 private final class InstructorDemoBundleToken {}
 
 private struct InstructorDemoVideoChunkRepository: VideoChunkRepository {
+    let memberIDs: [UUID]
+
     func upload(fileURL: URL, identity: TrackIdentity, index: Int) async throws {}
 
     func downloadVideo(_ identity: TrackIdentity, chunkCount: Int, to directory: URL) async throws -> [URL] {
         guard chunkCount == 1,
+              let memberIndex = memberIDs.firstIndex(of: identity.memberID),
               let source = [Bundle.main, Bundle(for: InstructorDemoBundleToken.self)]
-                .compactMap({ $0.url(forResource: "DEBRIEF-Demo-AAR", withExtension: "mp4") })
+                .compactMap({ bundle in
+                    bundle.url(
+                        forResource: "DEBRIEF-Demo-AAR-\(memberIndex + 1)",
+                        withExtension: "mp4"
+                    )
+                })
                 .first else {
             throw RepositoryError.notFound
         }

@@ -1,10 +1,11 @@
 enum InstructorPhase: Equatable {
-    case home, floorPlanList, floorPlanDetail, floorPlanCreation, floorPlanEditing, sessionCreation
+    case home, trainingHistory, floorPlanList, floorPlanDetail, floorPlanCreation, floorPlanEditing, sessionCreation
     case teamReadiness, trainingInProgress, resultsPreparation, aar, aarCompleted
 
     var title: String {
         switch self {
         case .home: "Instructor"
+        case .trainingHistory: "이전 훈련 기록"
         case .floorPlanList: "훈련 도면"
         case .floorPlanDetail: "도면 상세"
         case .floorPlanCreation: "훈련 도면 설정"

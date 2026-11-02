@@ -22,7 +22,7 @@ public struct DSPrimaryButtonStyle: ButtonStyle {
     }
 
     private func backgroundColor(isPressed: Bool) -> Color {
-        guard isEnabled else { return DSColor.actionDisabled }
+        guard isEnabled else { return DSColor.actionPrimaryDisabled }
         return isPressed ? DSColor.actionPrimaryPressed : DSColor.actionPrimary
     }
 }
@@ -46,15 +46,33 @@ public struct DSSecondaryButtonStyle: ButtonStyle {
     }
 }
 
+public enum DSCircularButtonSize: CaseIterable, Sendable {
+    case regular
+    case compact
+
+    public var dimension: CGFloat {
+        switch self {
+        case .regular:
+            DSSize.controlHeight
+        case .compact:
+            DSSize.compactControlHeight
+        }
+    }
+}
+
 public struct DSCircularButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
-    public init() {}
+    private let size: DSCircularButtonSize
+
+    public init(size: DSCircularButtonSize = .regular) {
+        self.size = size
+    }
 
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .foregroundStyle(isEnabled ? DSColor.contentPrimary : DSColor.contentDisabled)
-            .frame(width: DSSize.controlHeight, height: DSSize.controlHeight)
+            .frame(width: size.dimension, height: size.dimension)
             .background(DSColor.surfacePrimary)
             .clipShape(Circle())
             .opacity(configuration.isPressed ? 0.78 : 1)
@@ -105,4 +123,8 @@ public extension ButtonStyle where Self == DSSecondaryButtonStyle {
 
 public extension ButtonStyle where Self == DSCircularButtonStyle {
     static var dsCircular: DSCircularButtonStyle { DSCircularButtonStyle() }
+
+    static func dsCircular(size: DSCircularButtonSize) -> DSCircularButtonStyle {
+        DSCircularButtonStyle(size: size)
+    }
 }

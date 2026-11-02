@@ -63,7 +63,6 @@ final class InstructorStore {
     private(set) var floorPlanDetailImage: UIImage?
     private(set) var floorPlanDetailMaskImage: UIImage?
     private(set) var floorPlanListPreviewImage: UIImage?
-    private(set) var floorPlanListPreviewMaskImage: UIImage?
 #endif
     private(set) var phase: InstructorPhase = .home
     private(set) var floorPlans: [InstructorFloorPlan]
@@ -77,6 +76,8 @@ final class InstructorStore {
     private(set) var selectedFloorPlanID: String?
     private(set) var participants: [InstructorParticipant] = []
     private(set) var aarScreen: AARScreen = .floorPlan
+    /// 도면 화면의 확대 배율과 이동량. 영상 화면 왕복 중에는 유지하고 새 AAR에서 초기화한다.
+    private(set) var aarFloorPlanViewport = AARFloorPlanViewport.identity
     /// 기록 업로드를 완료했거나 결과 준비 화면에서 명시적으로 포함된 AAR 재생 대상.
     private(set) var aarParticipantIDs: Set<String> = []
     /// 최근 선택한 대원부터 영상 슬롯 1, 2, 3, 4에 배치한다.
@@ -155,6 +156,11 @@ final class InstructorStore {
     var previewedFloorPlan: InstructorFloorPlan? { floorPlans.first { $0.id == previewedFloorPlanID } }
     var isEditingFloorPlan: Bool { phase == .floorPlanEditing }
     var canOpenSessionCreation: Bool { floorPlanCatalogState == .loaded && !floorPlans.isEmpty }
+    var canOpenPreviewedFloorPlanDetail: Bool {
+        phase == .floorPlanList
+            && floorPlanListPreviewState == .loaded
+            && previewedFloorPlan != nil
+    }
     var isLoadingFloorPlans: Bool { floorPlanCatalogState == .loading }
     var floorPlanCatalogError: String? {
         guard case .failed(let message) = floorPlanCatalogState else { return nil }
@@ -178,7 +184,7 @@ final class InstructorStore {
     }
     var requiresUnreadyExclusionConfirmation: Bool { canRequestTrainingStart && unreadyCount > 0 }
     var canGoBack: Bool {
-        [.floorPlanList, .floorPlanDetail, .floorPlanCreation, .floorPlanEditing,
+        [.trainingHistory, .floorPlanList, .floorPlanDetail, .floorPlanCreation, .floorPlanEditing,
          .sessionCreation, .teamReadiness].contains(phase)
             && !isUploadingFloorPlan && !isCreatingSession && !isEndingSession && !isStartingTraining
     }
@@ -217,7 +223,12 @@ final class InstructorStore {
         return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
     }
 
-    func openFloorPlanList() { phase = .floorPlanList }
+    func openTrainingHistory() { phase = .trainingHistory }
+
+    func openFloorPlanList() {
+        phase = .floorPlanList
+        selectDefaultFloorPlanPreviewIfNeeded()
+    }
     func loadFloorPlans() {
         guard floorPlanCatalogState == .idle || floorPlanCatalogError != nil else { return }
         floorPlanCatalogState = .loading
@@ -229,6 +240,7 @@ final class InstructorStore {
             } ?? restored.first?.id
             selectFloorPlan(nextSelection)
             floorPlanCatalogState = .loaded
+            selectDefaultFloorPlanPreviewIfNeeded()
         } catch {
             Self.logger.error("도면 목록 복원 실패: \(error.localizedDescription, privacy: .private)")
             floorPlanCatalogState = .failed("등록한 도면을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.")
@@ -255,6 +267,12 @@ final class InstructorStore {
               case .failed = floorPlanListPreviewState,
               let floorPlan = previewedFloorPlan else { return }
         loadFloorPlanListPreview(floorPlan)
+    }
+
+    func openPreviewedFloorPlanDetail() {
+        guard canOpenPreviewedFloorPlanDetail,
+              let floorPlan = previewedFloorPlan else { return }
+        openFloorPlanDetail(floorPlan.id)
     }
 
     func openFloorPlanDetail(_ id: String) {
@@ -297,19 +315,26 @@ final class InstructorStore {
 
     func deleteViewedFloorPlan() {
         guard phase == .floorPlanDetail, !isUploadingFloorPlan,
-              let id = viewedFloorPlanID else { return }
+              let id = viewedFloorPlanID,
+              let deletedIndex = floorPlans.firstIndex(where: { $0.id == id }) else { return }
         floorPlanDeletionError = nil
         do {
             try floorPlanCatalogRepository.delete(id: id)
             floorPlans.removeAll { $0.id == id }
+            let adjacentID = floorPlans.isEmpty
+                ? nil
+                : floorPlans[min(deletedIndex, floorPlans.count - 1)].id
             if previewedFloorPlanID == id {
                 clearFloorPlanListPreview()
             }
             if selectedFloorPlanID == id {
-                selectFloorPlan(floorPlans.first?.id)
+                selectFloorPlan(adjacentID)
             }
             clearFloorPlanDetail()
             phase = .floorPlanList
+            if let adjacentID {
+                selectFloorPlanPreview(adjacentID)
+            }
         } catch {
             Self.logger.error("도면 목록 삭제 실패: \(error.localizedDescription, privacy: .private)")
             floorPlanDeletionError = "도면을 목록에서 삭제하지 못했습니다. 잠시 후 다시 시도해주세요."
@@ -469,6 +494,19 @@ final class InstructorStore {
         aarScreen = .floorPlan
     }
 
+    func updateAARFloorPlanViewport(
+        scale: CGFloat,
+        translation: CGSize,
+        layout: AARFloorPlanLayout,
+        container: CGSize
+    ) {
+        guard phase == .aar else { return }
+        aarFloorPlanViewport = AARFloorPlanViewport(
+            scale: scale,
+            translation: translation
+        ).clamped(layout: layout, container: container)
+    }
+
     func isParticipantSelected(_ id: String) -> Bool { selectedParticipantIDs.contains(id) }
 
     func videoSlotNumber(for participantID: String) -> Int? {
@@ -537,6 +575,8 @@ final class InstructorStore {
     func goBack() {
         guard !isUploadingFloorPlan, !isCreatingSession, !isEndingSession, !isStartingTraining else { return }
         switch phase {
+        case .trainingHistory:
+            phase = .home
         case .floorPlanList:
             clearFloorPlanListPreview()
             phase = .home
@@ -834,6 +874,7 @@ final class InstructorStore {
 
     private func resetAARPresentationState() {
         aarScreen = .floorPlan
+        aarFloorPlanViewport = .identity
         aarParticipantIDs = []
         selectedParticipantIDs = []
         unmutedParticipantIDs = []
@@ -891,7 +932,6 @@ final class InstructorStore {
         floorPlanListPreviewState = .loading
 #if canImport(UIKit)
         floorPlanListPreviewImage = nil
-        floorPlanListPreviewMaskImage = nil
 #endif
         let loader = floorPlanListPreviewLoader
         let expectedReference = floorPlan.reference
@@ -904,17 +944,12 @@ final class InstructorStore {
                       self.previewedFloorPlanID == floorPlan.id,
                       self.previewedFloorPlan?.reference == expectedReference else { return }
 #if canImport(UIKit)
-                guard let image = UIImage(data: snapshot.imagePNGData),
-                      let mask = UIImage(
-                        data: snapshot.maskPNGData,
-                        scale: snapshot.maskScale
-                      ) else {
+                guard let image = UIImage(data: snapshot.imagePNGData) else {
                     self.floorPlanListPreviewState = .failed("도면 미리보기를 표시하지 못했습니다.")
                     self.floorPlanListPreviewTask = nil
                     return
                 }
                 self.floorPlanListPreviewImage = image
-                self.floorPlanListPreviewMaskImage = mask
 #endif
                 self.floorPlanListPreviewState = .loaded
                 self.floorPlanListPreviewTask = nil
@@ -932,6 +967,14 @@ final class InstructorStore {
         }
     }
 
+    private func selectDefaultFloorPlanPreviewIfNeeded() {
+        guard phase == .floorPlanList,
+              floorPlanCatalogState == .loaded,
+              previewedFloorPlanID == nil,
+              let first = floorPlans.first else { return }
+        loadFloorPlanListPreview(first)
+    }
+
     private func clearFloorPlanListPreview() {
         floorPlanListPreviewTask?.cancel()
         floorPlanListPreviewTask = nil
@@ -939,7 +982,6 @@ final class InstructorStore {
         floorPlanListPreviewState = .idle
 #if canImport(UIKit)
         floorPlanListPreviewImage = nil
-        floorPlanListPreviewMaskImage = nil
 #endif
     }
 
