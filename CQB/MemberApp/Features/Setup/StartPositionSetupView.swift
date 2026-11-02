@@ -218,6 +218,17 @@ struct StartPositionSetupView: View {
     }
 }
 
+#Preview("출발 위치만 지정 · 방향 선택 전", traits: .landscapeLeft) {
+    if let image = UIImage(named: "TrainingFloorPlan") {
+        StartPositionSetupView(
+            floorPlan: image, startPoint: CGPoint(x: 0.512, y: 0.84),
+            onBack: { print("Preview 참가 화면 복귀") }
+        ) { _, _ in
+            print("Preview 방향 미선택 상태에서 확인 불가")
+        }
+    }
+}
+
 #Preview("위치·방향 지정 완료") {
     if let image = UIImage(named: "TrainingFloorPlan") {
         StartPositionSetupView(floorPlan: image, startPoint: CGPoint(x: 0.512, y: 0.84),

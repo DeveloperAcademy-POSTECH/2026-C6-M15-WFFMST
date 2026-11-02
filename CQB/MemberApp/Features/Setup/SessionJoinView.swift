@@ -147,3 +147,9 @@ struct SessionJoinView: View {
     SessionJoinView(onStartDemo: { print("Preview 데모") }) { _, _ in print("Preview 참가") }
         .dynamicTypeSize(.accessibility3)
 }
+
+#Preview("01 참가 · 요청 중", traits: .landscapeLeft) {
+    SessionJoinView(pin: "123456", memberName: "강유키", isJoining: true) { _, _ in
+        print("Preview 참가 요청 중 중복 호출 방지")
+    }
+}

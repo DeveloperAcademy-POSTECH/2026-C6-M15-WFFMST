@@ -1,9 +1,8 @@
 import CQBDesignSystem
 import SwiftUI
 
-/// iPhone 03(대기) · 04(기록). 가로 카메라 화면 위에 실제 준비·기록 상태를 표시한다.
+/// 실제 카메라 수명주기를 소유하고 표시 상태를 순수 화면에 전달한다.
 struct TrainingRecordingView: View {
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let phase: MemberPhase
     let startedAt: Date?
     let onFinish: () -> Void
@@ -18,6 +17,55 @@ struct TrainingRecordingView: View {
     var cameraService = ARRecordingService()
     var onStopRecording: () async -> Void = {}
     @State private var isCameraReady = false
+
+    var body: some View {
+        ZStack {
+            CameraPreviewView(
+                service: cameraService,
+                isRecording: phase == .recording,
+                isWaiting: phase == .waiting,
+                onStopRecording: onStopRecording,
+                onAvailabilityChange: {
+                    isCameraReady = $0
+                    onCameraReadinessChange($0)
+                }
+            )
+            TrainingRecordingContent(
+                phase: phase, startedAt: startedAt, onFinish: onFinish,
+                onReset: onReset, allowsPositionReset: allowsPositionReset,
+                allowsManualStop: allowsManualStop, canRetryRecordingStart: canRetryRecordingStart,
+                isStartingRecording: isStartingRecording, uploadStatusMessage: uploadStatusMessage,
+                onRetryRecordingStart: onRetryRecordingStart,
+                isCameraReady: isCameraReady, cameraStatusMessage: cameraService.statusMessage,
+                cameraError: cameraService.fatalError,
+                trackingWarning: cameraService.trackingWarning, audioWarning: cameraService.audioWarning,
+                onPrepareCamera: { Task { await cameraService.start() } }
+            )
+        }
+        .ignoresSafeArea(.container, edges: .horizontal)
+        .background(DSColor.backgroundPrimary.ignoresSafeArea())
+    }
+}
+
+/// 카메라를 실행하지 않고 동일한 상태 UI를 Preview에서 재현한다.
+private struct TrainingRecordingContent: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    let phase: MemberPhase
+    let startedAt: Date?
+    let onFinish: () -> Void
+    var onReset: (() -> Void)? = nil
+    var allowsPositionReset = false
+    var allowsManualStop = false
+    var canRetryRecordingStart = false
+    var isStartingRecording = false
+    var uploadStatusMessage = "영상 조각 업로드 준비 중"
+    var onRetryRecordingStart: () -> Void = {}
+    var isCameraReady = false
+    var cameraStatusMessage = "카메라 준비 중"
+    var cameraError: String? = nil
+    var trackingWarning: String? = nil
+    var audioWarning: String? = nil
+    var onPrepareCamera: () -> Void = {}
     @State private var isShowingManualStopConfirmation = false
 
     private var isWaiting: Bool { phase == .waiting }
@@ -32,33 +80,22 @@ struct TrainingRecordingView: View {
     }
 
     private var guidanceMessage: String? {
-        if let error = cameraService.fatalError { return error }
+        if let error = cameraError { return error }
         if phase == .recording {
-            let warnings = [cameraService.trackingWarning, cameraService.audioWarning].compactMap { $0 }
+            let warnings = [trackingWarning, audioWarning].compactMap { $0 }
             return warnings.isEmpty ? nil : warnings.joined(separator: "\n")
         }
         if isWaiting {
             // isReady는 AR 추적 준비 상태이며, WorldMap 스캔·재위치 인식 완료를 뜻하지 않는다.
             return isCameraReady
                 ? "카메라와 동선 추적 준비가 완료됐습니다.\n중앙에서 통제하기 전까지 방탄 캐리어에 가로로 넣고 대기해주세요."
-                : cameraService.statusMessage
+                : cameraStatusMessage
         }
         return phase == .correcting ? "동선을 보정하고 있습니다." : "녹화 파일을 저장하고 있습니다."
     }
 
     var body: some View {
         ZStack {
-            CameraPreviewView(
-                service: cameraService,
-                isRecording: phase == .recording,
-                isWaiting: isWaiting,
-                onStopRecording: onStopRecording,
-                onAvailabilityChange: {
-                    isCameraReady = $0
-                    onCameraReadinessChange($0)
-                }
-            )
-
             VStack(spacing: DSSpacing.s20) {
                 ScrollView {
                     if isWaiting && !dynamicTypeSize.isAccessibilitySize {
@@ -86,7 +123,6 @@ struct TrainingRecordingView: View {
         }
         .ignoresSafeArea(.container, edges: .horizontal)
         .foregroundStyle(DSColor.contentPrimary)
-        .background(DSColor.backgroundPrimary.ignoresSafeArea())
         .confirmationDialog("종료 신호를 받지 못했나요?", isPresented: $isShowingManualStopConfirmation) {
             Button("훈련 직접 종료", role: .destructive, action: onFinish)
             Button("취소", role: .cancel) {}
@@ -126,8 +162,8 @@ struct TrainingRecordingView: View {
     private var controls: some View {
         if isWaiting {
             VStack(spacing: DSSpacing.s12) {
-                if cameraService.fatalError != nil {
-                    Button("카메라 다시 준비") { Task { await cameraService.start() } }
+                if cameraError != nil {
+                    Button("카메라 다시 준비", action: onPrepareCamera)
                         .frame(maxWidth: .infinity)
                         .buttonStyle(.dsSecondary)
                 }
@@ -169,14 +205,125 @@ struct TrainingRecordingView: View {
     }
 }
 
-#Preview("03 시작 대기", traits: .landscapeLeft) {
-    TrainingRecordingView(phase: .waiting, startedAt: nil, onFinish: {})
+#Preview("03 추적 준비 중", traits: .landscapeLeft) {
+    TrainingRecordingContent(
+        phase: .waiting, startedAt: nil, onFinish: {},
+        onReset: { print("Preview 위치 재설정") }, allowsPositionReset: true,
+        cameraStatusMessage: "카메라를 천천히 움직여 주변 공간을 확인해주세요."
+    )
+    .background(DSColor.backgroundPrimary.ignoresSafeArea())
 }
 
-#Preview("04 영상·동선 기록", traits: .landscapeLeft) {
-    TrainingRecordingView(phase: .recording, startedAt: Date().addingTimeInterval(-12), onFinish: {})
+#Preview("03 준비 완료", traits: .landscapeLeft) {
+    TrainingRecordingContent(
+        phase: .waiting, startedAt: nil, onFinish: {},
+        onReset: { print("Preview 위치 재설정") }, allowsPositionReset: true,
+        isCameraReady: true
+    )
+    .background(DSColor.backgroundPrimary.ignoresSafeArea())
 }
 
-#Preview("04 저장·보정", traits: .landscapeLeft) {
-    TrainingRecordingView(phase: .correcting, startedAt: nil, onFinish: {})
+#Preview("03 카메라 권한 거부", traits: .landscapeLeft) {
+    TrainingRecordingContent(
+        phase: .waiting, startedAt: nil, onFinish: {},
+        onReset: { print("Preview 위치 재설정") }, allowsPositionReset: true,
+        cameraStatusMessage: "설정에서 카메라 접근을 허용해주세요."
+    )
+    .background(DSColor.backgroundPrimary.ignoresSafeArea())
+}
+
+#Preview("03 카메라 오류 · 재준비", traits: .landscapeLeft) {
+    TrainingRecordingContent(
+        phase: .waiting, startedAt: nil, onFinish: {},
+        onReset: { print("Preview 위치 재설정") }, allowsPositionReset: true,
+        cameraError: "카메라 연결이 중단됐습니다. 카메라를 다시 준비해주세요.",
+        onPrepareCamera: { print("Preview 카메라 재준비") }
+    )
+    .background(DSColor.backgroundPrimary.ignoresSafeArea())
+}
+
+#Preview("03 녹화 재시도 · 가능", traits: .landscapeLeft) {
+    TrainingRecordingContent(
+        phase: .waiting, startedAt: nil, onFinish: {},
+        canRetryRecordingStart: true,
+        onRetryRecordingStart: { print("Preview 녹화 재시도") }, isCameraReady: true
+    )
+    .background(DSColor.backgroundPrimary.ignoresSafeArea())
+}
+
+#Preview("03 녹화 재시도 · 준비 전", traits: .landscapeLeft) {
+    TrainingRecordingContent(
+        phase: .waiting, startedAt: nil, onFinish: {},
+        canRetryRecordingStart: true,
+        onRetryRecordingStart: { print("Preview 비활성 상태에서 호출되면 안 됨") }
+    )
+    .background(DSColor.backgroundPrimary.ignoresSafeArea())
+}
+
+#Preview("03 녹화 재시도 · 진행 중", traits: .landscapeLeft) {
+    TrainingRecordingContent(
+        phase: .waiting, startedAt: nil, onFinish: {},
+        canRetryRecordingStart: true, isStartingRecording: true,
+        onRetryRecordingStart: { print("Preview 중복 재시도 방지") }, isCameraReady: true
+    )
+    .background(DSColor.backgroundPrimary.ignoresSafeArea())
+}
+
+#Preview("03 준비 완료 · 큰 글자", traits: .landscapeLeft) {
+    TrainingRecordingContent(
+        phase: .waiting, startedAt: nil, onFinish: {},
+        onReset: { print("Preview 위치 재설정") }, allowsPositionReset: true,
+        isCameraReady: true
+    )
+    .dynamicTypeSize(.accessibility3)
+    .background(DSColor.backgroundPrimary.ignoresSafeArea())
+}
+
+#Preview("03 준비 완료 · 작은 화면", traits: .fixedLayout(width: 667, height: 375)) {
+    TrainingRecordingContent(
+        phase: .waiting, startedAt: nil, onFinish: {},
+        onReset: { print("Preview 위치 재설정") }, allowsPositionReset: true,
+        isCameraReady: true
+    )
+    .background(DSColor.backgroundPrimary.ignoresSafeArea())
+}
+
+#Preview("04 기록 중 · 직접 종료", traits: .landscapeLeft) {
+    TrainingRecordingContent(
+        phase: .recording, startedAt: Date().addingTimeInterval(-12),
+        onFinish: { print("Preview 직접 종료 확인") }, allowsManualStop: true,
+        uploadStatusMessage: "영상 조각 전송 중 · 3/5", isCameraReady: true
+    )
+    .background(DSColor.backgroundPrimary.ignoresSafeArea())
+}
+
+#Preview("04 기록 중 · 추적 및 오디오 경고", traits: .landscapeLeft) {
+    TrainingRecordingContent(
+        phase: .recording, startedAt: Date().addingTimeInterval(-72),
+        onFinish: { print("Preview 직접 종료 확인") }, allowsManualStop: true,
+        uploadStatusMessage: "네트워크 연결 대기 · 기기에 저장 중", isCameraReady: true,
+        trackingWarning: "주변 특징이 부족합니다. 카메라가 가려지지 않았는지 확인해주세요.",
+        audioWarning: "마이크를 사용할 수 없어 영상만 기록하고 있습니다."
+    )
+    .background(DSColor.backgroundPrimary.ignoresSafeArea())
+}
+
+#Preview("04 기록 중 · 큰 글자", traits: .landscapeLeft) {
+    TrainingRecordingContent(
+        phase: .recording, startedAt: Date().addingTimeInterval(-72),
+        onFinish: { print("Preview 직접 종료 확인") }, allowsManualStop: true,
+        isCameraReady: true, trackingWarning: "카메라가 가려지지 않았는지 확인해주세요."
+    )
+    .dynamicTypeSize(.accessibility3)
+    .background(DSColor.backgroundPrimary.ignoresSafeArea())
+}
+
+#Preview("04 저장 중", traits: .landscapeLeft) {
+    TrainingRecordingContent(phase: .saving, startedAt: nil, onFinish: {})
+        .background(DSColor.backgroundPrimary.ignoresSafeArea())
+}
+
+#Preview("04 보정 중", traits: .landscapeLeft) {
+    TrainingRecordingContent(phase: .correcting, startedAt: nil, onFinish: {})
+        .background(DSColor.backgroundPrimary.ignoresSafeArea())
 }

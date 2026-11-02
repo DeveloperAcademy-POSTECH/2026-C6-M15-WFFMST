@@ -123,3 +123,33 @@ struct RecordingUploadView: View {
                         onRetry: {}, onAbandon: {}, onHome: {})
         .dynamicTypeSize(.accessibility3)
 }
+
+#Preview("05 전송 실패 · 재시도", traits: .landscapeLeft) {
+    RecordingUploadView(
+        progress: 0.6, isComplete: false, isAbandoned: false,
+        statusMessage: "전송되지 않은 영상과 동선이 있습니다.",
+        errorMessage: "네트워크 연결을 확인한 뒤 다시 보내주세요.", isUploading: false,
+        onRetry: { print("Preview 업로드 재시도") },
+        onAbandon: { print("Preview 업로드 종료 확인") },
+        onHome: { print("Preview 완료 전 홈 이동 불가") }
+    )
+}
+
+#Preview("05 전송 실패 · 재시도 중") {
+    RecordingUploadView(
+        progress: 0.6, isComplete: false, isAbandoned: false,
+        statusMessage: "실패한 항목을 다시 보내고 있습니다.",
+        errorMessage: "이전에 전송하지 못한 자료가 있습니다.", isUploading: true,
+        onRetry: { print("Preview 중복 재시도 방지") },
+        onAbandon: { print("Preview 전송 중 종료 방지") },
+        onHome: { print("Preview 완료 전 홈 이동 불가") }
+    )
+}
+
+#Preview("05 전송 실패로 종료") {
+    RecordingUploadView(
+        progress: 0.6, isComplete: false, isAbandoned: true,
+        statusMessage: "업로드 실패로 기록을 종료했습니다.", errorMessage: nil, isUploading: false,
+        onRetry: {}, onAbandon: {}, onHome: { print("Preview 홈 복귀") }
+    )
+}
