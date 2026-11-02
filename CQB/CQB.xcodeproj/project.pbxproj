@@ -55,6 +55,7 @@
 				"docs/issue-95-ai-wall-segmentation.md",
 				"docs/issue-97-binary-wall-coreml.md",
 				"docs/issue-102-blocked-region-autofill.md",
+				"docs/issue-126-training-history.md",
 				docs/README.md,
 			);
 			target = 788A1084307682B8003DEA3E /* InstructorApp */;
