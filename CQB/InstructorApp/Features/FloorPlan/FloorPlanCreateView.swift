@@ -1560,22 +1560,28 @@ private struct FloorPlanSavingOverlay: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("도면 저장 중")
                     .dsTextStyle(DSTypography.headingSemiBold24)
-                    .foregroundStyle(DSColor.contentPrimary)
+                    .foregroundStyle(DSPalette.Gray.g50)
 
                 Text("도면 정보를 저장하고 있습니다.\n\n잠시만 기다려주세요.")
                     .dsTextStyle(DSTypography.bodyRegular16)
-                    .foregroundStyle(DSColor.contentSecondary)
+                    .foregroundStyle(DSPalette.Gray.g100)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, 22)
             .padding(.top, 24)
             .frame(width: 300, height: 185, alignment: .topLeading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+            .background(
+                InstructorColor.savingOverlaySurface,
+                in: RoundedRectangle(cornerRadius: 16)
+            )
             .overlay {
                 RoundedRectangle(cornerRadius: 16)
-                    .stroke(DSColor.borderPrimary, lineWidth: 1)
+                    .stroke(DSPalette.Gray.g300.opacity(0.72), lineWidth: 1)
             }
-            .shadow(color: .black.opacity(0.45), radius: 24, y: 8)
+            .shadow(color: DSPalette.Neutral.white.opacity(0.14), radius: 0.5)
+            .shadow(color: DSPalette.Neutral.white.opacity(0.10), radius: 0, x: 1.3)
+            .shadow(color: DSPalette.Neutral.white.opacity(0.10), radius: 0, x: -1.3)
+            .shadow(color: DSPalette.Neutral.black.opacity(0.82), radius: 24, y: 8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .transition(.opacity)
