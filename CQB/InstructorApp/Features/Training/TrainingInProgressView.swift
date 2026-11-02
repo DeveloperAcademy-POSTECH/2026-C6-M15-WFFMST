@@ -3,91 +3,121 @@ import SwiftUI
 
 struct TrainingInProgressView: View {
     @Environment(InstructorStore.self) private var store
+    @State private var isShowingFinishConfirmation = false
 
     var body: some View {
         ZStack {
+            DSColor.backgroundPrimary
+                .ignoresSafeArea()
+
             trainingTimer
 
-            VStack(alignment: .leading, spacing: 0) {
-                Text("훈련중")
-                    .font(DSTypography.h1)
-                    .foregroundStyle(InstructorColor.textPrimary)
-                    .frame(
-                        maxWidth: .infinity,
-                        minHeight: 48,
-                        maxHeight: 48,
-                        alignment: .leading
-                    )
+            VStack(spacing: 0) {
+                header
 
                 Spacer()
 
-                if let error = store.trainingActionError {
-                    Text(error)
-                        .foregroundStyle(InstructorColor.textSecondary)
-                        .accessibilityIdentifier("training.finishError")
-                }
-                if store.sessionConnectionState == .connecting {
-                    ProgressView("서버 훈련 정보 연결 중…")
-                } else if let error = store.sessionObservationError {
-                    HStack {
-                        Text(error)
-                        Button("다시 연결", action: store.retrySessionObservation)
-                            .disabled(!store.canRetrySessionObservation)
-                            .accessibilityIdentifier("training.reconnect")
-                    }
-                    .foregroundStyle(InstructorColor.textSecondary)
-                }
-
-                HStack {
-                    Spacer()
-                    ActionButton(
-                        store.isFinishingTraining ? "훈련 종료 중…" : "훈련 종료",
-                        tone: .secondary,
-                        fillsWidth: true,
-                        action: store.finishTraining
-                    )
-                    .frame(width: 300, height: 48)
-                    .disabled(!store.canFinishTraining)
-                    .accessibilityIdentifier("training.finish")
-                }
+                statusContent
             }
-            .padding(.top, 16)
-            .padding(.leading, 48)
-            .padding(.trailing, 40)
-            .padding(.bottom, 18)
+            .padding(DSSpacing.s40)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(InstructorColor.canvas.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+        .alert("훈련을 종료하시겠습니까?", isPresented: $isShowingFinishConfirmation) {
+            Button("확인", action: store.finishTraining)
+            Button("취소", role: .cancel) {}
+        } message: {
+            Text("훈련이 종료되면 AAR 화면으로 넘어갑니다.")
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 0) {
+            Text("훈련 기록 중")
+                .dsTextStyle(DSTypography.headingBold36)
+                .foregroundStyle(DSColor.contentPrimary)
+
+            Spacer()
+
+            Button {
+                isShowingFinishConfirmation = true
+            } label: {
+                Text(store.isFinishingTraining ? "훈련 종료 중…" : "훈련 종료")
+                    .dsTextStyle(DSTypography.headingBold20)
+                    .frame(width: 180, height: 55)
+            }
+            .buttonStyle(TrainingFinishButtonStyle())
+            .disabled(!store.canFinishTraining)
+            .accessibilityIdentifier("training.finish")
+        }
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 
     private var trainingTimer: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let elapsed = store.trainingElapsed(at: context.date)
-            HStack(spacing: 24) {
+            HStack(spacing: DSSpacing.s32) {
                 Circle()
-                    .fill(InstructorColor.teamOne)
-                    .frame(width: 12, height: 12)
+                    .fill(InstructorColor.trainingRecordingIndicator)
+                    .frame(width: 28, height: 28)
                     .accessibilityHidden(true)
 
-                Text(elapsed ?? "시작 시각 확인 중…")
-                    .font(displayFont)
-                    .tracking(2.4)
-                    .foregroundStyle(InstructorColor.textPrimary)
+                Text(elapsed ?? "--:--")
+                    .dsTextStyle(DSTypography.headingBold36)
+                    .foregroundStyle(DSColor.contentPrimary)
                     .monospacedDigit()
+                    .contentTransition(.numericText())
                     .lineLimit(1)
-                    .minimumScaleFactor(0.75)
             }
-            .frame(minWidth: 254, minHeight: 72)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(elapsed.map { "훈련 경과 시간 \($0)" } ?? "서버 시작 시각 확인 중")
             .accessibilityIdentifier("training.elapsed")
         }
     }
 
-    private var displayFont: Font {
-        DSFonts.register()
-        return .custom("NotoSansKR-Bold", size: 48, relativeTo: .largeTitle)
+    @ViewBuilder
+    private var statusContent: some View {
+        VStack(spacing: DSSpacing.s16) {
+            if let error = store.trainingActionError {
+                Text(error)
+                    .dsTextStyle(DSTypography.bodyRegular16)
+                    .foregroundStyle(DSColor.statusError)
+                    .accessibilityIdentifier("training.finishError")
+            }
+
+            if store.sessionConnectionState == .connecting {
+                ProgressView("서버 훈련 정보 연결 중…")
+                    .tint(DSColor.contentPrimary)
+                    .foregroundStyle(DSColor.contentSecondary)
+            } else if let error = store.sessionObservationError {
+                HStack(spacing: DSSpacing.s16) {
+                    Text(error)
+                        .dsTextStyle(DSTypography.bodyRegular16)
+
+                    Button("다시 연결", action: store.retrySessionObservation)
+                        .buttonStyle(.dsSecondary)
+                        .disabled(!store.canRetrySessionObservation)
+                        .accessibilityIdentifier("training.reconnect")
+                }
+                .foregroundStyle(DSColor.contentSecondary)
+            }
+        }
+    }
+}
+
+private struct TrainingFinishButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(isEnabled ? DSColor.contentInverse : DSColor.contentDisabled)
+            .background(backgroundColor(isPressed: configuration.isPressed))
+            .clipShape(Capsule())
+            .contentShape(Capsule())
+    }
+
+    private func backgroundColor(isPressed: Bool) -> Color {
+        guard isEnabled else { return DSColor.actionPrimaryDisabled }
+        return isPressed ? DSColor.actionPrimaryPressed : DSColor.actionPrimary
     }
 }
 

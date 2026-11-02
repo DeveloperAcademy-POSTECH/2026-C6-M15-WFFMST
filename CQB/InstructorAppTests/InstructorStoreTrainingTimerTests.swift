@@ -9,7 +9,7 @@ final class InstructorStoreTrainingTimerTests: XCTestCase {
 
         XCTAssertNil(store.trainingStartedAt)
         XCTAssertNil(store.trainingElapsed(at: Date(timeIntervalSince1970: 2_000)))
-        XCTAssertEqual(store.formattedTrainingElapsed(at: Date(timeIntervalSince1970: 2_000)), "00:00:00")
+        XCTAssertEqual(store.formattedTrainingElapsed(at: Date(timeIntervalSince1970: 2_000)), "00:00")
     }
 
     func testTimerUsesServerStartDate() {
@@ -17,9 +17,9 @@ final class InstructorStoreTrainingTimerTests: XCTestCase {
         let store = makeStore(startedAt: start)
 
         XCTAssertEqual(store.trainingStartedAt, start)
-        XCTAssertEqual(store.trainingElapsed(at: start), "00:00:00")
-        XCTAssertEqual(store.trainingElapsed(at: start.addingTimeInterval(3_723.9)), "01:02:03")
-        XCTAssertEqual(store.trainingElapsed(at: start.addingTimeInterval(-1)), "00:00:00")
+        XCTAssertEqual(store.trainingElapsed(at: start), "00:00")
+        XCTAssertEqual(store.trainingElapsed(at: start.addingTimeInterval(3_723.9)), "62:03")
+        XCTAssertEqual(store.trainingElapsed(at: start.addingTimeInterval(-1)), "00:00")
     }
 
     func testReturnHomeClearsServerStartDate() {
@@ -31,10 +31,10 @@ final class InstructorStoreTrainingTimerTests: XCTestCase {
         XCTAssertNil(store.trainingStartedAt)
     }
 
-    func testFormatTrainingElapsedUsesHoursMinutesAndSeconds() {
-        XCTAssertEqual(InstructorStore.formatTrainingElapsed(0), "00:00:00")
-        XCTAssertEqual(InstructorStore.formatTrainingElapsed(3_723.9), "01:02:03")
-        XCTAssertEqual(InstructorStore.formatTrainingElapsed(-1), "00:00:00")
+    func testFormatTrainingElapsedUsesAccumulatedMinutesAndSeconds() {
+        XCTAssertEqual(InstructorStore.formatTrainingElapsed(0), "00:00")
+        XCTAssertEqual(InstructorStore.formatTrainingElapsed(3_723.9), "62:03")
+        XCTAssertEqual(InstructorStore.formatTrainingElapsed(-1), "00:00")
     }
 
     private func makeStore(startedAt: Date?) -> InstructorStore {
