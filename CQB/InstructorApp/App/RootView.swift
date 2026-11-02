@@ -1,3 +1,4 @@
+import CQBDesignSystem
 import SwiftUI
 
 struct RootView: View {
@@ -59,6 +60,7 @@ struct RootView: View {
     private var usesHiFiChrome: Bool {
         [
             .home,
+            .trainingHistory,
             .floorPlanList,
             .floorPlanDetail,
             .floorPlanCreation,
@@ -76,6 +78,7 @@ struct RootView: View {
     private var destination: some View {
         switch store.phase {
         case .home: HomeView()
+        case .trainingHistory: TrainingHistoryPlaceholderView()
         case .floorPlanList: FloorPlanListView()
         case .floorPlanDetail: FloorPlanDetailView()
         case .floorPlanCreation: FloorPlanCreateView()
@@ -87,6 +90,33 @@ struct RootView: View {
         case .aar: AARView()
         case .aarCompleted: AARCompletedView()
         }
+    }
+}
+
+private struct TrainingHistoryPlaceholderView: View {
+    @Environment(InstructorStore.self) private var store
+
+    var body: some View {
+        VStack(spacing: DSSpacing.s24) {
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.system(size: 56, weight: .regular))
+                .foregroundStyle(DSColor.contentTertiary)
+
+            Text("이전 훈련 기록")
+                .dsTextStyle(DSTypography.headingBold32)
+                .foregroundStyle(DSColor.contentPrimary)
+
+            Text("이전 훈련 기록 화면을 준비 중입니다.")
+                .dsTextStyle(DSTypography.bodyRegular16)
+                .foregroundStyle(DSColor.contentTertiary)
+
+            Button("홈으로 돌아가기", action: store.goBack)
+                .buttonStyle(.dsSecondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(DSColor.backgroundPrimary.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+        .accessibilityIdentifier("trainingHistory.placeholder")
     }
 }
 

@@ -125,6 +125,9 @@ struct AARVideoTile: View {
                     .overlay(alignment: .topTrailing) {
                         closeButton
                     }
+                    .overlay(alignment: .bottomLeading) {
+                        muteButton
+                    }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -151,12 +154,37 @@ struct AARVideoTile: View {
         .accessibilityIdentifier("aar.video.\(participant.id).close")
     }
 
+    private var muteButton: some View {
+        let isMuted = store.isParticipantMuted(participant.id)
+
+        return Button {
+            store.toggleParticipantMute(participant.id)
+        } label: {
+            Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(InstructorColor.textPrimary)
+                .frame(width: 44, height: 44)
+                .background(InstructorColor.playerSurface.opacity(0.72), in: Circle())
+                .contentShape(.circle)
+        }
+        .buttonStyle(.plain)
+        .padding(8)
+        .accessibilityLabel(isMuted
+            ? "\(participant.name) 영상 소리 켜기"
+            : "\(participant.name) 영상 소리 끄기")
+        .accessibilityValue(isMuted ? "음소거됨" : "소리 켜짐")
+        .accessibilityIdentifier("aar.video.\(participant.id).mute")
+    }
+
     @ViewBuilder
     private var videoContent: some View {
         switch aarStore.videos[participant.id] {
         case .ready(let player, _):
             // AAR에서는 화면 가장자리의 정보도 필요하므로 원본 프레임 전체를 보존한다.
-            AARPlayerView(player: player)
+            AARPlayerView(
+                player: player,
+                isMuted: store.isParticipantMuted(participant.id)
+            )
                 .overlay {
                     if aarStore.videoFrame(for: participant.id) == .notStarted {
                         statusMessage("녹화 시작 전")
@@ -227,16 +255,19 @@ struct AARVideoTile: View {
 /// `AVPlayer`의 화면을 비율을 유지해 그린다.
 private struct AARPlayerView: UIViewRepresentable {
     let player: AVPlayer
+    let isMuted: Bool
 
     func makeUIView(context: Context) -> PlayerLayerView {
         let view = PlayerLayerView()
         view.playerLayer.videoGravity = .resizeAspect
         view.playerLayer.player = player
+        player.isMuted = isMuted
         return view
     }
 
     func updateUIView(_ view: PlayerLayerView, context: Context) {
         if view.playerLayer.player !== player { view.playerLayer.player = player }
+        if player.isMuted != isMuted { player.isMuted = isMuted }
     }
 
     final class PlayerLayerView: UIView {
