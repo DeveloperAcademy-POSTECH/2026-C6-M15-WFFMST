@@ -5,6 +5,7 @@
 Issue #141의 구현 전에 도면 목록, 상세 조회, 삭제 확인, 수정 진입의 시각 규칙과 상태 전이를 고정한다.
 
 - 기준 캔버스: iPad landscape `1366 × 1024`
+- InstructorApp은 iPad landscape left/right만 지원하며, 회전 방향을 보장하기 위해 full screen으로 실행한다.
 - 목록: [Figma `2714:4892`](https://www.figma.com/design/3tndfCqfeh1Z1dLRXu2qXk/?node-id=2714-4892)
 - 상세: [Figma `2714:5546`](https://www.figma.com/design/3tndfCqfeh1Z1dLRXu2qXk/?node-id=2714-5546)
 - 삭제 확인: [Figma `2714:5526`](https://www.figma.com/design/3tndfCqfeh1Z1dLRXu2qXk/?node-id=2714-5526)
@@ -174,6 +175,7 @@ WorldMap은 수정 화면에서 다시 스캔하지 않는다. 기존 구현은 
 - 이미지+마스크는 하나의 접근성 요소로 묶고 `선택한 도면과 최종 마스크 미리보기`로 설명한다.
 - 제목과 버튼 텍스트는 Dynamic Type에서 잘리지 않게 하고, 도면명·생성일만 한 줄 말줄임을 허용한다.
 - 화면 폭이 줄어도 오른쪽 상세 패널 404pt와 주요 행동 버튼의 높이는 유지한다.
+- 화면은 landscape left/right에서만 실행하며 portrait와 iPad 멀티태스킹은 지원하지 않는다.
 - loading overlay는 기존 내용을 갑자기 제거하지 않아 선택 변경 시 화면 점프를 만들지 않는다.
 
 ## 구현 연결 지점
@@ -190,6 +192,7 @@ WorldMap은 수정 화면에서 다시 스캔하지 않는다. 기존 구현은 
 ## 검증 체크리스트
 
 - 1366 × 1024에서 목록과 상세의 기준 좌표·크기·간격이 맞는다.
+- 기기를 portrait로 회전해도 InstructorApp이 landscape를 유지한다.
 - 항목 0개, 1개, 6개 이상에서 empty·기본 선택·스크롤이 동작한다.
 - 빠른 선택 변경 뒤 마지막 도면만 미리보기에 남는다.
 - 목록·미리보기·상세 loading/failure/retry가 구분된다.
