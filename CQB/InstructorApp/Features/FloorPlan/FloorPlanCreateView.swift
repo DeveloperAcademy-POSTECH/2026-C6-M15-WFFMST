@@ -999,7 +999,8 @@ struct FloorPlanCreateView: View {
 
     private var brushSizePreview: some View {
         Canvas { context, size in
-            let lineWidth = brushPreviewLineWidth
+            let maximumVisibleLineWidth = max(1, min(size.width, size.height) - 4)
+            let lineWidth = min(brushPreviewLineWidth, maximumVisibleLineWidth)
             let inset = lineWidth / 2 + 2
             let drawingRect = CGRect(origin: .zero, size: size)
                 .insetBy(dx: inset, dy: inset)
