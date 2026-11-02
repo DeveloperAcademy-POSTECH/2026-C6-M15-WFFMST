@@ -67,7 +67,7 @@ struct FloorPlanCreateView: View {
                     alignmentStep(sidebarWidth: sidebarWidth)
                 } else if store.step == .scanning, !app.isEditingFloorPlan {
                     scanningStep(sidebarWidth: sidebarWidth)
-                } else if store.step == .editing {
+                } else if store.step == .editing, !app.isEditingFloorPlan {
                     editingStep(sidebarWidth: sidebarWidth)
                 } else {
                     creationWorkspace
@@ -859,44 +859,27 @@ struct FloorPlanCreateView: View {
             Spacer(minLength: 24)
 
             HStack(spacing: 12) {
-                Button(action: editingPreviousAction) {
+                Button(action: app.goBackFloorPlanCreationStep) {
                     Text("이전")
                         .frame(width: 92)
                 }
                 .buttonStyle(.dsSecondary)
                 .accessibilityIdentifier("floorPlan.editing.previous")
 
-                Button(action: editingSaveAction) {
-                    Text(app.isUploadingFloorPlan ? "저장 중" : "도면 저장")
+                Button(action: app.registerFloorPlan) {
+                    Text(app.isUploadingFloorPlan ? "저장 중" : "저장")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.dsPrimary)
                 .frame(maxWidth: .infinity, minHeight: DSSize.controlHeight)
-                .disabled(app.isEditingFloorPlan ? !store.canSaveMaskEdit : !store.canRegister)
-                .accessibilityIdentifier(app.isEditingFloorPlan
-                    ? "floorPlan.edit.save" : "floorPlan.save")
+                .disabled(!store.canRegister)
+                .accessibilityIdentifier("floorPlan.save")
             }
             .padding(.bottom, 40)
         }
         .padding(.horizontal, 20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(DSColor.surfacePrimary)
-    }
-
-    private func editingPreviousAction() {
-        if app.isEditingFloorPlan {
-            app.goBack()
-        } else {
-            app.goBackFloorPlanCreationStep()
-        }
-    }
-
-    private func editingSaveAction() {
-        if app.isEditingFloorPlan {
-            app.saveFloorPlanMaskEdit()
-        } else {
-            app.registerFloorPlan()
-        }
     }
 
     private var registrationPenControls: some View {
