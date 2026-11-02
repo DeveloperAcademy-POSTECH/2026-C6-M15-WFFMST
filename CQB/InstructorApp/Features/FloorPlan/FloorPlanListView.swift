@@ -180,9 +180,7 @@ struct FloorPlanListView: View {
             if let floorPlan = store.previewedFloorPlan {
                 HStack {
                     Spacer()
-                    Button("상세보기 및 편집") {
-                        store.openFloorPlanDetail(floorPlan.id)
-                    }
+                    Button("상세보기 및 편집", action: store.openPreviewedFloorPlanDetail)
                     .dsTextStyle(DSTypography.headingSemiBold20)
                     .foregroundStyle(DSColor.contentPrimary)
                     .padding(.horizontal, DSSpacing.s20)
@@ -194,6 +192,7 @@ struct FloorPlanListView: View {
                             .stroke(InstructorColor.floorPlanPreviewActionBorder, lineWidth: 1)
                     }
                     .buttonStyle(.plain)
+                    .disabled(!store.canOpenPreviewedFloorPlanDetail)
                     .accessibilityIdentifier("floorPlan.detail.\(floorPlan.id)")
                 }
                 .padding(.top, DSSpacing.s12)

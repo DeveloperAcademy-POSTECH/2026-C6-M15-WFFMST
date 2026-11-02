@@ -156,6 +156,11 @@ final class InstructorStore {
     var previewedFloorPlan: InstructorFloorPlan? { floorPlans.first { $0.id == previewedFloorPlanID } }
     var isEditingFloorPlan: Bool { phase == .floorPlanEditing }
     var canOpenSessionCreation: Bool { floorPlanCatalogState == .loaded && !floorPlans.isEmpty }
+    var canOpenPreviewedFloorPlanDetail: Bool {
+        phase == .floorPlanList
+            && floorPlanListPreviewState == .loaded
+            && previewedFloorPlan != nil
+    }
     var isLoadingFloorPlans: Bool { floorPlanCatalogState == .loading }
     var floorPlanCatalogError: String? {
         guard case .failed(let message) = floorPlanCatalogState else { return nil }
@@ -262,6 +267,12 @@ final class InstructorStore {
               case .failed = floorPlanListPreviewState,
               let floorPlan = previewedFloorPlan else { return }
         loadFloorPlanListPreview(floorPlan)
+    }
+
+    func openPreviewedFloorPlanDetail() {
+        guard canOpenPreviewedFloorPlanDetail,
+              let floorPlan = previewedFloorPlan else { return }
+        openFloorPlanDetail(floorPlan.id)
     }
 
     func openFloorPlanDetail(_ id: String) {

@@ -25,6 +25,31 @@ final class FloorPlanListPreviewTests: XCTestCase {
         XCTAssertEqual(callCount, 1)
     }
 
+    func testPreviewDetailCannotOpenUntilPreviewFinishesLoading() async throws {
+        let plan = makePlan(id: "plan")
+        let loader = PreviewLoaderStub(delays: [plan.id: .milliseconds(120)])
+        let store = InstructorStore(
+            floorPlans: [plan],
+            floorPlanListPreviewLoader: loader
+        )
+
+        store.openFloorPlanList()
+
+        XCTAssertEqual(store.floorPlanListPreviewState, .loading)
+        XCTAssertFalse(store.canOpenPreviewedFloorPlanDetail)
+        store.openPreviewedFloorPlanDetail()
+        XCTAssertEqual(store.phase, .floorPlanList)
+
+        let didLoad = await waitUntil { store.floorPlanListPreviewState == .loaded }
+        XCTAssertTrue(didLoad)
+        XCTAssertTrue(store.canOpenPreviewedFloorPlanDetail)
+
+        store.openPreviewedFloorPlanDetail()
+
+        XCTAssertEqual(store.phase, .floorPlanDetail)
+        XCTAssertEqual(store.viewedFloorPlanID, plan.id)
+    }
+
     func testDeletingPlanSelectsAdjacentPreview() async throws {
         let first = makePlan(id: "first")
         let second = makePlan(id: "second")
@@ -122,10 +147,15 @@ final class FloorPlanListPreviewTests: XCTestCase {
             return false
         }
         XCTAssertTrue(didFail)
+        XCTAssertFalse(store.canOpenPreviewedFloorPlanDetail)
+        store.openPreviewedFloorPlanDetail()
+        XCTAssertEqual(store.phase, .floorPlanList)
+
         store.retryFloorPlanListPreview()
 
         let didLoad = await waitUntil { store.floorPlanListPreviewState == .loaded }
         XCTAssertTrue(didLoad)
+        XCTAssertTrue(store.canOpenPreviewedFloorPlanDetail)
         let callCount = await loader.callCount(for: plan.id)
         XCTAssertEqual(callCount, 2)
     }
