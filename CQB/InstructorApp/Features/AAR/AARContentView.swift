@@ -1,3 +1,4 @@
+import CQBDesignSystem
 import SwiftUI
 
 struct AARContentView: View {
@@ -7,20 +8,23 @@ struct AARContentView: View {
         Group {
             if store.aarScreen == .floorPlan {
                 GeometryReader { geometry in
-                    let panelWidth = min(360, max(280, geometry.size.width * 0.29))
+                    let availableWidth = max(geometry.size.width - AARLayout.contentGap, 0)
+                    let videoPanelWidth = availableWidth / 4
+                    let floorPlanWidth = availableWidth - videoPanelWidth
 
-                    HStack(spacing: 12) {
+                    HStack(spacing: AARLayout.contentGap) {
                         AARMovementView()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .frame(width: floorPlanWidth, height: geometry.size.height)
 
                         AARVideoPanel()
-                            .frame(width: panelWidth)
+                            .frame(width: videoPanelWidth, height: geometry.size.height)
                     }
                 }
             } else {
                 AARVideoView()
             }
         }
+        .padding(.horizontal, AARLayout.outerHorizontalPadding)
     }
 }
 
@@ -29,16 +33,16 @@ private struct AARVideoPanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Text("선택 영상")
-                    .font(.headline)
-                    .foregroundStyle(InstructorColor.textPrimary)
+            HStack(spacing: DSSpacing.s12) {
+                Text("전체화면 보기")
+                    .dsTextStyle(DSTypography.bodyRegular16)
+                    .foregroundStyle(InstructorColor.aarPanelLabel)
 
                 Spacer()
 
                 Button(action: store.openAARVideoScreen) {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        .font(.headline)
+                    Image(systemName: "viewfinder")
+                        .font(.title3)
                         .foregroundStyle(store.canOpenAARVideoScreen
                             ? InstructorColor.textPrimary
                             : InstructorColor.actionDisabled)
@@ -50,11 +54,11 @@ private struct AARVideoPanel: View {
                 .accessibilityLabel("영상 화면으로 확대")
                 .accessibilityIdentifier("aar.openVideoScreen")
             }
-            .padding(.horizontal, 16)
-            .frame(height: 52)
-            .background(InstructorColor.surfaceRaised)
+            .padding(.leading, DSSpacing.s12)
+            .frame(height: AARLayout.contentHeaderHeight)
+            .background(InstructorColor.aarMapSurface)
 
-            VStack(spacing: 1) {
+            VStack(spacing: 0) {
                 ForEach(0..<store.maximumVideoCount, id: \.self) { index in
                     Group {
                         if index < store.selectedParticipants.count {
@@ -68,12 +72,13 @@ private struct AARVideoPanel: View {
                 }
             }
         }
-        .background(InstructorColor.surfaceBase)
-        .clipShape(.rect(cornerRadius: 4))
-        .overlay {
-            RoundedRectangle(cornerRadius: 4)
-                .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
-        }
+        .background(InstructorColor.aarVideoSlotSurface)
+        .clipShape(
+            UnevenRoundedRectangle(
+                topLeadingRadius: DSRadius.large,
+                topTrailingRadius: DSRadius.large
+            )
+        )
         .accessibilityIdentifier("aar.videoPanel")
     }
 }
@@ -83,21 +88,11 @@ private struct AAREmptyVideoSlot: View {
 
     var body: some View {
         ZStack {
-            InstructorColor.surfaceBase
+            InstructorColor.aarVideoSlotSurface
 
-            VStack(spacing: 6) {
-                Image(systemName: "video.slash")
-                    .font(.title3)
-                Text("빈 영상 슬롯")
-                    .font(.caption)
-            }
-            .foregroundStyle(InstructorColor.textSecondary)
-        }
-        .overlay(alignment: .topLeading) {
-            Text("\(slotNumber)")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(InstructorColor.textSecondary)
-                .padding(10)
+            Text("대원을 선택시 영상 재생")
+                .dsTextStyle(DSTypography.bodyRegular16)
+                .foregroundStyle(InstructorColor.aarPlaceholderText)
         }
         .accessibilityLabel("\(slotNumber)번 빈 영상 슬롯")
         .accessibilityIdentifier("aar.videoSlot.\(slotNumber).empty")

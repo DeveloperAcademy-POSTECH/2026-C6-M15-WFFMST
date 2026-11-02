@@ -14,8 +14,8 @@ struct AARMovementView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(InstructorColor.surfaceBase)
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(InstructorColor.aarMapSurface)
 
                 if let imageSize = aarStore.floorPlanImageSize {
                     let layout = AARFloorPlanLayout(
@@ -32,11 +32,7 @@ struct AARMovementView: View {
                 unavailablePositionArea
                     .padding(12)
             }
-            .clipShape(.rect(cornerRadius: 4))
-            .overlay {
-                RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
-            }
+            .clipShape(.rect(cornerRadius: 16))
         }
         .accessibilityValue("도면 확대 \(store.aarFloorPlanViewport.scale.formatted())배")
         .accessibilityIdentifier("aar.movement")
@@ -172,7 +168,7 @@ struct AARMovementView: View {
                 .frame(width: layout.imageFrame.width, height: layout.imageFrame.height)
                 .scaleEffect(viewport.scale)
                 .offset(viewport.translation)
-                .opacity(0.5)
+                .overlay(InstructorColor.aarFloorPlanOverlay)
                 .accessibilityLabel("선택한 훈련 도면")
         } else {
             floorPlanUnavailableState
@@ -202,8 +198,8 @@ struct AARMovementView: View {
 
         return ZStack {
             Circle()
-                .fill(slotNumber == nil ? InstructorColor.playerSurface : InstructorColor.actionPrimary)
-                .frame(width: slotNumber == nil ? 18 : 48, height: slotNumber == nil ? 18 : 48)
+                .fill(slotNumber == nil ? InstructorColor.aarParticipantMarker : InstructorColor.actionPrimary)
+                .frame(width: slotNumber == nil ? 26 : 48, height: slotNumber == nil ? 26 : 48)
                 .overlay {
                     Circle()
                         .strokeBorder(InstructorColor.textPrimary, lineWidth: slotNumber == nil ? 2 : 0)

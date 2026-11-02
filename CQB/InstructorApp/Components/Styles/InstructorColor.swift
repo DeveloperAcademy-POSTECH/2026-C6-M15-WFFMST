@@ -74,6 +74,21 @@ enum InstructorColor {
     /// Figma: `color/player/play`
     static let playerPlay = Color("InstructorPlayerPlay")
 
+    // MARK: - AAR
+
+    static let aarMapSurface = DSPalette.Gray.g800
+    static let aarVideoSlotSurface = DSPalette.Gray.g700
+    static let aarPanelLabel = DSPalette.Gray.g200
+    static let aarPlaceholderText = DSPalette.Gray.g400
+    static let aarParticipantMarker = DSPalette.Gray.g600
+    static let aarFloorPlanOverlay = DSPalette.Gray.g700.opacity(0.2)
+    static let aarTimelineTrack = Color(
+        red: 77.0 / 255.0,
+        green: 77.0 / 255.0,
+        blue: 77.0 / 255.0
+    )
+    static let aarTimelineProgress = DSPalette.Primary.p300
+
     // MARK: - Floor plan preview
 
     /// Figma: preview image overlay, `#747474` at 20% opacity.
