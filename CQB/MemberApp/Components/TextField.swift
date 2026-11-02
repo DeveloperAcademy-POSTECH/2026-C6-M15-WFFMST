@@ -13,35 +13,29 @@ import CQBDesignSystem
 struct TextField: View {
     private let placeholder: String
     @Binding private var text: String
+    private let isFocused: Bool
 
-    init(_ placeholder: String, text: Binding<String>) {
+    init(_ placeholder: String, text: Binding<String>, isFocused: Bool = false) {
         self.placeholder = placeholder
         _text = text
+        self.isFocused = isFocused
     }
 
     var body: some View {
         SwiftUI.TextField(
             placeholder,
             text: $text,
-            prompt: Text(placeholder).foregroundStyle(DSColor.white)
+            prompt: Text(placeholder).foregroundStyle(DSColor.contentTertiary)
         )
-        .textFieldStyle(.plain)
-        .font(DSTypography.body)
-        .foregroundStyle(DSColor.white)
-        .tint(DSColor.main)
-        .padding(.horizontal, 12)
-        .frame(height: 48)
-        .background(DSColor.area1)
-        .clipShape(RoundedRectangle(cornerRadius: 4))
-        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(DSColor.area3))
+        .textFieldStyle(.ds(isFocused: isFocused))
     }
 }
 
 #Preview("TextField") {
-    VStack(spacing: 24) {
+    VStack(spacing: DSSpacing.s24) {
         TextField("6자리 PIN 입력", text: .constant(""))
         TextField("예: 이름", text: .constant(""))
     }
-    .padding(24)
-    .background(DSColor.background)
+    .padding(DSSpacing.s24)
+    .background(DSColor.backgroundPrimary)
 }

@@ -30,7 +30,7 @@ struct SetupStatusRow: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text(value)
-                .dsTextStyle(DSTypography.captionMedium14)
+                .dsTextStyle(DSTypography.bodyRegular12)
                 .multilineTextAlignment(.trailing)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .trailing)
