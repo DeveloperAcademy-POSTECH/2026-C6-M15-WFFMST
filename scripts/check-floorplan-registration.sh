@@ -18,6 +18,7 @@ xcrun swiftc -parse-as-library -module-cache-path "$test_build_dir/ModuleCache" 
   "$task_root/CQB/InstructorApp/Models/LocalWorldMap.swift" \
   "$task_root/CQB/InstructorApp/Services/FloorPlanImporting.swift" \
   "$task_root/CQB/InstructorApp/Services/WorldMapScanning.swift" \
+  "$task_root/CQB/InstructorApp/Services/AAR/AARFloorPlanLayout.swift" \
   "$task_root/CQB/InstructorApp/Services/Persistence/FloorPlanCatalogRepository.swift" \
   "$task_root/CQB/InstructorApp/Services/Import/"*.swift \
   "$task_root/CQB/InstructorApp/Services/Geometry/"*.swift \

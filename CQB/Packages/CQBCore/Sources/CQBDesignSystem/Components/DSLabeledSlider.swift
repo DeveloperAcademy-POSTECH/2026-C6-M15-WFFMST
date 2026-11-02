@@ -49,8 +49,31 @@ public struct DSStyledSlider: View {
                     .accessibilityLabel(accessibilityLabel)
                     .accessibilityValue(accessibilityValue)
             }
+            .contentShape(Rectangle())
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { gesture in
+                        updateValue(at: gesture.location.x, trackWidth: trackWidth,
+                                    thumbDiameter: thumbDiameter)
+                    }
+            )
         }
         .frame(height: 28)
+    }
+
+    private func updateValue(at x: CGFloat, trackWidth: CGFloat, thumbDiameter: CGFloat) {
+        guard trackWidth > 0, range.upperBound > range.lowerBound else { return }
+        let progress = min(1, max(0, (x - thumbDiameter / 2) / trackWidth))
+        let rawValue = range.lowerBound
+            + Double(progress) * (range.upperBound - range.lowerBound)
+        let steppedValue: Double
+        if step > 0 {
+            steppedValue = range.lowerBound
+                + ((rawValue - range.lowerBound) / step).rounded() * step
+        } else {
+            steppedValue = rawValue
+        }
+        value = min(range.upperBound, max(range.lowerBound, steppedValue))
     }
 
     private var normalizedValue: CGFloat {

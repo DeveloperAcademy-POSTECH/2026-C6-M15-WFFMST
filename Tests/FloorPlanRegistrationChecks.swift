@@ -103,6 +103,8 @@ private final class ControlledWorldMapScanner: NSObject, WorldMapScanning {
         poses = [
             ARPose(x: 0, y: 1.4, z: 0, forwardX: 1, forwardZ: 0),
             ARPose(x: 1, y: 1.4, z: 0, forwardX: 1, forwardZ: 0),
+            ARPose(x: 2, y: 1.4, z: 0, forwardX: 1, forwardZ: 0),
+            ARPose(x: 3, y: 1.4, z: 0, forwardX: 1, forwardZ: 0),
         ]
         onFrameUpdate?(LocalWorldMapFrameState(mapping: .mapped, trackingMessage: "추적 정상"))
     }
@@ -148,6 +150,8 @@ enum FloorPlanRegistrationChecks {
     static func main() async throws {
         try checkWorldMapAlignmentAndAutomaticScale()
         try await checkImportLifecycle()
+        try await checkWorldMapPointUndoRedo()
+        try await checkFreeOrderCheckpointCapture()
         try await checkWorldMapSaveCancellation()
         try await checkWorldMapDraftReuseAfterBackNavigation()
         try await checkMaskCancellationRecovery()
@@ -279,13 +283,13 @@ enum FloorPlanRegistrationChecks {
         store.registerFloorPlan()
         try await wait { !store.isUploadingFloorPlan }
         precondition(store.floorPlanUploadError != nil && store.canGoBack)
-        store.goBack()
+        store.goBackFloorPlanCreationStep()
         precondition(store.phase == .floorPlanCreation && draft.step == .alignment && draft.image != nil,
                      "first back preserves the draft at scan alignment")
         precondition(store.floorPlanUploadError == nil && !store.isUploadingFloorPlan)
         store.retryFloorPlanUpload()
         precondition(!store.isUploadingFloorPlan, "back must discard the failed upload snapshot")
-        store.goBack()
+        store.goBackFloorPlanCreationStep()
         precondition(store.phase == .floorPlanCreation && draft.step == .information)
         store.goBack()
         precondition(store.phase == .floorPlanList && draft.image == nil && draft.name.isEmpty)
@@ -460,6 +464,9 @@ enum FloorPlanRegistrationChecks {
         precondition(draft.goBackCreationStep())
         precondition(draft.step == .alignment)
         precondition(draft.canReturnToEditingWithWorldMap)
+        precondition(draft.canProceedFromWorldMapAlignment)
+        precondition(!draft.canStartWorldMapScan,
+                     "완료한 WorldMap이 있으면 새 스캔을 바로 시작할 수 없어야 한다")
         let preserved = try require(draft.worldMapDraft, "뒤로가기 후 WorldMap 초안 보존 필요")
         precondition(preserved.id == original.id)
         precondition(preserved.archive == original.archive)
@@ -471,7 +478,7 @@ enum FloorPlanRegistrationChecks {
         precondition(draft.step == .alignment,
                      "늦은 마스크 결과가 사용자의 뒤로가기를 되돌리지 않아야 한다")
 
-        draft.returnToEditing()
+        await draft.proceedFromWorldMapAlignment()
         precondition(draft.step == .editing)
         precondition(draft.worldMapDraft?.id == original.id)
         precondition(scanner.startCount == 1)
@@ -527,12 +534,108 @@ enum FloorPlanRegistrationChecks {
         draft.placePoint(LocalPlanPoint(x: 0.8, y: 0.5))
         await draft.startWorldMapScan()
         draft.captureWorldMapStart()
-        draft.captureCurrentScanCheckpoint()
+        precondition(draft.captureScanCheckpoint(at: 0) == .captured)
+        precondition(draft.canSaveWorldMap)
+    }
+
+    private static func checkWorldMapPointUndoRedo() async throws {
+        let importer = ControlledImporter()
+        let draft = FloorPlanDraftStore(
+            importer: importer,
+            worldMapScanner: ControlledWorldMapScanner()
+        )
+        draft.setName("체크포인트 이력")
+        draft.importImage(from: URL(fileURLWithPath: "/virtual/checkpoint-history.png"))
+        try await wait { await importer.has("checkpoint-history.png") }
+        await importer.succeedNormalization("checkpoint-history.png")
+        try await wait { await importer.hasExtraction("checkpoint-history.png") }
+        await importer.succeedExtraction("checkpoint-history.png")
+        try await wait { !draft.isProcessing }
+
+        draft.continueToWorldMapAlignment()
+        precondition(draft.worldMapPointTarget == .start)
+        let start = LocalPlanPoint(x: 0.2, y: 0.2)
+        let direction = LocalPlanPoint(x: 0.8, y: 0.2)
+        let checkpoint = LocalPlanPoint(x: 0.8, y: 0.5)
+        draft.placePoint(start)
+        precondition(draft.worldMapPointTarget == .direction)
+        draft.placePoint(direction)
+        precondition(draft.worldMapPointTarget == .checkpoint)
+        draft.placePoint(checkpoint)
+        precondition(draft.canStartWorldMapScan)
+
+        draft.undoWorldMapPoint()
+        precondition(draft.scanCheckpoints.isEmpty)
+        precondition(draft.canRedoWorldMapPoint)
+        precondition(!draft.canStartWorldMapScan)
+
+        draft.undoWorldMapPoint()
+        precondition(draft.directionPlanPoint == nil)
+        draft.redoWorldMapPoint()
+        precondition(draft.directionPlanPoint == direction)
+        draft.redoWorldMapPoint()
+        precondition(draft.scanCheckpoints == [checkpoint])
+        precondition(draft.canStartWorldMapScan)
+
+        draft.undoWorldMapPoint()
+        draft.placePoint(LocalPlanPoint(x: 0.7, y: 0.6))
+        precondition(!draft.canRedoWorldMapPoint, "새 체크포인트 입력 후 redo 이력을 폐기해야 한다")
+
+        let preservedCheckpoints = draft.scanCheckpoints
+        draft.resetWorldMapReference()
+        precondition(draft.startPlanPoint == nil && draft.directionPlanPoint == nil)
+        precondition(draft.scanCheckpoints == preservedCheckpoints,
+                     "출발 방향 재설정 시 체크포인트를 보존해야 한다")
+        draft.placePoint(start)
+        draft.placePoint(direction)
+        draft.clearScanCheckpoints()
+        precondition(draft.scanCheckpoints.isEmpty)
+        precondition(draft.startPlanPoint == start && draft.directionPlanPoint == direction,
+                     "체크포인트 전체 삭제 시 출발 방향을 보존해야 한다")
+        precondition(!draft.canStartWorldMapScan)
+    }
+
+    private static func checkFreeOrderCheckpointCapture() async throws {
+        let importer = ControlledImporter()
+        let draft = FloorPlanDraftStore(
+            importer: importer,
+            worldMapScanner: ControlledWorldMapScanner()
+        )
+        draft.setName("자유 순서 스캔")
+        draft.importImage(from: URL(fileURLWithPath: "/virtual/free-order.png"))
+        try await wait { await importer.has("free-order.png") }
+        await importer.succeedNormalization("free-order.png")
+        try await wait { await importer.hasExtraction("free-order.png") }
+        await importer.succeedExtraction("free-order.png")
+        try await wait { !draft.isProcessing }
+
+        draft.continueToWorldMapAlignment()
+        draft.placePoint(LocalPlanPoint(x: 0.1, y: 0.1))
+        draft.placePoint(LocalPlanPoint(x: 0.2, y: 0.1))
+        draft.placePoint(LocalPlanPoint(x: 0.2, y: 0.3))
+        draft.placePoint(LocalPlanPoint(x: 0.5, y: 0.5))
+        draft.placePoint(LocalPlanPoint(x: 0.8, y: 0.7))
+        await draft.startWorldMapScan()
+
+        precondition(draft.captureScanCheckpoint(at: 2) == .startRequired)
+        draft.captureWorldMapStart()
+        precondition(draft.captureScanCheckpoint(at: 2) == .captured)
+        precondition(draft.completedScanCheckpointIndices == [2])
+        precondition(draft.captureScanCheckpoint(at: 2) == .alreadyCaptured)
+        precondition(draft.captureScanCheckpoint(at: 0) == .captured)
+        precondition(draft.captureScanCheckpoint(at: 1) == .captured)
+        precondition(draft.completedScanCheckpointIndices == [0, 1, 2])
+        precondition(draft.worldMapCorrespondences.map(\.label) == [
+            "start", "checkpoint-3", "checkpoint-1", "checkpoint-2",
+        ])
         precondition(draft.canSaveWorldMap)
     }
 
     private static func prepareDraft(_ draft: FloorPlanDraftStore, importer: ControlledImporter) async throws -> LocalEditStroke {
+        draft.setName("   ")
+        precondition(!draft.hasName, "공백만 있는 훈련장 이름은 유효하지 않아야 한다")
         draft.setName("  새 도면  ")
+        precondition(draft.hasName, "앞뒤 공백이 있어도 실제 이름이 있으면 유효해야 한다")
         draft.importImage(from: URL(fileURLWithPath: "/virtual/original.png"))
         try await wait { await importer.has("original.png") }
         await importer.succeedNormalization("original.png")
@@ -549,7 +652,7 @@ enum FloorPlanRegistrationChecks {
         precondition(draft.step == .scanning, "scan did not start: \(String(describing: draft.errorMessage))")
         draft.captureWorldMapStart()
         precondition(draft.worldMapStart != nil, "start pose not captured: \(String(describing: draft.errorMessage))")
-        draft.captureCurrentScanCheckpoint()
+        precondition(draft.captureScanCheckpoint(at: 0) == .captured)
         precondition(draft.worldMapCorrespondences.count == 2, "checkpoint pose not captured")
         precondition(draft.completedScanCheckpointCount == 1, "checkpoint not completed")
         await draft.saveWorldMap()
@@ -560,9 +663,9 @@ enum FloorPlanRegistrationChecks {
             normalizedDiameter: 0.03
         )
         draft.setEditorMode(.brush)
-        draft.stageBrushStroke(stroke)
-        draft.applyPendingBrush(.block)
+        draft.applyBrushStroke(stroke, as: .block)
         try await wait { !draft.isProcessing }
+        precondition(draft.pendingBrushStrokes.isEmpty)
         precondition(draft.canRegister)
         return stroke
     }

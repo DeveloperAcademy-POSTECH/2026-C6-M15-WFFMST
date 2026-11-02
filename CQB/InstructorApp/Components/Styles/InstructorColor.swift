@@ -17,6 +17,9 @@ enum InstructorColor {
     /// Figma: `color/surface/raised`
     static let surfaceRaised = DSColor.area2
 
+    /// Figma: `Liquid Glass - Regular - Medium`의 불투명 기본 면(#1A1A1A).
+    static let savingOverlaySurface = Color("InstructorSavingOverlaySurface")
+
     // MARK: - Actions and borders
 
     /// Figma: `color/action/primary`

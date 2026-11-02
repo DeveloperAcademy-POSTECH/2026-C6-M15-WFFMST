@@ -6,7 +6,20 @@ nonisolated enum LocalWorldMapPointTarget: Equatable, Sendable {
 }
 
 nonisolated enum LocalScanCheckpointState: Equatable, Sendable {
-    case planned, current, completed
+    case planned, completed
+}
+
+nonisolated enum LocalScanCheckpointCaptureResult: Equatable, Sendable {
+    case captured
+    case startRequired
+    case trackingUnavailable
+    case alreadyCaptured
+    case invalidCheckpoint
+    case failed(String)
+}
+
+nonisolated enum LocalScanCheckpointAppearance: Equatable, Sendable {
+    case labeled, plain
 }
 
 nonisolated struct LocalScanCheckpointMarker: Equatable, Sendable {

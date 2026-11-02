@@ -589,10 +589,8 @@ final class InstructorStore {
             phase = .home
         case .floorPlanCreation:
             clearFloorPlanUpload()
-            if !floorPlanDraft.goBackCreationStep() {
-                floorPlanDraft.reset()
-                phase = .floorPlanList
-            }
+            floorPlanDraft.reset()
+            phase = .floorPlanList
         case .floorPlanEditing:
             clearFloorPlanUpload()
             floorPlanDraft.reset()
@@ -602,6 +600,12 @@ final class InstructorStore {
             endCurrentSession()
         default: break
         }
+    }
+
+    func goBackFloorPlanCreationStep() {
+        guard phase == .floorPlanCreation, !isUploadingFloorPlan else { return }
+        clearFloorPlanUpload()
+        _ = floorPlanDraft.goBackCreationStep()
     }
 
     func retryMemberObservation() {

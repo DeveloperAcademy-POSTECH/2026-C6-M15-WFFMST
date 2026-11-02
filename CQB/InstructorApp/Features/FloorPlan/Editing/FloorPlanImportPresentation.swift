@@ -14,6 +14,7 @@ final class FloorPlanImportPresentation: NSObject {
     @ObservationIgnored private var keyboardVisible = false
     @ObservationIgnored private var requestID = UUID()
     @ObservationIgnored private var timeout: DispatchWorkItem?
+    @ObservationIgnored private var pendingRequest: (() -> Void)?
 
     override init() {
         super.init()
@@ -28,10 +29,14 @@ final class FloorPlanImportPresentation: NSObject {
         NotificationCenter.default.removeObserver(self)
     }
 
-    func request(dismissFocus: () -> Void) {
+    func request(dismissFocus: @escaping () -> Void) {
         guard !isPreparing, !isPresented else { return }
         message = nil
-        guard let window = anchor?.window else { return }
+        guard let window = anchor?.window else {
+            pendingRequest = { [weak self] in self?.request(dismissFocus: dismissFocus) }
+            return
+        }
+        pendingRequest = nil
         guard canvas?.prepareForFileSelection() != false else {
             message = "편집 중인 획이 끝난 뒤 다시 선택해주세요."
             return
@@ -57,11 +62,18 @@ final class FloorPlanImportPresentation: NSObject {
 
     func finish() {
         requestID = UUID()
+        pendingRequest = nil
         timeout?.cancel()
         timeout = nil
         isPreparing = false
         isPresented = false
         canvas?.resumeAfterFileSelection()
+    }
+
+    func anchorDidMove(to window: UIWindow?) {
+        guard window != nil, let pendingRequest else { return }
+        self.pendingRequest = nil
+        pendingRequest()
     }
 
     private func fail(_ text: String) {
@@ -105,7 +117,10 @@ struct FloorPlanInputAnchor: UIViewRepresentable {
     func makeUIView(context: Context) -> FloorPlanInputAnchorView {
         let view = FloorPlanInputAnchorView()
         view.isUserInteractionEnabled = false
-        view.onWindowChange = context.coordinator.attach
+        view.onWindowChange = { window in
+            context.coordinator.attach(to: window)
+            presentation.anchorDidMove(to: window)
+        }
         presentation.anchor = view
         return view
     }
@@ -113,6 +128,7 @@ struct FloorPlanInputAnchor: UIViewRepresentable {
     func updateUIView(_ uiView: FloorPlanInputAnchorView, context: Context) {
         context.coordinator.onTapOutsideInput = onTapOutsideInput
         context.coordinator.attach(to: uiView.window)
+        presentation.anchorDidMove(to: uiView.window)
     }
 
     static func dismantleUIView(_ uiView: FloorPlanInputAnchorView, coordinator: Coordinator) {
