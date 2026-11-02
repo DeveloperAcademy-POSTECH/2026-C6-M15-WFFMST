@@ -32,8 +32,8 @@ struct StartPositionSetupView: View {
                     .foregroundStyle(DSColor.darkGreen)
                     .frame(maxWidth: .infinity, minHeight: 42, alignment: .topLeading)
                 VStack(spacing: 24) {
-                    SetupStatusRow("출발 위치", value: startPoint == nil ? "미지정" : "지정됨", isSet: startPoint != nil)
-                    SetupStatusRow("바라보는 방향", value: directionPoint == nil ? "미설정" : "설정됨", isSet: directionPoint != nil)
+                    SetupStatusRow("출발 위치", value: startPoint == nil ? "지정 안 됨" : "지정됨")
+                    SetupStatusRow("바라보는 방향", value: directionPoint == nil ? "설정 전" : "설정됨")
                 }
                 .padding(.top, 20)
                 ActionButton("좌표 고정") {

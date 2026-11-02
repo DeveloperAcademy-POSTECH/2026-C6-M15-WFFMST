@@ -9,40 +9,59 @@ import SwiftUI
 import CQBDesignSystem
 
 struct SetupStatusRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let title: String
     let value: String
-    let isSet: Bool
 
-    init(_ title: String, value: String, isSet: Bool) {
+    init(_ title: String, value: String) {
         self.title = title
         self.value = value
-        self.isSet = isSet
     }
 
     var body: some View {
-        HStack {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: DSSpacing.s8))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: DSSpacing.s12))
+
+        layout {
             Text(title)
-                .font(DSTypography.body)
-                .foregroundStyle(DSColor.white)
-            Spacer()
-            Text(value).font(DSTypography.bodySmall)
-                .foregroundStyle(isSet ? DSColor.main : DSColor.darkGreen)
+                .dsTextStyle(DSTypography.bodyRegular12)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(value)
+                .dsTextStyle(DSTypography.captionMedium14)
+                .multilineTextAlignment(.trailing)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .padding(.horizontal, 16)
-        .frame(height: 40)
-        .background(DSColor.area1)
-        .clipShape(RoundedRectangle(cornerRadius: 4))
-        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(DSColor.area3))
+        .foregroundStyle(DSColor.contentPrimary)
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
     }
 }
 
-#Preview("Setup Status") {
-    VStack(spacing: 24) {
-        SetupStatusRow("출발 위치", value: "미지정", isSet: false)
-        SetupStatusRow("출발 위치", value: "지정됨", isSet: true)
-        SetupStatusRow("바라보는 방향", value: "미설정", isSet: false)
-        SetupStatusRow("바라보는 방향", value: "설정됨", isSet: true)
+#Preview("Setup Status Row · 미설정") {
+    VStack(spacing: DSSpacing.s24) {
+        SetupStatusRow("출발 위치", value: "지정 안 됨")
+        SetupStatusRow("바라보는 방향", value: "설정 전")
     }
-    .padding(24)
-    .background(DSColor.background)
+    .padding(DSSpacing.s24)
+    .background(DSColor.backgroundPrimary)
+}
+
+#Preview("Setup Status Row · 설정 완료") {
+    VStack(spacing: DSSpacing.s24) {
+        SetupStatusRow("출발 위치", value: "지정됨")
+        SetupStatusRow("바라보는 방향", value: "설정됨")
+    }
+    .padding(DSSpacing.s24)
+    .background(DSColor.backgroundPrimary)
+}
+
+#Preview("Setup Status Row · 긴 문구 · Dynamic Type") {
+    SetupStatusRow("훈련 도면에서 선택한 출발 위치", value: "출발 위치가 아직 지정되지 않음")
+        .padding(DSSpacing.s24)
+        .background(DSColor.backgroundPrimary)
+        .dynamicTypeSize(.accessibility3)
 }

@@ -15,8 +15,11 @@ struct RecordingUploadView: View {
     var onAbandon: () async -> Void
     var onHome: () -> Void
 
-    private var normalizedProgress: Double {
-        progress.isFinite ? min(max(progress, 0), 1) : 0
+    private var progressMessage: String {
+        if isAbandoned { return "전송 실패로 종료" }
+        if isComplete { return isDemo ? "데모 처리 완료" : "전송 완료" }
+        if isDemo { return "데모 결과 확인 중" }
+        return "전송 완료 전까지\n앱을 종료하지 않고 대기해주세요"
     }
 
     var body: some View {
@@ -26,24 +29,7 @@ struct RecordingUploadView: View {
                     Text("훈련 종료").font(DSTypography.h2)
                     Spacer(minLength: 80)
                     VStack(alignment: .leading, spacing: 24) {
-                        ProgressView(value: normalizedProgress)
-                            .tint(DSColor.main)
-                            .animation(.linear(duration: 0.05), value: normalizedProgress)
-                            .background(DSColor.area3, in: Capsule())
-                            .accessibilityLabel("데이터 전송 진행률")
-                            .padding(.bottom, 8)
-                        HStack {
-                            Text(isAbandoned
-                                ? "전송 실패로 종료"
-                                : isComplete
-                                ? (isDemo ? "데모 처리 완료" : "전송 완료")
-                                : (isDemo ? "데모 결과 확인 중" : "서버로 데이터 보내는 중"))
-                                .font(DSTypography.h3)
-                            Spacer(minLength: 12)
-                            Text("\(Int(normalizedProgress * 100))%")
-                                .font(DSTypography.body)
-                                .monospacedDigit()
-                        }
+                        UploadProgressView(progress: progress, isComplete: isComplete, message: progressMessage)
                         Text(statusMessage)
                             .font(DSTypography.bodySmall)
                             .foregroundStyle(DSColor.darkGreen)
