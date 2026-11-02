@@ -49,6 +49,9 @@ enum InstructorColor {
     /// Apple semantic red used for validation and error feedback.
     static let validationError = Color.red
 
+    /// 훈련 중 화면의 녹화 상태 표시점에 쓰는 Figma Red/400.
+    static let trainingRecordingIndicator = DSPalette.Red.r400
+
     // MARK: - Menus
 
     /// Figma: `color/menu/surface`
