@@ -63,7 +63,6 @@ final class InstructorStore {
     private(set) var floorPlanDetailImage: UIImage?
     private(set) var floorPlanDetailMaskImage: UIImage?
     private(set) var floorPlanListPreviewImage: UIImage?
-    private(set) var floorPlanListPreviewMaskImage: UIImage?
 #endif
     private(set) var phase: InstructorPhase = .home
     private(set) var floorPlans: [InstructorFloorPlan]
@@ -918,7 +917,6 @@ final class InstructorStore {
         floorPlanListPreviewState = .loading
 #if canImport(UIKit)
         floorPlanListPreviewImage = nil
-        floorPlanListPreviewMaskImage = nil
 #endif
         let loader = floorPlanListPreviewLoader
         let expectedReference = floorPlan.reference
@@ -931,17 +929,12 @@ final class InstructorStore {
                       self.previewedFloorPlanID == floorPlan.id,
                       self.previewedFloorPlan?.reference == expectedReference else { return }
 #if canImport(UIKit)
-                guard let image = UIImage(data: snapshot.imagePNGData),
-                      let mask = UIImage(
-                        data: snapshot.maskPNGData,
-                        scale: snapshot.maskScale
-                      ) else {
+                guard let image = UIImage(data: snapshot.imagePNGData) else {
                     self.floorPlanListPreviewState = .failed("도면 미리보기를 표시하지 못했습니다.")
                     self.floorPlanListPreviewTask = nil
                     return
                 }
                 self.floorPlanListPreviewImage = image
-                self.floorPlanListPreviewMaskImage = mask
 #endif
                 self.floorPlanListPreviewState = .loaded
                 self.floorPlanListPreviewTask = nil
@@ -974,7 +967,6 @@ final class InstructorStore {
         floorPlanListPreviewState = .idle
 #if canImport(UIKit)
         floorPlanListPreviewImage = nil
-        floorPlanListPreviewMaskImage = nil
 #endif
     }
 

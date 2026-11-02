@@ -66,7 +66,6 @@ final class FloorPlanListPreviewTests: XCTestCase {
         let didLoad = await waitUntil { store.floorPlanListPreviewState == .loaded }
         XCTAssertTrue(didLoad)
         XCTAssertNotNil(store.floorPlanListPreviewImage)
-        XCTAssertNotNil(store.floorPlanListPreviewMaskImage)
     }
 
     func testRapidSelectionOnlyAppliesLatestPreview() async throws {
@@ -202,11 +201,10 @@ final class FloorPlanListPreviewTests: XCTestCase {
         let previews = try registrations.map {
             try LocalFloorPlanListPreviewRenderer.render(
                 imagePNG: $0.image.pngData,
-                grid: $0.resolvedGrid,
                 maximumPixelSize: 320
             )
         }
-        let sizes = previews.map { $0.imagePNGData.count + $0.maskPNGData.count }
+        let sizes = previews.map(\.imagePNGData.count)
         let twoEntryLimit = [
             sizes[0] + sizes[1],
             sizes[0] + sizes[2],
@@ -242,10 +240,9 @@ final class FloorPlanListPreviewTests: XCTestCase {
         let upload = try LocalFloorPlanFileBuilder.build(from: registration)
         let preview = try LocalFloorPlanListPreviewRenderer.render(
             imagePNG: registration.image.pngData,
-            grid: registration.resolvedGrid,
             maximumPixelSize: 320
         )
-        let byteCount = preview.imagePNGData.count + preview.maskPNGData.count
+        let byteCount = preview.imagePNGData.count
         let remote = PreviewRemoteMapStub(uploads: [upload])
         let loader = LocalFloorPlanListPreviewLoader(
             repository: remote,
@@ -265,7 +262,6 @@ final class FloorPlanListPreviewTests: XCTestCase {
         let registration = try makeRegistration(width: 2_000, height: 1_000)
         let preview = try LocalFloorPlanListPreviewRenderer.render(
             imagePNG: registration.image.pngData,
-            grid: registration.resolvedGrid,
             maximumPixelSize: 320
         )
         let source = try XCTUnwrap(CGImageSourceCreateWithData(preview.imagePNGData as CFData, nil))
@@ -445,11 +441,7 @@ private actor PreviewLoaderStub: FloorPlanListPreviewLoading {
             throw PreviewTestError.offline
         }
         let data = Self.pngData()
-        return FloorPlanListPreviewSnapshot(
-            imagePNGData: data,
-            maskPNGData: data,
-            maskScale: 1
-        )
+        return FloorPlanListPreviewSnapshot(imagePNGData: data)
     }
 
     func callCount(for id: String) -> Int {

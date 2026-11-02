@@ -218,7 +218,7 @@ struct FloorPlanListView: View {
         case .loading:
             VStack(spacing: DSSpacing.s16) {
                 ProgressView()
-                Text("도면과 최종 마스크를 불러오는 중입니다.")
+                Text("도면을 불러오는 중입니다.")
             }
             .foregroundStyle(DSColor.contentTertiary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -239,24 +239,17 @@ struct FloorPlanListView: View {
 
     @ViewBuilder
     private var loadedPreview: some View {
-        if let image = store.floorPlanListPreviewImage,
-           let mask = store.floorPlanListPreviewMaskImage {
+        if let image = store.floorPlanListPreviewImage {
             GeometryReader { proxy in
-                ZStack {
-                    Image(uiImage: image)
-                        .resizable()
-                        .interpolation(.high)
-                        .aspectRatio(contentMode: .fill)
-                    Image(uiImage: mask)
-                        .resizable()
-                        .interpolation(.none)
-                        .aspectRatio(contentMode: .fill)
-                }
+                Image(uiImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fill)
                 .frame(width: proxy.size.width, height: proxy.size.height)
                 .clipped()
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("선택한 도면과 최종 마스크 미리보기")
+            .accessibilityLabel("선택한 도면 미리보기")
             .accessibilityIdentifier("floorPlan.preview.image")
         } else {
             previewStatus("도면 미리보기를 표시할 수 없습니다.", systemImage: "map")

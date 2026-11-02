@@ -92,7 +92,7 @@ Figma 좌측 바깥의 빨간 `40` 표시는 margin 주석이며 앱 UI에 포�
 - 섹션 라벨 `도면 미리보기`는 leading/top 20pt, `headingBold20`, `DSColor.surfaceSelected`를 사용한다. 밝은 이미지 위에서도 대비가 부족하면 scrim을 추가한다.
 - `상세보기 및 편집`은 trailing 12pt, top 12pt, `180 × 56`, radius full이다.
 - 버튼 배경은 `surfacePrimary`, border는 앱 토큰 `floorPlanPreviewActionBorder` 1pt, 텍스트는 `contentPrimary`이다.
-- 이미지와 최종 마스크는 같은 좌표계로 겹쳐 표시한다.
+- 목록 미리보기에는 도면 원본 이미지만 표시하고 최종 마스크는 표시하거나 렌더링하지 않는다.
 - Figma 기준 이미지는 패널을 채우고 바깥을 clip한다. 전체 도면 확인과 pan/zoom은 상세 화면의 책임으로 둔다.
 - 선택을 빠르게 바꾸면 이전 요청을 취소하고 마지막 선택 결과만 표시한다.
 
@@ -104,7 +104,7 @@ Figma 좌측 바깥의 빨간 `40` 표시는 margin 주석이며 앱 UI에 포�
 | 목록 empty | 패널 전체에 `등록된 도면이 없습니다.`와 새 도면 추가 행동 유지 |
 | 미리보기 loading | 패널 크기를 유지한 채 progress overlay, 상세 버튼 disabled |
 | 미리보기 failed | 오류 문구와 `다시 불러오기`, 현재 선택 유지 |
-| loaded | 이미지+마스크, 상세 버튼 enabled |
+| loaded | 도면 원본 이미지, 상세 버튼 enabled |
 
 ## 도면 상세
 
@@ -172,7 +172,7 @@ WorldMap은 수정 화면에서 다시 스캔하지 않는다. 기존 구현은 
 
 - 버튼의 최소 hit target은 `44 × 44`, 주요 버튼은 56pt 높이를 유지한다.
 - 선택 항목에는 `.isSelected` trait와 도면명 접근성 라벨을 제공한다.
-- 이미지+마스크는 하나의 접근성 요소로 묶고 `선택한 도면과 최종 마스크 미리보기`로 설명한다.
+- 목록 미리보기 이미지는 하나의 접근성 요소로 묶고 `선택한 도면 미리보기`로 설명한다.
 - 제목과 버튼 텍스트는 Dynamic Type에서 잘리지 않게 하고, 도면명·생성일만 한 줄 말줄임을 허용한다.
 - 화면 폭이 줄어도 오른쪽 상세 패널 404pt와 주요 행동 버튼의 높이는 유지한다.
 - 화면은 landscape left/right에서만 실행하며 portrait와 iPad 멀티태스킹은 지원하지 않는다.
