@@ -472,9 +472,8 @@ final class AARStore {
     }
 
     /// 구독의 첫 값만 받고 구독을 끝낸다.
-    private static func first<Value>(_ stream: AsyncThrowingStream<Value, Error>) async throws -> Value? {
-        for try await value in stream { return value }
-        return nil
+    private static func first<Value: Sendable>(_ stream: AsyncThrowingStream<Value, Error>) async throws -> Value? {
+        try await stream.firstValue()
     }
 }
 

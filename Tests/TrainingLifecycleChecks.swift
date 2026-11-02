@@ -8,11 +8,13 @@ enum TrainingLifecycleChecks {
         await checkManualAARExclusion()
         await checkExclusionAndCancellation()
         await checkEmptyRosterAndNormalStreamEnd()
-        print("PASS: 훈련 서버 시작·종료, 서버 타이머, 기록 전원 종결, 오류·재연결·취소")
+        await checkHistorySaveFailure()
+        print("PASS: 훈련 서버 시작·종료, 서버 타이머, 기록 전원 종결, 오류·재연결·취소, 종료 시 이전 기록 저장")
     }
 
     private static func checkLifecycleAndRecovery() async {
-        let (store, repository, members) = await readyStore()
+        let history = InMemoryTrainingHistoryRepository()
+        let (store, repository, members) = await readyStore(history: history)
         let session = store.currentSession!
         store.startTraining()
         await wait("시작 쓰기 대기") { repository.hasPendingWrite }
@@ -60,6 +62,7 @@ enum TrainingLifecycleChecks {
         repository.completeWrite(error: Failure.disconnected)
         await wait("종료 실패") { !store.isFinishingTraining }
         expect(store.phase == .trainingInProgress && store.trainingActionError != nil, "종료 실패 후 현재 화면 유지")
+        expect(store.trainingHistory.isEmpty && (try? history.fetchAll())?.isEmpty == true, "종료 실패 시 기록 저장 안 함")
         repository.sessions[1].send(updated(session, status: .running, start: start))
         await wait("보류 쓰기 롤백") { store.currentSession?.status == .running }
         store.finishTraining()
@@ -68,6 +71,13 @@ enum TrainingLifecycleChecks {
         await wait("결과 준비 진입") { store.phase == .resultsPreparation && repository.recordingCount == 1 }
         expect(store.currentSession?.status == .ended && store.trainingRecords.connectionState == .connecting,
                "종료 ACK 후 첫 기록 스냅샷 대기")
+        let saved = try? history.fetchAll()
+        expect(saved?.count == 1 && store.trainingHistory == saved
+               && saved?.first?.sessionID == session.id && saved?.first?.trainingName == session.name
+               && saved?.first?.floorPlanName == "검사 도면"
+               && saved?.first?.participantNames == store.trainingParticipants.map(\.name)
+               && saved?.first?.startedAt == start,
+               "종료 성공 직후 서버 시작 시각으로 이전 기록 저장")
         await wait("세션 구독 종료") { repository.sessions[1].terminationCount == 1 }
 
         let firstID = UUID(uuidString: store.trainingParticipants[0].id)!
@@ -163,8 +173,9 @@ enum TrainingLifecycleChecks {
         store.returnHome()
         repository.completeWrite()
         await settle()
-        expect(store.phase == .home && store.currentSession == nil && repository.recordingCount == 0,
-               "화면 이탈 후 늦은 종료 성공 무시")
+        expect(store.phase == .home && store.currentSession == nil && repository.recordingCount == 0
+               && store.trainingHistory.isEmpty,
+               "화면 이탈 후 늦은 종료 성공 무시, 기록 저장 안 함")
 
         let (other, otherRepository, _) = await readyStore()
         other.startTraining()
@@ -217,11 +228,31 @@ enum TrainingLifecycleChecks {
         store.returnHome()
     }
 
-    private static func readyStore(allReady: Bool = true) async -> (InstructorStore, LifecycleRepository, [Member]) {
+    private static func checkHistorySaveFailure() async {
+        let history = InMemoryTrainingHistoryRepository()
+        history.saveError = Failure.disconnected
+        let (store, repository, _) = await readyStore(history: history)
+        store.startTraining()
+        await wait("저장 실패 검사 시작") { repository.hasPendingWrite }
+        repository.completeWrite()
+        await wait("저장 실패 검사 진행") { store.phase == .trainingInProgress }
+        store.finishTraining()
+        await wait("저장 실패 검사 종료") { repository.hasPendingWrite }
+        repository.completeWrite()
+        await wait("저장 실패해도 결과 준비") { store.phase == .resultsPreparation }
+        expect(store.trainingHistory.isEmpty && store.trainingActionError == nil, "기록 저장 실패가 훈련 흐름을 막지 않음")
+        store.returnHome()
+    }
+
+    private static func readyStore(
+        allReady: Bool = true,
+        history: InMemoryTrainingHistoryRepository? = nil
+    ) async -> (InstructorStore, LifecycleRepository, [Member]) {
         let repository = LifecycleRepository()
         let store = InstructorStore(
             floorPlans: [InstructorFloorPlan(id: "plan", name: "검사 도면", fileName: "plan.png", referenceDistance: 10)],
-            sessionRepository: repository, memberRepository: repository, recordingRepository: repository
+            sessionRepository: repository, memberRepository: repository, recordingRepository: repository,
+            trainingHistoryRepository: history
         )
         store.openSessionCreation()
         store.createSession()

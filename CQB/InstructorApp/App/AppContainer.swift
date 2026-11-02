@@ -11,7 +11,8 @@ struct AppContainer: View {
     init(
         floorPlanFileRepository: any FloorPlanFileRepository,
         worldMapFileRepository: any WorldMapFileRepository = StorageWorldMapFileRepository(),
-        floorPlanCatalogRepository: (any FloorPlanCatalogRepository)? = nil
+        floorPlanCatalogRepository: (any FloorPlanCatalogRepository)? = nil,
+        trainingHistoryRepository: (any TrainingHistoryRepository)? = nil
     ) {
         _store = State(initialValue: InstructorStore(
             floorPlanDraft: FloorPlanDraftStore(worldMapScanner: LocalARWorldMapScanService()),
@@ -20,7 +21,12 @@ struct AppContainer: View {
             floorPlanCatalogRepository: floorPlanCatalogRepository,
             sessionRepository: FirestoreSessionRepository(),
             memberRepository: FirestoreMemberRepository(),
-            recordingRepository: FirestoreRecordingRepository()
+            recordingRepository: FirestoreRecordingRepository(),
+            trainingHistoryRepository: trainingHistoryRepository,
+            trainingVideoDeleter: RecordedTrainingVideoDeleter(
+                recordingRepository: FirestoreRecordingRepository(),
+                videoChunkRepository: StorageVideoChunkRepository()
+            )
         ))
         _aarStore = State(initialValue: AARStore(
             sessionRepository: FirestoreSessionRepository(),
@@ -42,7 +48,10 @@ struct AppContainer: View {
                     .environment(store)
                     .environment(store.floorPlanDraft)
                     .environment(aarStore)
-                    .task { store.loadFloorPlans() }
+                    .task {
+                        store.loadFloorPlans()
+                        store.loadTrainingHistory()
+                    }
 #if DEBUG
                     .task { await openDebugAARIfRequested() }
 #endif
