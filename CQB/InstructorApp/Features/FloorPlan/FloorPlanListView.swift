@@ -242,9 +242,11 @@ struct FloorPlanListView: View {
                     .resizable()
                     .interpolation(.high)
                     .aspectRatio(contentMode: .fill)
-                .frame(width: proxy.size.width, height: proxy.size.height)
-                .clipped()
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .clipped()
             }
+            // 세로로 긴 aspect-fill 이미지의 hit 영역이 목록까지 확장되지 않게 한다.
+            .allowsHitTesting(false)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("선택한 도면 미리보기")
             .accessibilityIdentifier("floorPlan.preview.image")
