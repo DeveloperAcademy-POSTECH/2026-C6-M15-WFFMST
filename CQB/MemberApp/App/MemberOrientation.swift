@@ -2,9 +2,9 @@ import SwiftUI
 import UIKit
 import OSLog
 
-/// MemberApp은 단일 iPhone 창을 사용한다. 초기 화면은 세로 방향이다.
+/// 기록 화면 이외에는 기기가 선택하는 세로·가로 방향을 허용한다.
 final class MemberAppDelegate: NSObject, UIApplicationDelegate {
-    static var orientationMask: UIInterfaceOrientationMask = .portrait
+    static var orientationMask: UIInterfaceOrientationMask = .allButUpsideDown
 
     func application(_ application: UIApplication,
                      supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
@@ -12,7 +12,7 @@ final class MemberAppDelegate: NSObject, UIApplicationDelegate {
     }
 }
 
-/// 현재 화면이 속한 scene에만 방향 변경을 요청한다.
+/// 가로 고정을 해제할 때도 scene의 기존 방향 대신 실제 기기 방향을 다시 반영한다.
 struct MemberOrientation: UIViewControllerRepresentable {
     let usesLandscape: Bool
 
@@ -21,12 +21,30 @@ struct MemberOrientation: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ controller: OrientationController, context: Context) {
-        controller.update(mask: usesLandscape ? .landscape : .portrait)
+        controller.update(usesLandscape: usesLandscape)
+    }
+
+    static func requestedMask(usesLandscape: Bool, device: UIDeviceOrientation,
+                              current: UIInterfaceOrientation) -> UIInterfaceOrientationMask {
+        switch device {
+        case .portrait where !usesLandscape: return .portrait
+        // UIDevice와 UIWindowScene의 가로 방향 명칭은 반대다.
+        case .landscapeLeft: return .landscapeRight
+        case .landscapeRight: return .landscapeLeft
+        default:
+            if usesLandscape { return current == .landscapeLeft ? .landscapeLeft : .landscapeRight }
+            // 평평하게 놓였거나 방향을 아직 모르면 특정 방향으로 강제하지 않는다.
+            return .allButUpsideDown
+        }
     }
 
     final class OrientationController: UIViewController {
-        private var mask: UIInterfaceOrientationMask = .portrait
+        private var usesLandscape = false
         private let logger = Logger(subsystem: "MemberApp", category: "Orientation")
+
+        override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
+            usesLandscape ? .landscape : .allButUpsideDown
+        }
 
         override func loadView() {
             view = UIView()
@@ -35,25 +53,44 @@ struct MemberOrientation: UIViewControllerRepresentable {
 
         override func viewDidAppear(_ animated: Bool) {
             super.viewDidAppear(animated)
+            UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+            NotificationCenter.default.addObserver(self, selector: #selector(refreshOrientation),
+                name: UIDevice.orientationDidChangeNotification, object: nil)
+            NotificationCenter.default.addObserver(self, selector: #selector(refreshOrientation),
+                name: UIApplication.didBecomeActiveNotification, object: nil)
             applyOrientation()
         }
 
-        func update(mask: UIInterfaceOrientationMask) {
-            let changed = self.mask != mask
-            self.mask = mask
-            MemberAppDelegate.orientationMask = mask
+        override func viewDidDisappear(_ animated: Bool) {
+            super.viewDidDisappear(animated)
+            NotificationCenter.default.removeObserver(self)
+            UIDevice.current.endGeneratingDeviceOrientationNotifications()
+        }
+
+        func update(usesLandscape: Bool) {
+            let changed = self.usesLandscape != usesLandscape
+            self.usesLandscape = usesLandscape
+            MemberAppDelegate.orientationMask = supportedInterfaceOrientations
             if changed { applyOrientation() }
         }
 
+        @objc private func refreshOrientation() { applyOrientation() }
+
         private func applyOrientation() {
             guard let scene = view.window?.windowScene else { return }
-            MemberAppDelegate.orientationMask = mask
+            MemberAppDelegate.orientationMask = supportedInterfaceOrientations
             var controller: UIViewController? = self
             while let current = controller {
                 current.setNeedsUpdateOfSupportedInterfaceOrientations()
                 controller = current.parent
             }
-            scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { [logger] error in
+            let current = scene.interfaceOrientation
+            let requested = MemberOrientation.requestedMask(
+                usesLandscape: usesLandscape, device: UIDevice.current.orientation, current: current
+            )
+            let currentMask = UIInterfaceOrientationMask(rawValue: 1 << current.rawValue)
+            guard !requested.contains(currentMask) else { return }
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: requested)) { [logger] error in
                 logger.error("화면 방향 변경 실패: \(error.localizedDescription)")
             }
         }

@@ -11,33 +11,22 @@ struct ActionButton: View {
     }
 
     var body: some View {
-        Button(title, action: action)
-            .buttonStyle(ActionButtonStyle())
-    }
-}
-
-private struct ActionButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(DSTypography.body)
-            .frame(maxWidth: .infinity, minHeight: 52)
-            .foregroundStyle(isEnabled ? DSColor.background : DSColor.darkGreen)
-            .background(isEnabled ? DSColor.main : Color("MemberActionDisabled"))
-            .clipShape(RoundedRectangle(cornerRadius: 4))
-            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(isEnabled ? DSColor.main : DSColor.area3))
-            .opacity(configuration.isPressed ? 0.8 : 1)
+        Button(action: action) {
+            Text(title)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.dsPrimary)
     }
 }
 
 
 #Preview("Active Button") {
-    VStack(spacing: 24) {
+    VStack(spacing: DSSpacing.s24) {
         ActionButton("참가") { print("Preview 참가") }
         ActionButton("홈으로") { print("Preview 홈 이동") }
             .disabled(true)
     }
-    .padding(24)
-    .background(DSColor.background)
+    .padding(DSSpacing.s24)
+    .background(DSColor.backgroundPrimary)
 }

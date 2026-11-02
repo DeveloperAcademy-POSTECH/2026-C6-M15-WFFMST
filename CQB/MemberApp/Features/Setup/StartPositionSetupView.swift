@@ -2,9 +2,11 @@ import SwiftUI
 import CQBDesignSystem
 
 struct StartPositionSetupView: View {
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     /// 실제 세션의 도면을 주입한다. 선택 좌표는 이미지 영역 기준 0...1이다.
     let floorPlan: UIImage
     var onConfirm: (CGPoint, CGPoint) -> Void
+    let onBack: (() -> Void)?
     @State private var startPoint: CGPoint?
     @State private var directionPoint: CGPoint?
     @State private var zoomScale: CGFloat = 1
@@ -13,41 +15,88 @@ struct StartPositionSetupView: View {
     @GestureState private var dragTranslation: CGSize = .zero
 
     init(floorPlan: UIImage, startPoint: CGPoint? = nil, directionPoint: CGPoint? = nil,
+         onBack: (() -> Void)? = nil,
          onConfirm: @escaping (CGPoint, CGPoint) -> Void) {
         self.floorPlan = floorPlan
         self.onConfirm = onConfirm
+        self.onBack = onBack
         _startPoint = State(initialValue: startPoint)
         _directionPoint = State(initialValue: directionPoint)
     }
 
+    private var isLandscape: Bool { verticalSizeClass == .compact }
+
+    private var guidance: String {
+        startPoint == nil
+            ? "도면을 터치해 본인의 출발 위치를 선택해주세요."
+            : "선택한 위치에서\n바라보는 방향을 터치하여 방향을 설정해주세요."
+    }
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                Text("도면 좌표 보정").font(DSTypography.h2)
+        GeometryReader { geometry in
+            let panelHeight = isLandscape ? geometry.size.height : min(240, geometry.size.height / 2)
+            let layout = isLandscape
+                ? AnyLayout(HStackLayout(spacing: 0))
+                : AnyLayout(VStackLayout(spacing: 0))
+            layout {
                 map
-                Text(startPoint == nil
-                     ? "도면 위 터치를 통해 본인의 출발위치를 선택해주세요."
-                     : "이후 선택한 위치에서 바라보는 방향을 한번 더 터치하여 방향을 설정해주세요.")
-                    .font(DSTypography.bodySmall)
-                    .foregroundStyle(DSColor.darkGreen)
-                    .frame(maxWidth: .infinity, minHeight: 42, alignment: .topLeading)
-                VStack(spacing: 24) {
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .overlay(alignment: .topLeading) {
+                        MemberBackButton(action: onBack)
+                            .padding(DSSpacing.s20)
+                    }
+                    .overlay(alignment: isLandscape ? .top : .bottom) {
+                        if startPoint == nil || directionPoint == nil {
+                            MemberGuidanceView(message: guidance, presentation: .map)
+                                .frame(maxWidth: isLandscape ? 366 : .infinity)
+                                .padding(.horizontal, isLandscape ? DSSpacing.s60 + DSSpacing.s20 : DSSpacing.s20)
+                                .padding(.vertical, isLandscape ? DSSpacing.s20 : DSSpacing.s12)
+                        }
+                    }
+
+                settingsPanel(height: panelHeight)
+                    .frame(width: isLandscape ? min(280, geometry.size.width * 0.4) : nil,
+                           height: panelHeight)
+            }
+        }
+        // 가로에서는 화면 전체 폭을 기준으로 도면과 우측 패널을 배치한다.
+        .ignoresSafeArea(.container, edges: isLandscape ? .horizontal : [])
+        .foregroundStyle(DSColor.contentPrimary)
+        .background(DSColor.surfaceSecondary.ignoresSafeArea())
+    }
+
+    private func settingsPanel(height: CGFloat) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: DSSpacing.s20) {
+                if !isLandscape {
+                    Text("출발 위치 설정")
+                        .dsTextStyle(DSTypography.headingBold20)
+                        .accessibilityAddTraits(.isHeader)
+                }
+                VStack(spacing: DSSpacing.s4) {
                     SetupStatusRow("출발 위치", value: startPoint == nil ? "지정 안 됨" : "지정됨")
                     SetupStatusRow("바라보는 방향", value: directionPoint == nil ? "설정 전" : "설정됨")
                 }
-                .padding(.top, 20)
-                ActionButton("좌표 고정") {
+                Spacer(minLength: 0)
+                ActionButton("훈련 시작") {
                     if let startPoint, let directionPoint { onConfirm(startPoint, directionPoint) }
                 }
                 .disabled(startPoint == nil || directionPoint == nil)
-                .padding(.top, 12)
+                .accessibilityHint("출발 위치와 방향을 고정하고 지휘관의 시작 신호를 기다립니다.")
+                .accessibilityIdentifier("setup.confirm")
             }
-            .padding(.horizontal, 24)
-            .padding(.top, 8)
-            .padding(.bottom, 16)
+            .frame(minHeight: max(0, height - DSSpacing.s40), alignment: .topLeading)
+            .padding(DSSpacing.s20)
         }
-        .foregroundStyle(DSColor.white)
-        .background(DSColor.background.ignoresSafeArea())
+        .background {
+            UnevenRoundedRectangle(
+                topLeadingRadius: DSRadius.large,
+                bottomLeadingRadius: isLandscape ? DSRadius.large : 0,
+                topTrailingRadius: isLandscape ? 0 : DSRadius.large
+            )
+            .fill(DSColor.surfacePrimary)
+            .ignoresSafeArea(edges: .bottom)
+        }
     }
 
     private var map: some View {
@@ -64,35 +113,44 @@ struct StartPositionSetupView: View {
                 size: size
             )
             ZStack {
-                ZStack {
-                    Image(uiImage: floorPlan)
-                        .resizable().scaledToFit().opacity(0.6)
-                    if let startPoint {
-                        let start = CGPoint(x: origin.x + startPoint.x * imageSize.width, y: origin.y + startPoint.y * imageSize.height)
-                        if let directionPoint {
-                            let end = CGPoint(x: origin.x + directionPoint.x * imageSize.width, y: origin.y + directionPoint.y * imageSize.height)
-                            // 방향 표시는 사용자의 선택 좌표로 생성되는 동적 도형이다.
-                            Path { path in
-                                let angle = atan2(end.y - start.y, end.x - start.x)
-                                let perpendicular = CGPoint(x: -sin(angle) * 9.5, y: cos(angle) * 9.5)
-                                path.move(to: start)
-                                path.addLine(to: CGPoint(x: end.x + perpendicular.x, y: end.y + perpendicular.y))
-                                path.addLine(to: CGPoint(x: end.x - perpendicular.x, y: end.y - perpendicular.y))
-                                path.closeSubpath()
-                            }
-                            .fill(DSColor.main)
+                Image(uiImage: floorPlan)
+                    .resizable().scaledToFit().opacity(0.6)
+                    .frame(width: size.width, height: size.height)
+                    .scaleEffect(effectiveZoom)
+                    .offset(effectiveOffset)
+
+                if let startPoint {
+                    // 두 선택점은 도면의 확대·이동을 따르고 원의 크기와 방향 마커의 폭은 유지한다.
+                    let baseStart = CGPoint(x: origin.x + startPoint.x * imageSize.width,
+                                            y: origin.y + startPoint.y * imageSize.height)
+                    let start = CGPoint(
+                        x: (baseStart.x - size.width / 2) * effectiveZoom + size.width / 2 + effectiveOffset.width,
+                        y: (baseStart.y - size.height / 2) * effectiveZoom + size.height / 2 + effectiveOffset.height
+                    )
+                    if let directionPoint {
+                        let baseEnd = CGPoint(x: origin.x + directionPoint.x * imageSize.width,
+                                              y: origin.y + directionPoint.y * imageSize.height)
+                        let end = CGPoint(
+                            x: (baseEnd.x - size.width / 2) * effectiveZoom + size.width / 2 + effectiveOffset.width,
+                            y: (baseEnd.y - size.height / 2) * effectiveZoom + size.height / 2 + effectiveOffset.height
+                        )
+                        // 방향 표시는 사용자의 선택 좌표로 생성되는 동적 도형이다.
+                        Path { path in
+                            let angle = atan2(end.y - start.y, end.x - start.x)
+                            let perpendicular = CGPoint(x: -sin(angle) * 9.5, y: cos(angle) * 9.5)
+                            path.move(to: start)
+                            path.addLine(to: CGPoint(x: end.x + perpendicular.x, y: end.y + perpendicular.y))
+                            path.addLine(to: CGPoint(x: end.x - perpendicular.x, y: end.y - perpendicular.y))
+                            path.closeSubpath()
                         }
-                        Text("1")
-                            .font(DSTypography.caption.weight(.bold))
-                            .foregroundStyle(DSColor.background)
-                            .frame(width: 22, height: 22)
-                            .background(DSColor.main, in: Circle())
-                            .position(start)
+                        .fill(DSPalette.Blue.b300)
                     }
+                    Circle()
+                        .fill(DSPalette.Blue.b500)
+                        .frame(width: 22, height: 22)
+                        .overlay { Circle().strokeBorder(DSPalette.Neutral.white, lineWidth: 2) }
+                        .position(start)
                 }
-                .frame(width: size.width, height: size.height)
-                .scaleEffect(effectiveZoom)
-                .offset(effectiveOffset)
             }
             .frame(width: size.width, height: size.height)
             .contentShape(Rectangle())
@@ -139,11 +197,9 @@ struct StartPositionSetupView: View {
             .accessibilityLabel("출발 위치와 방향을 선택하는 훈련 도면")
             .accessibilityHint("두 손가락으로 확대하고 확대된 도면은 드래그할 수 있습니다. 출발 위치, 방향 순서로 터치합니다. 두 점 선택 후 다시 터치하면 재설정합니다.")
         }
-        .aspectRatio(floorPlan.size.width / floorPlan.size.height, contentMode: .fit)
-        .padding(12)
-        .background(DSColor.area1)
-        .clipShape(RoundedRectangle(cornerRadius: 4))
-        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(DSColor.area3))
+        .clipped()
+        .background(DSColor.surfaceSecondary)
+        .accessibilityIdentifier("setup.map")
     }
 
     private func clampedOffset(_ offset: CGSize, zoom: CGFloat, size: CGSize) -> CGSize {
@@ -168,5 +224,21 @@ struct StartPositionSetupView: View {
                                directionPoint: CGPoint(x: 0.512, y: 0.73)) { _, _ in
             print("Preview 좌표 고정")
         }
+    }
+}
+
+#Preview("02 위치·방향 설정 · 가로", traits: .landscapeLeft) {
+    if let image = UIImage(named: "TrainingFloorPlan") {
+        StartPositionSetupView(floorPlan: image, startPoint: CGPoint(x: 0.512, y: 0.84),
+                               directionPoint: CGPoint(x: 0.512, y: 0.73)) { _, _ in
+            print("Preview 좌표 고정")
+        }
+    }
+}
+
+#Preview("02 위치 설정 · 큰 글자") {
+    if let image = UIImage(named: "TrainingFloorPlan") {
+        StartPositionSetupView(floorPlan: image) { _, _ in print("Preview 좌표 고정") }
+            .dynamicTypeSize(.accessibility3)
     }
 }

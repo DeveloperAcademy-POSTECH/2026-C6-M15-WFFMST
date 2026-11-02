@@ -23,35 +23,27 @@ struct MemberTrainingFlowView: View {
             cameraService: store.cameraService,
             onStopRecording: { await store.finishRecording() }
         )
-        .overlay(alignment: .bottom) {
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             if demoControl != nil {
                 switch store.phase {
                 case .waiting:
                     Button(demoStartTitle ?? "데모 훈련 시작", action: startDemoTraining)
-                        .font(DSTypography.body.weight(.semibold))
-                        .foregroundStyle(DSColor.background)
-                        .padding(.horizontal, 20)
-                        .frame(minHeight: 48)
-                        .background(DSColor.main, in: RoundedRectangle(cornerRadius: 4))
+                        .buttonStyle(.dsPrimary)
                         .disabled(!store.isReady || isDemoStartDisabled)
-                        .opacity(store.isReady && !isDemoStartDisabled ? 1 : 0.55)
+
                         .accessibilityHint(store.isReady
                             ? "별도 iPad 없이 로컬 데모 훈련을 시작합니다."
                             : "카메라와 AR 추적 준비가 끝나면 사용할 수 있습니다.")
                         .accessibilityIdentifier("demo.startTraining")
-                        .padding(.bottom, 24)
+                        .padding(DSSpacing.s12)
                 case .recording:
                     Button("데모 훈련 종료") {
                         isShowingDemoStopConfirmation = true
                     }
-                    .font(DSTypography.body.weight(.semibold))
-                    .foregroundStyle(DSColor.white)
-                    .padding(.horizontal, 20)
-                    .frame(minHeight: 48)
-                    .background(.red.opacity(0.9), in: RoundedRectangle(cornerRadius: 4))
+                    .buttonStyle(.dsSecondary)
                     .accessibilityHint("영상과 동선 기록을 끝내고 결과 처리로 이동합니다.")
                     .accessibilityIdentifier("demo.stopTraining")
-                    .padding(.bottom, 24)
+                    .padding(DSSpacing.s12)
                 default:
                     EmptyView()
                 }
@@ -72,18 +64,18 @@ struct MemberTrainingFlowView: View {
                     get: { store.isSimulatedReady },
                     set: { store.setSimulatedReadiness($0) }
                 )) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("준비 완료 전송 (테스트)").font(.headline)
+                    VStack(alignment: .leading, spacing: DSSpacing.s4) {
+                        Text("준비 완료 전송 (테스트)").dsTextStyle(DSTypography.captionMedium14)
                         Text("에뮬레이터 전용 · 서버 준비 상태만 변경하며 AR·녹화는 지원하지 않습니다.")
-                            .font(.caption)
+                            .dsTextStyle(DSTypography.bodyRegular12)
                     }
                 }
                 .accessibilityIdentifier("emulator-readiness-toggle")
                 .disabled(!store.canResetPosition)
-                .tint(DSColor.main)
-                .foregroundStyle(DSColor.white)
+                .tint(DSColor.actionPrimary)
+                .foregroundStyle(DSColor.contentPrimary)
                 .padding()
-                .background(DSColor.area1)
+                .background(DSColor.surfacePrimary)
             }
         }
         #endif

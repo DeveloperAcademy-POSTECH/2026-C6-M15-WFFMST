@@ -99,7 +99,14 @@ struct RootView: View {
             StartPositionSetupView(
                 floorPlan: floorPlan,
                 startPoint: store.startPoint,
-                directionPoint: store.directionPoint
+                directionPoint: store.directionPoint,
+                onBack: {
+                    if demoMode.isActive {
+                        demoMode.stop()
+                    } else {
+                        store.returnToJoin()
+                    }
+                }
             ) { start, direction in
                 store.confirmPosition(start: start, direction: direction)
             }
@@ -138,22 +145,22 @@ struct RootView: View {
     private var demoBanner: some View {
         HStack(spacing: 12) {
             Label("데모 모드 · 서버에 저장되지 않음", systemImage: "testtube.2")
-                .font(.caption.weight(.semibold))
+                .dsTextStyle(DSTypography.captionMedium14)
 
             Spacer(minLength: 8)
 
             Button("데모 종료", action: demoMode.stop)
-                .font(.caption.weight(.semibold))
+                .dsTextStyle(DSTypography.captionMedium14)
                 .disabled(!canExitDemo)
                 .accessibilityHint(canExitDemo ? "실제 PIN 참가 화면으로 돌아갑니다." : "기록 처리를 완료한 뒤 종료할 수 있습니다.")
                 .accessibilityIdentifier("demo.exit")
         }
-        .foregroundStyle(DSColor.white)
+        .foregroundStyle(DSColor.contentPrimary)
         .padding(.horizontal, 16)
         .frame(minHeight: 40)
-        .background(DSColor.area1)
+        .background(DSColor.surfacePrimary)
         .overlay(alignment: .bottom) {
-            Rectangle().fill(DSColor.area3).frame(height: 1)
+            Rectangle().fill(DSColor.borderPrimary).frame(height: 1)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("demo.banner")

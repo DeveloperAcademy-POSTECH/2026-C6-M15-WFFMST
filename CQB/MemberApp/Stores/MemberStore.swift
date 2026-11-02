@@ -822,8 +822,11 @@ final class MemberStore {
     }
 
     func returnToJoin() {
-        guard (phase == .saved && filesSaved) || (phase == .uploading && canLeaveUpload) else { return }
+        // 위치 설정 단계에서는 아직 기록이 없으므로 참가 화면으로 복귀할 수 있다.
+        guard phase == .setup || (phase == .saved && filesSaved)
+                || (phase == .uploading && canLeaveUpload) else { return }
         resetToJoin()
+        errorMessage = nil
     }
 
     /// 완료된 데모 파일만 제거하고 운영 Store로 돌아갈 수 있게 한다.
@@ -872,6 +875,7 @@ final class MemberStore {
         #endif
         hasShownSessionStreamError = false
         hasShownReadinessError = false
+        cameraService.stop()
         cameraService.onVideoChunkReady = nil
         cameraService.discardFinishedCapture()
         identity = nil
