@@ -22,7 +22,7 @@ struct AARVideoView: View {
                 Button(action: store.showAARFloorPlan) {
                     Image(systemName: "xmark")
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(InstructorColor.textPrimary)
+                        .foregroundStyle(InstructorColor.aarContentPrimary)
                         .frame(width: 44, height: 44)
                         .contentShape(.rect)
                 }
@@ -100,7 +100,7 @@ struct AARVideoView: View {
             systemImage: "video.slash",
             description: Text("도면 화면에서 대원 마커를 선택할 수 있습니다.")
         )
-        .foregroundStyle(InstructorColor.textSecondary)
+        .foregroundStyle(InstructorColor.aarContentSecondary)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(InstructorColor.aarVideoSlotSurface)
     }
@@ -138,7 +138,7 @@ struct AARVideoTile: View {
         } label: {
             Image(systemName: "xmark")
                 .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(InstructorColor.textPrimary)
+                .foregroundStyle(InstructorColor.aarContentPrimary)
                 .frame(width: 44, height: 44)
                 .contentShape(.rect)
         }
@@ -155,7 +155,7 @@ struct AARVideoTile: View {
         } label: {
             Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(InstructorColor.textPrimary)
+                .foregroundStyle(InstructorColor.aarContentPrimary)
                 .frame(width: 44, height: 44)
                 .contentShape(.rect)
         }
@@ -174,8 +174,7 @@ struct AARVideoTile: View {
         case .ready(let player, _):
             AARPlayerView(
                 player: player,
-                isMuted: store.isParticipantMuted(participant.id),
-                videoGravity: .resizeAspectFill
+                isMuted: store.isParticipantMuted(participant.id)
             )
                 .overlay {
                     if aarStore.videoFrame(for: participant.id) == .notStarted {
@@ -188,7 +187,7 @@ struct AARVideoTile: View {
             ZStack {
                 InstructorColor.aarVideoSlotSurface
                 ProgressView("영상을 불러오는 중")
-                    .foregroundStyle(InstructorColor.textSecondary)
+                    .foregroundStyle(InstructorColor.aarContentSecondary)
             }
         }
     }
@@ -198,7 +197,7 @@ struct AARVideoTile: View {
             InstructorColor.aarVideoSlotSurface.opacity(0.94)
             Label(text, systemImage: "video.slash")
                 .font(DSTypography.label)
-                .foregroundStyle(InstructorColor.textSecondary)
+                .foregroundStyle(InstructorColor.aarContentSecondary)
         }
     }
 
@@ -215,10 +214,10 @@ struct AARVideoTile: View {
             Text("\(slotNumber)  \(participant.name)")
                 .font(DSTypography.label)
                 .fontWeight(.bold)
-                .foregroundStyle(InstructorColor.textPrimary)
+                .foregroundStyle(InstructorColor.aarContentPrimary)
 
             Circle()
-                .fill(InstructorColor.actionPrimary)
+                .fill(InstructorColor.aarActionPrimary)
                 .frame(width: 8, height: 8)
                 .accessibilityHidden(true)
         }
@@ -233,11 +232,10 @@ struct AARVideoTile: View {
 private struct AARPlayerView: UIViewRepresentable {
     let player: AVPlayer
     let isMuted: Bool
-    let videoGravity: AVLayerVideoGravity
 
     func makeUIView(context: Context) -> PlayerLayerView {
         let view = PlayerLayerView()
-        view.playerLayer.videoGravity = videoGravity
+        view.playerLayer.videoGravity = .resizeAspect
         view.playerLayer.player = player
         player.isMuted = isMuted
         return view
@@ -245,7 +243,6 @@ private struct AARPlayerView: UIViewRepresentable {
 
     func updateUIView(_ view: PlayerLayerView, context: Context) {
         if view.playerLayer.player !== player { view.playerLayer.player = player }
-        if view.playerLayer.videoGravity != videoGravity { view.playerLayer.videoGravity = videoGravity }
         if player.isMuted != isMuted { player.isMuted = isMuted }
     }
 

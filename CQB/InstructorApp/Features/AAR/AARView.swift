@@ -33,7 +33,7 @@ struct AARView: View {
                 .frame(height: AARLayout.timelineHeight)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(InstructorColor.canvas.ignoresSafeArea())
+        .background(InstructorColor.aarCanvas.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .alert("AAR을 종료하시겠습니까?", isPresented: $showsFinishConfirmation) {
             Button("확인", action: store.finishAAR)
@@ -55,11 +55,11 @@ struct AARView: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text(store.currentSession?.name ?? "AAR")
                     .dsTextStyle(DSTypography.headingSemiBold24)
-                    .foregroundStyle(InstructorColor.textPrimary)
+                    .foregroundStyle(InstructorColor.aarContentPrimary)
 
                 Text(sessionDateText)
                     .dsTextStyle(DSTypography.bodyRegular16)
-                    .foregroundStyle(InstructorColor.textPrimary)
+                    .foregroundStyle(InstructorColor.aarContentPrimary)
             }
 
             Spacer()
@@ -74,7 +74,7 @@ struct AARView: View {
                     Text("AAR 종료")
                         .font(.caption)
                 }
-                    .foregroundStyle(InstructorColor.actionPrimary)
+                    .foregroundStyle(InstructorColor.aarActionPrimary)
                     .frame(width: 56, height: 60)
                     .contentShape(.rect)
             }
@@ -82,7 +82,7 @@ struct AARView: View {
             .accessibilityIdentifier("aar.finish")
         }
         .padding(.horizontal, AARLayout.headerHorizontalPadding)
-        .background(InstructorColor.canvas)
+        .background(InstructorColor.aarCanvas)
     }
 
     @ViewBuilder
@@ -90,9 +90,9 @@ struct AARView: View {
         if store.trainingRecords.failedCount > 0 {
             Text("\(store.trainingRecords.failedCount)명의 기록 처리가 실패했습니다. 해당 기록의 재생 자료가 없을 수 있습니다.")
                 .dsTextStyle(DSTypography.captionRegular14)
-                .foregroundStyle(InstructorColor.textSecondary)
+                .foregroundStyle(InstructorColor.aarContentSecondary)
                 .padding(DSSpacing.s12)
-                .background(InstructorColor.surfaceRaised.opacity(0.94))
+                .background(InstructorColor.aarSurfaceRaised.opacity(0.94))
                 .clipShape(.rect(cornerRadius: DSRadius.small))
                 .padding(DSSpacing.s12)
                 .accessibilityIdentifier("aar.recordingFailures")

@@ -42,14 +42,14 @@ struct AARTimelineView: View {
 
                 Text("\(timeLabel(aarStore.playbackPosition)) / \(timeLabel(aarStore.playbackDuration))")
                     .dsTextStyle(DSTypography.bodyRegular24)
-                    .foregroundStyle(InstructorColor.textPrimary)
+                    .foregroundStyle(InstructorColor.aarContentPrimary)
                     .monospacedDigit()
             }
             .padding(.top, 12)
             .padding(.leading, AARLayout.timelineHorizontalPadding)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(InstructorColor.playerSurface)
+        .background(InstructorColor.aarPlayerSurface)
     }
 
     private func skipButton(
@@ -62,7 +62,7 @@ struct AARTimelineView: View {
         } label: {
             Image(systemName: systemImage)
                 .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(InstructorColor.textPrimary)
+                .foregroundStyle(InstructorColor.aarContentPrimary)
                 .frame(width: 44, height: 44)
                 .contentShape(.rect)
         }

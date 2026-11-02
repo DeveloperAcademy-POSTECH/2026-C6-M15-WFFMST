@@ -9,13 +9,13 @@ enum InstructorColor {
     // MARK: - Surfaces
 
     /// Figma: `color/canvas`
-    static let canvas = DSColor.backgroundPrimary
+    static let canvas = DSColor.background
 
     /// Figma: `color/surface/base`
-    static let surfaceBase = DSColor.surfacePrimary
+    static let surfaceBase = DSColor.area1
 
     /// Figma: `color/surface/raised`
-    static let surfaceRaised = DSColor.backgroundElevated
+    static let surfaceRaised = DSColor.area2
 
     /// Figma: `Liquid Glass - Regular - Medium`의 불투명 기본 면(#1A1A1A).
     static let savingOverlaySurface = Color("InstructorSavingOverlaySurface")
@@ -23,13 +23,13 @@ enum InstructorColor {
     // MARK: - Actions and borders
 
     /// Figma: `color/action/primary`
-    static let actionPrimary = DSColor.actionPrimary
+    static let actionPrimary = DSColor.main
 
     /// Figma: `color/action/disabled`
-    static let actionDisabled = DSColor.actionPrimaryDisabled
+    static let actionDisabled = Color("InstructorActionDisabled")
 
     /// Figma: `color/border/default`
-    static let borderDefault = DSColor.borderPrimary
+    static let borderDefault = DSColor.area3
 
     /// 도면 목록의 미선택 indicator와 미리보기 action border에 쓰는 Figma Gray/200.
     static let floorPlanSelectionIdle = DSPalette.Gray.g200
@@ -38,10 +38,10 @@ enum InstructorColor {
     // MARK: - Content
 
     /// Figma: `color/text/primary`
-    static let textPrimary = DSColor.contentPrimary
+    static let textPrimary = DSColor.white
 
     /// Figma: `color/text/secondary`
-    static let textSecondary = DSColor.contentSecondary
+    static let textSecondary = DSColor.darkGreen
 
     /// Figma: `color/icon/check`
     static let iconCheck = DSColor.white
@@ -69,13 +69,21 @@ enum InstructorColor {
     // MARK: - Player
 
     /// Figma: `color/player/surface`
-    static let playerSurface = DSPalette.Gray.g900
+    static let playerSurface = DSColor.black
 
     /// Figma: `color/player/play`
     static let playerPlay = Color("InstructorPlayerPlay")
 
     // MARK: - AAR
 
+    static let aarCanvas = DSColor.backgroundPrimary
+    static let aarSurfaceRaised = DSColor.backgroundElevated
+    static let aarActionPrimary = DSColor.actionPrimary
+    static let aarActionDisabled = DSColor.actionPrimaryDisabled
+    static let aarBorder = DSColor.borderPrimary
+    static let aarContentPrimary = DSColor.contentPrimary
+    static let aarContentSecondary = DSColor.contentSecondary
+    static let aarPlayerSurface = DSPalette.Gray.g900
     static let aarMapSurface = DSPalette.Gray.g800
     static let aarVideoSlotSurface = DSPalette.Gray.g700
     static let aarPanelLabel = DSPalette.Gray.g200

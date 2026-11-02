@@ -44,8 +44,8 @@ private struct AARVideoPanel: View {
                     Image(systemName: "viewfinder")
                         .font(.title3)
                         .foregroundStyle(store.canOpenAARVideoScreen
-                            ? InstructorColor.textPrimary
-                            : InstructorColor.actionDisabled)
+                            ? InstructorColor.aarContentPrimary
+                            : InstructorColor.aarActionDisabled)
                         .frame(width: 44, height: 44)
                         .contentShape(.rect)
                 }

@@ -116,7 +116,7 @@ struct AARMovementView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label("위치 확인 불가", systemImage: "location.slash")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(InstructorColor.textSecondary)
+                    .foregroundStyle(InstructorColor.aarContentSecondary)
 
                 ForEach(participants) { participant in
                     Button {
@@ -127,7 +127,7 @@ struct AARMovementView: View {
                                 .opacity(0.35)
                             Text(participant.displayName)
                                 .font(.caption)
-                                .foregroundStyle(InstructorColor.textSecondary)
+                                .foregroundStyle(InstructorColor.aarContentSecondary)
                         }
                         .contentShape(.rect)
                     }
@@ -140,11 +140,11 @@ struct AARMovementView: View {
                 }
             }
             .padding(12)
-            .background(InstructorColor.surfaceRaised.opacity(0.94))
+            .background(InstructorColor.aarSurfaceRaised.opacity(0.94))
             .clipShape(.rect(cornerRadius: 4))
             .overlay {
                 RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
+                    .strokeBorder(InstructorColor.aarBorder, lineWidth: 1)
             }
             .accessibilityIdentifier("aar.unavailablePositions")
         }
@@ -179,14 +179,14 @@ struct AARMovementView: View {
     private var floorPlanUnavailableState: some View {
         if aarStore.isLoading {
             ProgressView("도면과 동선을 불러오는 중")
-                .foregroundStyle(InstructorColor.textSecondary)
+                .foregroundStyle(InstructorColor.aarContentSecondary)
         } else {
             ContentUnavailableView(
                 "도면 미리보기 없음",
                 systemImage: "map",
                 description: Text("선택한 훈련 도면을 불러오지 못했습니다.")
             )
-            .foregroundStyle(InstructorColor.textSecondary)
+            .foregroundStyle(InstructorColor.aarContentSecondary)
         }
     }
 
@@ -198,17 +198,17 @@ struct AARMovementView: View {
 
         return ZStack {
             Circle()
-                .fill(slotNumber == nil ? InstructorColor.aarParticipantMarker : InstructorColor.actionPrimary)
+                .fill(slotNumber == nil ? InstructorColor.aarParticipantMarker : InstructorColor.aarActionPrimary)
                 .frame(width: slotNumber == nil ? 26 : 48, height: slotNumber == nil ? 26 : 48)
                 .overlay {
                     Circle()
-                        .strokeBorder(InstructorColor.textPrimary, lineWidth: slotNumber == nil ? 2 : 0)
+                        .strokeBorder(InstructorColor.aarContentPrimary, lineWidth: slotNumber == nil ? 2 : 0)
                 }
 
             if let slotNumber {
                 Text("\(slotNumber)")
                     .font(markerFont)
-                    .foregroundStyle(InstructorColor.playerSurface)
+                    .foregroundStyle(InstructorColor.aarPlayerSurface)
                     .monospacedDigit()
             }
         }
@@ -218,12 +218,12 @@ struct AARMovementView: View {
             if showsName {
                 Text(participant.name)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(InstructorColor.textPrimary)
+                    .foregroundStyle(InstructorColor.aarContentPrimary)
                     .lineLimit(1)
                     .fixedSize()
                     .padding(.horizontal, 8)
                     .frame(height: 28)
-                    .background(InstructorColor.surfaceRaised.opacity(0.94))
+                    .background(InstructorColor.aarSurfaceRaised.opacity(0.94))
                     .clipShape(.capsule)
                     .offset(y: -32)
                     .allowsHitTesting(false)
