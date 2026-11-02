@@ -23,13 +23,15 @@ final class InstructorHomeNavigationTests: XCTestCase {
         XCTAssertEqual(store.phase, .home)
     }
 
-    func testSessionCreationRequiresARegisteredFloorPlan() {
+    func testSessionCreationOpensWithoutARegisteredFloorPlanAfterCatalogLoad() {
         let store = InstructorStore(floorPlans: [])
         Self.retainedStores.append(store)
 
+        store.loadFloorPlans()
         store.openSessionCreation()
 
-        XCTAssertEqual(store.phase, .home)
-        XCTAssertFalse(store.canOpenSessionCreation)
+        XCTAssertEqual(store.phase, .sessionCreation)
+        XCTAssertTrue(store.canOpenSessionCreation)
+        XCTAssertFalse(store.canCreateSession)
     }
 }
