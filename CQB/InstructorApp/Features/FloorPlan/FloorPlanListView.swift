@@ -279,7 +279,7 @@ struct FloorPlanListView: View {
     }
 }
 
-#Preview("등록된 도면") {
+#Preview("등록된 도면", traits: .landscapeLeft) {
     NavigationStack {
         FloorPlanListView()
             .environment(InstructorStore(floorPlans: [
@@ -309,7 +309,7 @@ private struct EmptyFloorPlanListPreview: View {
     }
 }
 
-#Preview("빈 상태 · 도면 0개") {
+#Preview("빈 상태 · 도면 0개", traits: .landscapeLeft) {
     EmptyFloorPlanListPreview()
         .frame(width: 1_366, height: 1_024)
         .preferredColorScheme(.dark)
