@@ -36,7 +36,10 @@ struct FloorPlanListView: View {
 
             Spacer()
 
-            Button("새 도면 추가", action: store.openFloorPlanCreation)
+            Button(action: store.openFloorPlanCreation) {
+                Text("새 도면 추가")
+                    .padding(.horizontal, DSSpacing.s20)
+            }
                 .buttonStyle(.dsPrimary)
                 .accessibilityIdentifier("floorPlan.add")
                 .disabled(store.floorPlanCatalogState != .loaded)
