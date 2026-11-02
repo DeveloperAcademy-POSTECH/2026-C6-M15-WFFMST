@@ -4,26 +4,25 @@ import SwiftUI
 struct FloorPlanListView: View {
     @Environment(InstructorStore.self) private var store
 
+    private let catalogWidthRatio: CGFloat = 465.0 / 1_262.0
+    private let minimumCatalogWidth: CGFloat = 360
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             navigationBar
                 .padding(.horizontal, DSSpacing.s40)
                 .padding(.top, DSSpacing.s40)
 
-            Spacer().frame(height: 99)
-
             Text("도면 관리")
                 .dsTextStyle(DSTypography.headingBold36)
                 .foregroundStyle(DSColor.contentPrimary)
-                .frame(height: 43, alignment: .leading)
                 .padding(.horizontal, DSSpacing.s40)
-
-            Spacer().frame(height: 18)
+                .padding(.top, 99)
+                .padding(.bottom, 18)
 
             catalogContent
                 .padding(.horizontal, DSSpacing.s40)
-
-            Spacer(minLength: DSSpacing.s60)
+                .padding(.bottom, DSSpacing.s60)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(DSColor.backgroundPrimary.ignoresSafeArea())
@@ -45,7 +44,6 @@ struct FloorPlanListView: View {
 
             Button("새 도면 추가", action: store.openFloorPlanCreation)
                 .buttonStyle(.dsPrimary)
-                .frame(width: 180, height: DSSize.controlHeight)
                 .accessibilityIdentifier("floorPlan.add")
                 .disabled(store.floorPlanCatalogState != .loaded)
         }
@@ -73,12 +71,21 @@ struct FloorPlanListView: View {
             catalogStatus(title: "등록된 도면이 없습니다.", systemImage: "map")
                 .accessibilityIdentifier("floorPlan.catalog.empty")
         } else {
-            HStack(spacing: DSSpacing.s24) {
-                floorPlanCatalog
-                    .frame(minWidth: 360, idealWidth: 465, maxWidth: 465)
+            GeometryReader { proxy in
+                let distributableWidth = max(0, proxy.size.width - DSSpacing.s24)
+                let catalogWidth = max(
+                    minimumCatalogWidth,
+                    distributableWidth * catalogWidthRatio
+                )
 
-                previewPanel
-                    .frame(maxWidth: .infinity)
+                HStack(spacing: DSSpacing.s24) {
+                    floorPlanCatalog
+                        .frame(width: catalogWidth)
+
+                    previewPanel
+                        .frame(maxWidth: .infinity)
+                        .layoutPriority(1)
+                }
             }
         }
     }
@@ -132,7 +139,8 @@ struct FloorPlanListView: View {
             }
             .padding(.leading, 22)
             .padding(.trailing, DSSpacing.s20)
-            .frame(maxWidth: .infinity, minHeight: 95, maxHeight: 95, alignment: .leading)
+            .padding(.vertical, DSSpacing.s16)
+            .frame(maxWidth: .infinity, minHeight: 95, alignment: .leading)
             .background(isSelected ? DSColor.surfaceSelected : DSColor.surfacePrimary)
             .clipShape(.rect(cornerRadius: DSRadius.large))
             .contentShape(.rect)
@@ -182,7 +190,8 @@ struct FloorPlanListView: View {
                     }
                     .dsTextStyle(DSTypography.headingSemiBold20)
                     .foregroundStyle(DSColor.contentPrimary)
-                    .frame(width: 180, height: DSSize.controlHeight)
+                    .padding(.horizontal, DSSpacing.s20)
+                    .frame(minHeight: DSSize.controlHeight)
                     .background(DSColor.surfacePrimary)
                     .clipShape(Capsule())
                     .overlay {
