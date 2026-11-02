@@ -1554,7 +1554,7 @@ struct FloorPlanCreateView: View {
 private struct FloorPlanSavingOverlay: View {
     var body: some View {
         ZStack {
-            DSPalette.Neutral.black.opacity(0.78)
+            DSPalette.Neutral.black
                 .ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: 12) {
@@ -1577,13 +1577,14 @@ private struct FloorPlanSavingOverlay: View {
             }
             .shadow(color: .black.opacity(0.45), radius: 24, y: 8)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .transition(.opacity)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("floorPlan.uploading")
     }
 }
 
-#Preview("도면 저장 로딩", traits: .landscapeLeft) {
+#Preview("도면 저장 로딩") {
     FloorPlanSavingOverlay()
         .frame(width: 1_366, height: 1_024)
 }
