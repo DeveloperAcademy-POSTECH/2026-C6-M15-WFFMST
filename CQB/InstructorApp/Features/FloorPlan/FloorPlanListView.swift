@@ -295,11 +295,22 @@ struct FloorPlanListView: View {
     .preferredColorScheme(.dark)
 }
 
-#Preview("빈 목록") {
-    NavigationStack {
-        FloorPlanListView()
-            .environment(InstructorStore())
+private struct EmptyFloorPlanListPreview: View {
+    @State private var store = InstructorStore()
+
+    var body: some View {
+        NavigationStack {
+            FloorPlanListView()
+                .environment(store)
+        }
+        .task {
+            store.loadFloorPlans()
+        }
     }
-    .frame(width: 1_366, height: 1_024)
-    .preferredColorScheme(.dark)
+}
+
+#Preview("빈 상태 · 도면 0개") {
+    EmptyFloorPlanListPreview()
+        .frame(width: 1_366, height: 1_024)
+        .preferredColorScheme(.dark)
 }
