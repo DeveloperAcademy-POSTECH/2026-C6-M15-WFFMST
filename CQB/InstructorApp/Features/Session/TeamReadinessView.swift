@@ -46,9 +46,10 @@ struct TeamReadinessView: View {
             Button(action: requestTrainingStart) {
                 Text("훈련 시작")
                     .padding(.vertical, DSSpacing.s12)
+                    // DSPrimaryButtonStyle의 좌우 20pt padding을 포함해 최종 너비 180pt.
+                    .frame(width: 140)
             }
             .buttonStyle(.dsPrimary)
-            .frame(width: 180)
             .disabled(!store.canRequestTrainingStart)
             .accessibilityIdentifier("readiness.start")
         }

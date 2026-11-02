@@ -6,23 +6,23 @@ import SwiftUI
 struct AARVideoView: View {
     @Environment(InstructorStore.self) private var store
 
-    private let tileSpacing: CGFloat = 12
+    private let tileSpacing = AARLayout.videoGridGap
 
     var body: some View {
         let selectedParticipants = Array(store.selectedParticipants.prefix(store.maximumVideoCount))
 
         VStack(spacing: tileSpacing) {
             HStack(spacing: 12) {
-                Text("영상 비교")
-                    .font(.headline)
-                    .foregroundStyle(InstructorColor.textPrimary)
+                Text("영상 비교분석 화면")
+                    .dsTextStyle(DSTypography.bodyRegular16)
+                    .foregroundStyle(InstructorColor.aarPanelLabel)
 
                 Spacer()
 
                 Button(action: store.showAARFloorPlan) {
                     Image(systemName: "xmark")
-                        .font(.title2.weight(.medium))
-                        .foregroundStyle(InstructorColor.textPrimary)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(InstructorColor.aarContentPrimary)
                         .frame(width: 44, height: 44)
                         .contentShape(.rect)
                 }
@@ -31,9 +31,16 @@ struct AARVideoView: View {
                 .accessibilityIdentifier("aar.closeVideoScreen")
             }
             .padding(.horizontal, 16)
-            .frame(height: 52)
-            .background(InstructorColor.surfaceRaised)
-            .clipShape(.rect(cornerRadius: 4))
+            .frame(height: AARLayout.contentHeaderHeight)
+            .background(InstructorColor.aarMapSurface)
+            .clipShape(
+                UnevenRoundedRectangle(
+                    topLeadingRadius: 16,
+                    bottomLeadingRadius: 0,
+                    bottomTrailingRadius: 0,
+                    topTrailingRadius: 16
+                )
+            )
 
             GeometryReader { geometry in
                 let halfWidth = max(0, (geometry.size.width - tileSpacing) / 2)
@@ -93,10 +100,9 @@ struct AARVideoView: View {
             systemImage: "video.slash",
             description: Text("도면 화면에서 대원 마커를 선택할 수 있습니다.")
         )
-        .foregroundStyle(InstructorColor.textSecondary)
+        .foregroundStyle(InstructorColor.aarContentSecondary)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(InstructorColor.surfaceBase)
-        .clipShape(.rect(cornerRadius: 4))
+        .background(InstructorColor.aarVideoSlotSurface)
     }
 }
 
@@ -107,31 +113,20 @@ struct AARVideoTile: View {
     let participant: InstructorParticipant
     let slotNumber: Int
 
-    private let cameraAspectRatio: CGFloat = 1_672 / 941
-
     var body: some View {
-        GeometryReader { geometry in
-            let videoSize = fittedVideoSize(in: geometry.size)
-
-            ZStack {
-                InstructorColor.canvas
-
-                videoContent
-                    .frame(width: videoSize.width, height: videoSize.height)
-                    .overlay(alignment: .topLeading) {
-                        cameraLabel
-                            .padding(8)
-                    }
-                    .overlay(alignment: .topTrailing) {
-                        closeButton
-                    }
-                    .overlay(alignment: .bottomLeading) {
-                        muteButton
-                    }
-            }
+        videoContent
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .clipShape(.rect(cornerRadius: 4))
+            .clipped()
+            .overlay(alignment: .topLeading) {
+                cameraLabel
+                    .padding(8)
+            }
+            .overlay(alignment: .topTrailing) {
+                closeButton
+            }
+            .overlay(alignment: .bottomLeading) {
+                muteButton
+            }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("영상 \(slotNumber)번, \(participant.name), \(accessibilityStatus)")
         .accessibilityIdentifier("aar.video.\(participant.id)")
@@ -142,14 +137,12 @@ struct AARVideoTile: View {
             store.toggleParticipantSelection(participant.id)
         } label: {
             Image(systemName: "xmark")
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(InstructorColor.textPrimary)
-                .frame(width: 36, height: 36)
-                .background(InstructorColor.playerSurface.opacity(0.72), in: Circle())
-                .contentShape(.circle)
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(InstructorColor.aarContentPrimary)
+                .frame(width: 44, height: 44)
+                .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .padding(6)
         .accessibilityLabel("\(participant.name) 영상 닫기")
         .accessibilityIdentifier("aar.video.\(participant.id).close")
     }
@@ -162,10 +155,9 @@ struct AARVideoTile: View {
         } label: {
             Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(InstructorColor.textPrimary)
+                .foregroundStyle(InstructorColor.aarContentPrimary)
                 .frame(width: 44, height: 44)
-                .background(InstructorColor.playerSurface.opacity(0.72), in: Circle())
-                .contentShape(.circle)
+                .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .padding(8)
@@ -180,7 +172,6 @@ struct AARVideoTile: View {
     private var videoContent: some View {
         switch aarStore.videos[participant.id] {
         case .ready(let player, _):
-            // AAR에서는 화면 가장자리의 정보도 필요하므로 원본 프레임 전체를 보존한다.
             AARPlayerView(
                 player: player,
                 isMuted: store.isParticipantMuted(participant.id)
@@ -194,19 +185,19 @@ struct AARVideoTile: View {
             statusMessage(reason)
         case .loading, nil:
             ZStack {
-                InstructorColor.surfaceBase
+                InstructorColor.aarVideoSlotSurface
                 ProgressView("영상을 불러오는 중")
-                    .foregroundStyle(InstructorColor.textSecondary)
+                    .foregroundStyle(InstructorColor.aarContentSecondary)
             }
         }
     }
 
     private func statusMessage(_ text: String) -> some View {
         ZStack {
-            InstructorColor.surfaceBase.opacity(0.94)
+            InstructorColor.aarVideoSlotSurface.opacity(0.94)
             Label(text, systemImage: "video.slash")
                 .font(DSTypography.label)
-                .foregroundStyle(InstructorColor.textSecondary)
+                .foregroundStyle(InstructorColor.aarContentSecondary)
         }
     }
 
@@ -222,33 +213,18 @@ struct AARVideoTile: View {
         HStack(spacing: 6) {
             Text("\(slotNumber)  \(participant.name)")
                 .font(DSTypography.label)
-                .foregroundStyle(InstructorColor.textPrimary)
+                .fontWeight(.bold)
+                .foregroundStyle(InstructorColor.aarContentPrimary)
 
             Circle()
-                .fill(InstructorColor.actionPrimary)
+                .fill(InstructorColor.aarActionPrimary)
                 .frame(width: 8, height: 8)
                 .accessibilityHidden(true)
         }
         .padding(.horizontal, 10)
-        .frame(height: 28)
-        .background(InstructorColor.surfaceBase.opacity(0.94))
-        .clipShape(.rect(cornerRadius: 4))
-    }
-
-    private func fittedVideoSize(in container: CGSize) -> CGSize {
-        guard container.width > 0, container.height > 0 else { return .zero }
-
-        if container.width / container.height > cameraAspectRatio {
-            return CGSize(
-                width: container.height * cameraAspectRatio,
-                height: container.height
-            )
-        }
-
-        return CGSize(
-            width: container.width,
-            height: container.width / cameraAspectRatio
-        )
+        .frame(height: 24)
+        .background(InstructorColor.aarMapSurface.opacity(0.94))
+        .clipShape(.rect(cornerRadius: 8))
     }
 }
 
