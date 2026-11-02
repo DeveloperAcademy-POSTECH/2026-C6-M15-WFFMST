@@ -1570,23 +1570,38 @@ private struct FloorPlanSavingOverlay: View {
             .padding(.horizontal, 22)
             .padding(.top, 24)
             .frame(width: 300, height: 185, alignment: .topLeading)
-            .background(
-                InstructorColor.savingOverlaySurface,
-                in: RoundedRectangle(cornerRadius: 16)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(DSPalette.Gray.g300.opacity(0.72), lineWidth: 1)
-            }
-            .shadow(color: DSPalette.Neutral.white.opacity(0.14), radius: 0.5)
-            .shadow(color: DSPalette.Neutral.white.opacity(0.10), radius: 0, x: 1.3)
-            .shadow(color: DSPalette.Neutral.white.opacity(0.10), radius: 0, x: -1.3)
-            .shadow(color: DSPalette.Neutral.black.opacity(0.82), radius: 24, y: 8)
+            .modifier(FloorPlanSavingGlassStyle())
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .transition(.opacity)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("floorPlan.uploading")
+    }
+}
+
+private struct FloorPlanSavingGlassStyle: ViewModifier {
+    private let shape = RoundedRectangle(cornerRadius: 16)
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(
+                    .regular.tint(InstructorColor.savingOverlaySurface),
+                    in: shape
+                )
+                .shadow(color: DSPalette.Neutral.black.opacity(0.82), radius: 24, y: 8)
+        } else {
+            content
+                .background(InstructorColor.savingOverlaySurface, in: shape)
+                .overlay {
+                    shape.stroke(DSPalette.Gray.g300.opacity(0.72), lineWidth: 1)
+                }
+                .shadow(color: DSPalette.Neutral.white.opacity(0.14), radius: 0.5)
+                .shadow(color: DSPalette.Neutral.white.opacity(0.10), radius: 0, x: 1.3)
+                .shadow(color: DSPalette.Neutral.white.opacity(0.10), radius: 0, x: -1.3)
+                .shadow(color: DSPalette.Neutral.black.opacity(0.82), radius: 24, y: 8)
+        }
     }
 }
 
