@@ -64,9 +64,6 @@ struct FloorPlanListView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityIdentifier("floorPlan.catalog.error")
-        } else if store.floorPlans.isEmpty {
-            catalogStatus(title: "등록된 도면이 없습니다.", systemImage: "map")
-                .accessibilityIdentifier("floorPlan.catalog.empty")
         } else {
             GeometryReader { proxy in
                 let distributableWidth = max(0, proxy.size.width - DSSpacing.s24)
@@ -93,14 +90,19 @@ struct FloorPlanListView: View {
                 .dsTextStyle(DSTypography.headingBold20)
                 .foregroundStyle(DSColor.contentPrimary)
 
-            ScrollView {
-                LazyVStack(spacing: DSSpacing.s4) {
-                    ForEach(store.floorPlans) { floorPlan in
-                        floorPlanRow(floorPlan)
+            if store.floorPlans.isEmpty {
+                previewStatus("등록된 도면이 없습니다.", systemImage: "map")
+                    .accessibilityIdentifier("floorPlan.catalog.empty")
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: DSSpacing.s4) {
+                        ForEach(store.floorPlans) { floorPlan in
+                            floorPlanRow(floorPlan)
+                        }
                     }
                 }
+                .scrollIndicators(.hidden)
             }
-            .scrollIndicators(.hidden)
         }
         .padding(DSSpacing.s12)
         .frame(maxHeight: .infinity, alignment: .topLeading)
