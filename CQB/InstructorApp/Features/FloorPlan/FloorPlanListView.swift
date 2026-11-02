@@ -2,41 +2,49 @@ import CQBDesignSystem
 import SwiftUI
 
 struct FloorPlanListView: View {
-    private static let addActionFont: Font = {
-        DSFonts.register()
-        return .custom("NotoSansKR-Medium", size: 16, relativeTo: .body)
-    }()
-
     @Environment(InstructorStore.self) private var store
+
+    private let catalogWidthRatio: CGFloat = 465.0 / 1_262.0
+    private let minimumCatalogWidth: CGFloat = 360
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            InstructorBackButton(action: store.goBack)
-                .padding(.bottom, 4)
+            navigationBar
+                .padding(.horizontal, DSSpacing.s40)
+                .padding(.top, DSSpacing.s40)
 
             Text("도면 관리")
-                .font(DSTypography.h1)
-                .foregroundStyle(InstructorColor.textPrimary)
-                .frame(height: 48, alignment: .leading)
-                .padding(.bottom, 16)
-
-            Text("등록된 도면을 확인하고 마스크를 수정하거나 목록에서 삭제할 수 있습니다.")
-                .font(DSTypography.body)
-                .foregroundStyle(InstructorColor.textSecondary)
-                .frame(height: 24, alignment: .leading)
-                .padding(.bottom, 48)
-
-            floorPlanHeader
-                .padding(.bottom, 24)
+                .dsTextStyle(DSTypography.headingBold36)
+                .foregroundStyle(DSColor.contentPrimary)
+                .padding(.horizontal, DSSpacing.s40)
+                .padding(.top, 100)
+                .padding(.bottom, 25)
 
             catalogContent
+                .padding(.horizontal, DSSpacing.s40)
+                .padding(.bottom, DSSpacing.s60)
         }
-        .padding(.top, 32)
-        .padding(.horizontal, 48)
-        .padding(.bottom, 32)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(InstructorColor.canvas.ignoresSafeArea())
+        .background(DSColor.backgroundPrimary.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+    }
+
+    private var navigationBar: some View {
+        HStack(spacing: 0) {
+            FloorPlanBackButton(action: store.goBack)
+                .disabled(!store.canGoBack)
+
+            Spacer()
+
+            Button(action: store.openFloorPlanCreation) {
+                Text("새 도면 추가")
+                    .padding(.horizontal, DSSpacing.s20)
+            }
+                .buttonStyle(.dsPrimary)
+                .accessibilityIdentifier("floorPlan.add")
+                .disabled(store.floorPlanCatalogState != .loaded)
+        }
+        .frame(height: DSSize.controlHeight)
     }
 
     @ViewBuilder
@@ -48,234 +56,233 @@ struct FloorPlanListView: View {
             )
             .accessibilityIdentifier("floorPlan.catalog.loading")
         } else if let error = store.floorPlanCatalogError {
-            VStack(spacing: 20) {
+            VStack(spacing: DSSpacing.s20) {
                 catalogStatus(title: error, systemImage: "exclamationmark.triangle")
-                ActionButton("다시 불러오기", action: store.retryFloorPlanCatalogLoad)
-                    .frame(width: 220, height: 52)
+                Button("다시 불러오기", action: store.retryFloorPlanCatalogLoad)
+                    .buttonStyle(.dsPrimary)
                     .accessibilityIdentifier("floorPlan.catalog.retry")
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityIdentifier("floorPlan.catalog.error")
-        } else if store.floorPlans.isEmpty {
-            catalogStatus(title: "등록된 도면이 없습니다.", systemImage: "map")
-                .accessibilityIdentifier("floorPlan.catalog.empty")
         } else {
-            HStack(alignment: .top, spacing: 24) {
+            GeometryReader { proxy in
+                let distributableWidth = max(0, proxy.size.width - DSSpacing.s24)
+                let catalogWidth = max(
+                    minimumCatalogWidth,
+                    distributableWidth * catalogWidthRatio
+                )
+
+                HStack(spacing: DSSpacing.s24) {
+                    floorPlanCatalog
+                        .frame(width: catalogWidth)
+
+                    previewPanel
+                        .frame(maxWidth: .infinity)
+                        .layoutPriority(1)
+                }
+            }
+        }
+    }
+
+    private var floorPlanCatalog: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.s40) {
+            Text("등록된 도면")
+                .dsTextStyle(DSTypography.headingBold20)
+                .foregroundStyle(DSColor.contentPrimary)
+
+            if store.floorPlans.isEmpty {
+                previewStatus("등록된 도면이 없습니다.", systemImage: "map")
+                    .accessibilityIdentifier("floorPlan.catalog.empty")
+            } else {
                 ScrollView {
-                    LazyVStack(spacing: 16) {
-                        ForEach(Array(store.floorPlans.enumerated()), id: \.element.id) { index, floorPlan in
-                            floorPlanRow(floorPlan, number: index + 1)
+                    LazyVStack(spacing: DSSpacing.s4) {
+                        ForEach(store.floorPlans) { floorPlan in
+                            floorPlanRow(floorPlan)
                         }
                     }
                 }
                 .scrollIndicators(.hidden)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                previewPanel
-                    .frame(width: 440)
-                    .frame(maxHeight: .infinity)
             }
+        }
+        .padding(DSSpacing.s12)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .background(DSColor.surfacePrimary)
+        .clipShape(.rect(cornerRadius: DSRadius.large))
+        .overlay {
+            RoundedRectangle(cornerRadius: DSRadius.large)
+                .stroke(DSColor.borderPrimary, lineWidth: 1)
         }
     }
 
-    private var floorPlanHeader: some View {
-        HStack(spacing: 24) {
-            Text("등록된 도면  \(store.floorPlans.count)개")
-            Spacer()
-            Button(action: store.openFloorPlanCreation) {
-                Text("+")
-                    .font(Self.addActionFont)
-                    .foregroundStyle(InstructorColor.textPrimary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .frame(width: 56, height: 44)
-            .background(InstructorColor.borderDefault)
-            .clipShape(.rect(cornerRadius: 4))
-            .overlay {
-                RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
-            }
-            .accessibilityLabel("도면 추가")
-            .accessibilityIdentifier("floorPlan.add")
-            .disabled(store.floorPlanCatalogState != .loaded)
-        }
-        .font(DSTypography.h3)
-        .foregroundStyle(InstructorColor.textPrimary)
-        .padding(.horizontal, 16)
-        .frame(maxWidth: .infinity, minHeight: 64, maxHeight: 64)
-        .background(InstructorColor.surfaceRaised)
-        .clipShape(.rect(cornerRadius: 4))
-    }
-
-    private func catalogStatus(title: String, systemImage: String) -> some View {
-        ContentUnavailableView(title, systemImage: systemImage)
-            .foregroundStyle(InstructorColor.textSecondary)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(InstructorColor.surfaceBase)
-            .clipShape(.rect(cornerRadius: 4))
-    }
-
-    private func floorPlanRow(_ floorPlan: InstructorFloorPlan, number: Int) -> some View {
+    private func floorPlanRow(_ floorPlan: InstructorFloorPlan) -> some View {
         let isSelected = store.previewedFloorPlanID == floorPlan.id
-        return HStack(spacing: 12) {
-            Button {
-                store.selectFloorPlanPreview(floorPlan.id)
-            } label: {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(alignment: .firstTextBaseline, spacing: 12) {
-                        Text(floorPlan.name)
-                            .font(DSTypography.h2)
-                            .foregroundStyle(InstructorColor.textPrimary)
-                            .lineLimit(1)
 
-                        Text(String(format: "도면 %02d", number))
-                            .font(DSTypography.bodySmall)
-                            .foregroundStyle(InstructorColor.textSecondary)
-                    }
+        return Button {
+            store.selectFloorPlanPreview(floorPlan.id)
+        } label: {
+            HStack(spacing: DSSpacing.s32) {
+                selectionIndicator(isSelected: isSelected)
 
-                    Text(floorPlan.fileName)
-                        .font(DSTypography.body)
-                        .foregroundStyle(InstructorColor.textSecondary)
+                VStack(alignment: .leading, spacing: DSSpacing.s8) {
+                    Text(floorPlan.name)
+                        .dsTextStyle(DSTypography.headingSemiBold24)
+                        .foregroundStyle(isSelected ? DSColor.contentPrimary : DSColor.contentSecondary)
                         .lineLimit(1)
 
-                    Text("축척 설정 완료 · 기준 거리 \(floorPlan.referenceDistance, format: .number) m")
-                        .font(DSTypography.bodySmall)
-                        .foregroundStyle(InstructorColor.actionPrimary)
+                    Text("생성일 \(formattedCreatedAt(floorPlan.createdAt))")
+                        .dsTextStyle(DSTypography.bodyRegular16)
+                        .foregroundStyle(isSelected ? DSColor.contentPrimary : DSColor.contentSecondary)
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(.rect)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("\(floorPlan.name) 미리보기")
-            .accessibilityAddTraits(isSelected ? .isSelected : [])
-            .accessibilityIdentifier("floorPlan.preview.select.\(floorPlan.id)")
+            .padding(.leading, 22)
+            .padding(.trailing, DSSpacing.s20)
+            .padding(.vertical, DSSpacing.s16)
+            .frame(maxWidth: .infinity, minHeight: 95, alignment: .leading)
+            .background(isSelected ? DSColor.surfaceSelected : DSColor.surfacePrimary)
+            .clipShape(.rect(cornerRadius: DSRadius.large))
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(floorPlan.name), 생성일 \(formattedCreatedAt(floorPlan.createdAt))")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityIdentifier("floorPlan.preview.select.\(floorPlan.id)")
+    }
 
-            ActionButton("상세보기", tone: .secondary, density: .compact) {
-                store.openFloorPlanDetail(floorPlan.id)
-            }
-            .frame(width: 112, height: 44)
-            .accessibilityIdentifier("floorPlan.detail.\(floorPlan.id)")
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 20)
-        .frame(maxWidth: .infinity, minHeight: 128, alignment: .leading)
-        .background(isSelected ? InstructorColor.surfaceRaised : InstructorColor.surfaceBase)
-        .clipShape(.rect(cornerRadius: 4))
-        .overlay {
-            RoundedRectangle(cornerRadius: 4)
-                .strokeBorder(
-                    isSelected ? InstructorColor.actionPrimary : InstructorColor.borderDefault,
-                    lineWidth: isSelected ? 2 : 1
+    private func selectionIndicator(isSelected: Bool) -> some View {
+        ZStack {
+            Circle()
+                .stroke(
+                    isSelected ? DSColor.actionPrimary : InstructorColor.floorPlanSelectionIdle,
+                    lineWidth: isSelected ? 2 : 1.5
                 )
+            if isSelected {
+                Circle()
+                    .fill(DSColor.actionPrimary)
+                    .padding(4)
+            }
         }
-        .accessibilityElement(children: .contain)
+        .frame(width: DSSpacing.s24, height: DSSpacing.s24)
+        .accessibilityHidden(true)
     }
 
     private var previewPanel: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text("도면 미리보기")
-                .font(DSTypography.h3)
-                .foregroundStyle(InstructorColor.textPrimary)
+        ZStack(alignment: .topLeading) {
+            DSColor.surfaceSecondary
+            previewContent
 
-            Group {
-                switch store.floorPlanListPreviewState {
-                case .idle:
-                    previewStatus("미리볼 도면을 선택해주세요.", systemImage: "map")
-                        .accessibilityIdentifier("floorPlan.preview.idle")
-                case .loading:
-                    VStack(spacing: 16) {
-                        ProgressView()
-                        Text("도면과 최종 마스크를 불러오는 중입니다.")
-                    }
-                    .foregroundStyle(InstructorColor.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .accessibilityIdentifier("floorPlan.preview.loading")
-                case .failed(let message):
-                    VStack(spacing: 20) {
-                        previewStatus(message, systemImage: "exclamationmark.triangle")
-                        ActionButton("다시 불러오기", action: store.retryFloorPlanListPreview)
-                            .frame(width: 180, height: 48)
-                    }
-                    .accessibilityIdentifier("floorPlan.preview.error")
-                case .loaded:
-                    loadedPreview
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(InstructorColor.canvas)
-            .clipShape(.rect(cornerRadius: 4))
+            Text("도면 미리보기")
+                .dsTextStyle(DSTypography.headingBold20)
+                .foregroundStyle(DSColor.surfaceSelected)
+                .padding(DSSpacing.s20)
 
             if let floorPlan = store.previewedFloorPlan {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(floorPlan.name)
-                        .font(DSTypography.h2)
-                        .foregroundStyle(InstructorColor.textPrimary)
-                        .lineLimit(1)
-                    Text("최종 수정 \(formattedUpdatedAt(floorPlan.updatedAt))")
-                        .font(DSTypography.bodySmall)
-                        .foregroundStyle(InstructorColor.textSecondary)
+                HStack {
+                    Spacer()
+                    Button("상세보기 및 편집", action: store.openPreviewedFloorPlanDetail)
+                    .dsTextStyle(DSTypography.headingSemiBold20)
+                    .foregroundStyle(DSColor.contentPrimary)
+                    .padding(.horizontal, DSSpacing.s20)
+                    .frame(minHeight: DSSize.controlHeight)
+                    .background(DSColor.surfacePrimary)
+                    .clipShape(Capsule())
+                    .overlay {
+                        Capsule()
+                            .stroke(InstructorColor.floorPlanPreviewActionBorder, lineWidth: 1)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!store.canOpenPreviewedFloorPlanDetail)
+                    .accessibilityIdentifier("floorPlan.detail.\(floorPlan.id)")
                 }
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("floorPlan.preview.metadata")
+                .padding(.top, DSSpacing.s12)
+                .padding(.trailing, DSSpacing.s12)
             }
         }
-        .padding(20)
-        .background(InstructorColor.surfaceBase)
-        .clipShape(.rect(cornerRadius: 4))
-        .overlay {
-            RoundedRectangle(cornerRadius: 4)
-                .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
+        .frame(maxHeight: .infinity)
+        .clipShape(.rect(cornerRadius: DSRadius.large))
+    }
+
+    @ViewBuilder
+    private var previewContent: some View {
+        switch store.floorPlanListPreviewState {
+        case .idle:
+            previewStatus("미리볼 도면을 선택해주세요.", systemImage: "map")
+                .accessibilityIdentifier("floorPlan.preview.idle")
+        case .loading:
+            VStack(spacing: DSSpacing.s16) {
+                ProgressView()
+                Text("도면을 불러오는 중입니다.")
+            }
+            .foregroundStyle(DSColor.contentTertiary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityIdentifier("floorPlan.preview.loading")
+        case .failed(let message):
+            VStack(spacing: DSSpacing.s20) {
+                previewStatus(message, systemImage: "exclamationmark.triangle")
+                Button("다시 불러오기", action: store.retryFloorPlanListPreview)
+                    .buttonStyle(.dsPrimary)
+            }
+            .padding(DSSpacing.s40)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityIdentifier("floorPlan.preview.error")
+        case .loaded:
+            loadedPreview
         }
     }
 
     @ViewBuilder
     private var loadedPreview: some View {
-        if let image = store.floorPlanListPreviewImage,
-           let mask = store.floorPlanListPreviewMaskImage {
-            ZStack {
+        if let image = store.floorPlanListPreviewImage {
+            GeometryReader { proxy in
                 Image(uiImage: image)
                     .resizable()
                     .interpolation(.high)
-                    .scaledToFit()
-                Image(uiImage: mask)
-                    .resizable()
-                    .interpolation(.none)
-                    .scaledToFit()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .clipped()
             }
-            .padding(16)
+            // 세로로 긴 aspect-fill 이미지의 hit 영역이 목록까지 확장되지 않게 한다.
+            .allowsHitTesting(false)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("선택한 도면과 최종 마스크 미리보기")
+            .accessibilityLabel("선택한 도면 미리보기")
             .accessibilityIdentifier("floorPlan.preview.image")
         } else {
             previewStatus("도면 미리보기를 표시할 수 없습니다.", systemImage: "map")
         }
     }
 
+    private func catalogStatus(title: String, systemImage: String) -> some View {
+        ContentUnavailableView(title, systemImage: systemImage)
+            .foregroundStyle(DSColor.contentTertiary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(DSColor.surfacePrimary)
+            .clipShape(.rect(cornerRadius: DSRadius.large))
+    }
+
     private func previewStatus(_ title: String, systemImage: String) -> some View {
         ContentUnavailableView(title, systemImage: systemImage)
-            .foregroundStyle(InstructorColor.textSecondary)
+            .foregroundStyle(DSColor.contentTertiary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func formattedUpdatedAt(_ date: Date) -> String {
-        date.formatted(
-            .dateTime
-                .year().month(.twoDigits).day(.twoDigits)
-                .hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)
-                .locale(Locale(identifier: "ko_KR@hours=h23"))
-        )
+    private func formattedCreatedAt(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "ko_KR")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy.MM.dd"
+        return formatter.string(from: date)
     }
 }
 
-#Preview("등록된 도면") {
+#Preview("등록된 도면", traits: .landscapeLeft) {
     NavigationStack {
         FloorPlanListView()
             .environment(InstructorStore(floorPlans: [
                 InstructorFloorPlan(
                     id: "preview-plan",
-                    name: "훈련장 A",
+                    name: "훈련장 A 도면 v1",
                     fileName: "훈련장 A 도면.png",
                     referenceDistance: 15
                 )
@@ -285,11 +292,22 @@ struct FloorPlanListView: View {
     .preferredColorScheme(.dark)
 }
 
-#Preview("빈 목록") {
-    NavigationStack {
-        FloorPlanListView()
-            .environment(InstructorStore())
+private struct EmptyFloorPlanListPreview: View {
+    @State private var store = InstructorStore()
+
+    var body: some View {
+        NavigationStack {
+            FloorPlanListView()
+                .environment(store)
+        }
+        .task {
+            store.loadFloorPlans()
+        }
     }
-    .frame(width: 1_366, height: 1_024)
-    .preferredColorScheme(.dark)
+}
+
+#Preview("빈 상태 · 도면 0개", traits: .landscapeLeft) {
+    EmptyFloorPlanListPreview()
+        .frame(width: 1_366, height: 1_024)
+        .preferredColorScheme(.dark)
 }

@@ -5,15 +5,13 @@ import UniformTypeIdentifiers
 
 nonisolated struct FloorPlanListPreviewSnapshot: Sendable {
     let imagePNGData: Data
-    let maskPNGData: Data
-    let maskScale: Double
 }
 
 nonisolated protocol FloorPlanListPreviewLoading: Sendable {
     func load(_ floorPlan: InstructorFloorPlan) async throws -> FloorPlanListPreviewSnapshot
 }
 
-/// 목록에서 사용할 축소 도면과 최종 마스크를 reference 단위로 한 번만 준비한다.
+/// 목록에서 사용할 축소 도면 이미지를 reference 단위로 한 번만 준비한다.
 actor LocalFloorPlanListPreviewLoader: FloorPlanListPreviewLoading {
     static let defaultMemoryLimit = 32 * 1_024 * 1_024
 
@@ -61,22 +59,18 @@ actor LocalFloorPlanListPreviewLoader: FloorPlanListPreviewLoading {
             let maximumPixelSize = maximumPixelSize
             let task = Task.detached(priority: .userInitiated) {
                 let imagePNG: Data
-                let grid: LocalObstacleGrid
                 if let registration = floorPlan.registeredPlan {
                     imagePNG = registration.image.pngData
-                    grid = registration.resolvedGrid
                 } else {
                     let files = try await repository.download(floorPlan.reference)
-                    let validated = try LocalFloorPlanFileValidator.validate(
+                    _ = try LocalFloorPlanFileValidator.validate(
                         files: files,
                         reference: floorPlan.reference
                     )
                     imagePNG = files.imagePNG
-                    grid = validated.grid
                 }
                 return try LocalFloorPlanListPreviewRenderer.render(
                     imagePNG: imagePNG,
-                    grid: grid,
                     maximumPixelSize: maximumPixelSize
                 )
             }
@@ -140,7 +134,7 @@ actor LocalFloorPlanListPreviewLoader: FloorPlanListPreviewLoading {
 
     private func storeInMemory(_ snapshot: FloorPlanListPreviewSnapshot, key: String) {
         accessCounter &+= 1
-        let byteCount = snapshot.imagePNGData.count + snapshot.maskPNGData.count
+        let byteCount = snapshot.imagePNGData.count
         memory[key] = MemoryEntry(snapshot: snapshot, byteCount: byteCount, access: accessCounter)
 
         var total = memory.values.reduce(0) { $0 + $1.byteCount }
@@ -155,17 +149,12 @@ actor LocalFloorPlanListPreviewLoader: FloorPlanListPreviewLoading {
 nonisolated enum LocalFloorPlanListPreviewRenderer {
     static func render(
         imagePNG: Data,
-        grid: LocalObstacleGrid,
         maximumPixelSize: Int
     ) throws -> FloorPlanListPreviewSnapshot {
         try Task.checkCancellation()
         let imagePNGData = try thumbnailPNGData(from: imagePNG, maximumPixelSize: maximumPixelSize)
         try Task.checkCancellation()
-        return FloorPlanListPreviewSnapshot(
-            imagePNGData: imagePNGData,
-            maskPNGData: try LocalFloorPlanMaskRenderer.pngData(grid: grid),
-            maskScale: 1 / Double(grid.cellSizePixels)
-        )
+        return FloorPlanListPreviewSnapshot(imagePNGData: imagePNGData)
     }
 
     private static func thumbnailPNGData(from data: Data, maximumPixelSize: Int) throws -> Data {
