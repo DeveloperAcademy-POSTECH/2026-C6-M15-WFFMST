@@ -163,6 +163,7 @@ struct InstructorStoreChecks {
             pinGenerator: pins.next
         )
         store.openSessionCreation()
+        store.setTrainingName("PIN 충돌 훈련")
         store.createSession()
         await waitUntil("PIN 재시도 한도 실패") { store.sessionCreationError != nil }
         expect(repository.createdSessions.count == 5, "PIN 충돌은 최대 5회 시도")
@@ -179,6 +180,7 @@ struct InstructorStoreChecks {
             memberRepository: MemberRepositorySpy(streams: [stream.stream])
         )
         store.openSessionCreation()
+        store.setTrainingName("생성 실패 훈련")
         store.createSession()
         await waitUntil("충돌 외 생성 실패") { store.sessionCreationError != nil }
         expect(repository.createdSessions.count == 1, "충돌 외 오류는 자동 재시도하지 않음")
@@ -264,6 +266,7 @@ struct InstructorStoreChecks {
                 memberRepository: members
             )
             store.openSessionCreation()
+            store.setTrainingName("구독 상태 훈련")
             store.createSession()
             await waitUntil("최초 구독 시작") { members.observationCount == 1 }
             expect(store.memberConnectionState == .connecting, "첫 스냅샷 전 연결 중")
@@ -302,6 +305,7 @@ struct InstructorStoreChecks {
             memberRepository: MemberRepositorySpy(streams: [stream.stream])
         )
         store.openSessionCreation()
+        store.setTrainingName("구독 종료 훈련")
         store.createSession()
         await waitUntil("정상 종료 검사 준비") { store.phase == .teamReadiness }
         stream.continuation.finish()
@@ -322,6 +326,7 @@ struct InstructorStoreChecks {
                 floorPlans: [makePlan()], sessionRepository: repository, memberRepository: members
             )
             store.openSessionCreation()
+            store.setTrainingName("세션 종료 훈련")
             store.createSession()
             await waitUntil("종료 검사 세션 생성") { store.phase == .teamReadiness }
             let sessionID = store.currentSession!.id

@@ -73,4 +73,13 @@ enum InstructorColor {
 
     /// Figma: `color/player/play`
     static let playerPlay = Color("InstructorPlayerPlay")
+
+    // MARK: - Floor plan preview
+
+    /// Figma: preview image overlay, `#747474` at 20% opacity.
+    static let floorPlanPreviewOverlay = Color(
+        red: 116.0 / 255.0,
+        green: 116.0 / 255.0,
+        blue: 116.0 / 255.0
+    ).opacity(0.2)
 }

@@ -6,6 +6,25 @@ import XCTest
 
 @MainActor
 final class FloorPlanListPreviewTests: XCTestCase {
+    func testOpeningSessionCreationLoadsSelectedOriginalPreview() async {
+        let plan = makePlan(id: "session-plan")
+        let loader = PreviewLoaderStub()
+        let store = InstructorStore(
+            floorPlans: [plan],
+            floorPlanListPreviewLoader: loader
+        )
+
+        store.openSessionCreation()
+
+        XCTAssertEqual(store.selectedFloorPlanID, plan.id)
+        XCTAssertEqual(store.sessionFloorPlanPreviewState, .loading)
+        let didLoad = await waitUntil { store.sessionFloorPlanPreviewState == .loaded }
+        XCTAssertTrue(didLoad)
+        XCTAssertNotNil(store.selectedPlanImage)
+        let requestCount = await loader.callCount(for: plan.id)
+        XCTAssertEqual(requestCount, 1)
+    }
+
     func testOpeningListSelectsAndLoadsFirstPreview() async throws {
         let first = makePlan(id: "first")
         let second = makePlan(id: "second")
