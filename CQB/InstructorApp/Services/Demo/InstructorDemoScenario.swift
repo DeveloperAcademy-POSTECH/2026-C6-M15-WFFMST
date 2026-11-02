@@ -14,6 +14,11 @@ enum InstructorDemoScenario {
         UUID(uuidString: "20000000-0000-0000-0000-000000000085")!,
         UUID(uuidString: "20000000-0000-0000-0000-000000000086")!
     ]
+    /// 이전 훈련 기록 샘플. 끝난 세션으로 미리 넣어 두어 기록을 누르면 바로 AAR을 볼 수 있다.
+    private static let sampleSessionIDs = [
+        UUID(uuidString: "40000000-0000-0000-0000-000000000126")!,
+        UUID(uuidString: "40000000-0000-0000-0000-000000000127")!
+    ]
 
     @MainActor
     struct Environment {
@@ -24,13 +29,16 @@ enum InstructorDemoScenario {
     @MainActor
     static func makeEnvironment(processingDelay: Duration = .seconds(1)) -> Environment {
         let plan = makeFloorPlan()
-        let sessionRepository = InstructorDemoSessionRepository()
+        let samples = makeSampleHistory(floorPlan: plan)
+        let sessionRepository = InstructorDemoSessionRepository(sessions: samples.map(\.session))
         let memberRepository = InstructorDemoMemberRepository(memberIDs: memberIDs)
         let recordingRepository = InstructorDemoRecordingRepository(
             memberIDs: memberIDs,
             sessionRepository: sessionRepository,
-            processingDelay: processingDelay
+            processingDelay: processingDelay,
+            completedSessionIDs: Set(sampleSessionIDs)
         )
+        let videoChunkRepository = InstructorDemoVideoChunkRepository(memberIDs: memberIDs)
         let store = InstructorStore(
             floorPlans: [plan],
             floorPlanFileRepository: DemoFloorPlanFileRepository(),
@@ -38,6 +46,11 @@ enum InstructorDemoScenario {
             sessionRepository: sessionRepository,
             memberRepository: memberRepository,
             recordingRepository: recordingRepository,
+            trainingVideoDeleter: RecordedTrainingVideoDeleter(
+                recordingRepository: recordingRepository,
+                videoChunkRepository: videoChunkRepository
+            ),
+            trainingHistory: samples.map(\.record),
             pinGenerator: { "012345" }
         )
         store.setTrainingName("TestFlight 데모 훈련")
@@ -51,7 +64,7 @@ enum InstructorDemoScenario {
                 floorPlan: plan.reference
             ),
             floorPlanFileRepository: DemoFloorPlanFileRepository(),
-            videoChunkRepository: InstructorDemoVideoChunkRepository(memberIDs: memberIDs)
+            videoChunkRepository: videoChunkRepository
         )
         return Environment(store: store, aarStore: aarStore)
     }
@@ -59,6 +72,34 @@ enum InstructorDemoScenario {
     @MainActor
     static func makeStore() -> InstructorStore {
         makeEnvironment().store
+    }
+
+    /// 데모 영상 길이(30초)에 맞춘 지난 훈련 두 건
+    private static func makeSampleHistory(
+        floorPlan: InstructorFloorPlan
+    ) -> [(session: Session, record: TrainingHistoryRecord)] {
+        let names = ["데모 거점 진입 훈련", "데모 복도 수색 훈련"]
+        return sampleSessionIDs.enumerated().map { index, sessionID in
+            let startedAt = Date.now.addingTimeInterval(-Double(index + 1) * 86_400)
+            let session = Session(
+                id: sessionID,
+                pin: "00012\(index)",
+                name: names[index],
+                status: .ended,
+                startedAt: startedAt,
+                floorPlan: floorPlan.reference
+            )
+            let record = TrainingHistoryRecord(
+                sessionID: sessionID,
+                trainingName: names[index],
+                floorPlan: floorPlan.reference,
+                floorPlanName: floorPlan.name,
+                participantNames: memberIDs.indices.map { "데모 대원 \($0 + 1)" },
+                startedAt: startedAt,
+                endedAt: startedAt.addingTimeInterval(30)
+            )
+            return (session, record)
+        }
     }
 
     @MainActor
@@ -180,8 +221,12 @@ enum InstructorDemoScenario {
 
 private final class InstructorDemoSessionRepository: SessionRepository, @unchecked Sendable {
     private let lock = NSLock()
-    private var sessions: [UUID: Session] = [:]
+    private var sessions: [UUID: Session]
     private var observers: [UUID: [UUID: AsyncThrowingStream<Session, Error>.Continuation]] = [:]
+
+    init(sessions: [Session] = []) {
+        self.sessions = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
+    }
 
     func createSession(_ session: Session) async throws {
         save(session)
@@ -296,6 +341,8 @@ private final class InstructorDemoRecordingRepository: RecordingRepository, @unc
     let memberIDs: [UUID]
     let sessionRepository: InstructorDemoSessionRepository
     let processingDelay: Duration
+    /// 이미 처리가 끝난 샘플 세션. 기록을 바로 완료 상태로 돌려준다.
+    let completedSessionIDs: Set<UUID>
     private let lock = NSLock()
     private var recordings: [UUID: [Recording]] = [:]
     private var scheduledSessions: Set<UUID> = []
@@ -304,11 +351,13 @@ private final class InstructorDemoRecordingRepository: RecordingRepository, @unc
     init(
         memberIDs: [UUID],
         sessionRepository: InstructorDemoSessionRepository,
-        processingDelay: Duration
+        processingDelay: Duration,
+        completedSessionIDs: Set<UUID> = []
     ) {
         self.memberIDs = memberIDs
         self.sessionRepository = sessionRepository
         self.processingDelay = processingDelay
+        self.completedSessionIDs = completedSessionIDs
     }
 
     func startRecording(_ recording: Recording) async throws {}
@@ -317,11 +366,13 @@ private final class InstructorDemoRecordingRepository: RecordingRepository, @unc
     func observeRecordings(sessionID: UUID) -> AsyncThrowingStream<[Recording], Error> {
         return AsyncThrowingStream { continuation in
             let token = UUID()
+            let isCompleted = completedSessionIDs.contains(sessionID)
             let (current, shouldSchedule) = lock.withLock { () -> ([Recording], Bool) in
-                let current = recordings[sessionID] ?? makeRecordings(sessionID: sessionID, state: .finishing)
+                let current = recordings[sessionID]
+                    ?? makeRecordings(sessionID: sessionID, state: isCompleted ? .done : .finishing)
                 recordings[sessionID] = current
                 observers[sessionID, default: [:]][token] = continuation
-                return (current, scheduledSessions.insert(sessionID).inserted)
+                return (current, !isCompleted && scheduledSessions.insert(sessionID).inserted)
             }
             continuation.yield(current)
             if shouldSchedule { scheduleCompletion(sessionID: sessionID) }
