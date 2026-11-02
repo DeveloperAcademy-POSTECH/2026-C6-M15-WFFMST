@@ -212,9 +212,8 @@ struct TrainingSessionCreateView: View {
                     Image(uiImage: image)
                         .resizable()
                         .interpolation(.high)
-                        .scaledToFill()
+                        .scaledToFit()
                         .frame(width: proxy.size.width, height: proxy.size.height)
-                        .clipped()
                         .allowsHitTesting(false)
                         .accessibilityLabel("선택한 훈련 도면")
 
