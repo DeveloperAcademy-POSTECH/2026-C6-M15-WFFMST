@@ -74,7 +74,8 @@ struct LocalFloorPlanCanvas: UIViewRepresentable {
     }
 }
 
-final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasViewDelegate {
+final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasViewDelegate,
+                                      UIGestureRecognizerDelegate {
     var onStroke: ((LocalEditStroke) -> Void)?
     var onPoint: ((LocalPlanPoint) -> Void)?
     var onScanStartTap: (() -> Void)?
@@ -92,6 +93,19 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
     private let canvasView = PKCanvasView()
     private lazy var placementTap = UITapGestureRecognizer(target: self, action: #selector(placePoint(_:)))
     private lazy var scaleDrag = UIPanGestureRecognizer(target: self, action: #selector(dragScaleMarker(_:)))
+    private lazy var livePreviewGesture: UILongPressGestureRecognizer = {
+        let gesture = UILongPressGestureRecognizer(target: self, action: #selector(trackDrawingGesture(_:)))
+        gesture.minimumPressDuration = 0
+        gesture.allowableMovement = .greatestFiniteMagnitude
+        gesture.numberOfTouchesRequired = 1
+        gesture.cancelsTouchesInView = false
+        gesture.delegate = self
+        gesture.allowedTouchTypes = [
+            NSNumber(value: UITouch.TouchType.direct.rawValue),
+            NSNumber(value: UITouch.TouchType.pencil.rawValue)
+        ]
+        return gesture
+    }()
     private var tool: LocalCanvasTool = .move
     private var normalizedDiameter = 0.01
     private var imageSize: CGSize = .zero
@@ -109,6 +123,7 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
     private var appliedMask: UIImage?
     private var completionTask: DispatchWorkItem?
     private var strokeContext: (mode: LocalEditMode, diameter: Double)?
+    private var liveBrushPoints: [LocalPlanPoint] = []
     private var draggedScaleMarker: LocalScaleMarker?
     private var lastReportedDisplayScale: CGFloat?
 
@@ -185,7 +200,7 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
         let diameterChanged = self.normalizedDiameter != diameter
         self.normalizedDiameter = diameter
         markersView.update(selection: selection, pendingBrushStrokes: pendingBrushStrokes,
-                           brushDiameter: diameter, scaleA: scaleA, scaleB: scaleB,
+                           scaleA: scaleA, scaleB: scaleB,
                            scaleLabel: scaleLabel, scaleALabel: scaleALabel,
                            scaleBLabel: scaleBLabel, scaleMarkerAppearance: scaleMarkerAppearance,
                            checkpointMarkers: checkpointMarkers,
@@ -206,8 +221,11 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
         completionTask?.cancel()
         completionTask = nil
         canvasView.delegate = nil
+        livePreviewGesture.delegate = nil
         scrollView.delegate = nil
         strokeContext = nil
+        liveBrushPoints = []
+        markersView.setLiveBrushStrokes([])
         draggedScaleMarker = nil
     }
 
@@ -254,6 +272,7 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
         canvasView.isScrollEnabled = false
         canvasView.drawingPolicy = .anyInput
         canvasView.delegate = self
+        canvasView.addGestureRecognizer(livePreviewGesture)
         contentView.addSubview(canvasView)
         markersView.backgroundColor = .clear
         markersView.isOpaque = false
@@ -284,9 +303,12 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
 
     private func updateInkTool() {
         guard !isUsingTool, !inputSuspended else { return }
-        let width = CGFloat(normalizedDiameter) * max(1, min(imageSize.width, imageSize.height))
+        let width = PKInkingTool.InkType.monoline.defaultWidth
         guard appliedInkWidth != width || appliedInkTool != tool else { return }
-        canvasView.tool = PKInkingTool(.monoline, color: UIColor.systemOrange.withAlphaComponent(0.7), width: width)
+        // PencilKit clamps monoline ink to its own width range. Keep its ink
+        // transparent and render the visible preview from the same normalized
+        // diameter used by the final mask.
+        canvasView.tool = PKInkingTool(.monoline, color: .clear, width: width)
         appliedInkWidth = width
         appliedInkTool = tool
     }
@@ -411,6 +433,63 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
         }
     }
 
+    @objc private func trackDrawingGesture(_ recognizer: UIGestureRecognizer) {
+        guard tool == .brush, !inputSuspended, imageSize.width > 0, imageSize.height > 0 else {
+            clearLiveBrushPreview()
+            return
+        }
+        let position = recognizer.location(in: contentView)
+        let point = LocalPlanPoint(
+            x: min(1, max(0, position.x / imageSize.width)),
+            y: min(1, max(0, position.y / imageSize.height))
+        )
+        switch recognizer.state {
+        case .began:
+            liveBrushPoints = [point]
+            updateLiveBrushPreview()
+        case .changed:
+            liveBrushPoints.append(point)
+            updateLiveBrushPreview()
+        case .ended:
+            liveBrushPoints.append(point)
+            updateLiveBrushPreview()
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.canvasView.drawing.strokes.isEmpty else { return }
+                self.clearLiveBrushPreview()
+            }
+        case .cancelled, .failed:
+            clearLiveBrushPreview()
+        default:
+            break
+        }
+    }
+
+    private func updateLiveBrushPreview() {
+        guard !liveBrushPoints.isEmpty else {
+            markersView.setLiveBrushStrokes([])
+            return
+        }
+        markersView.setLiveBrushStrokes([
+            LocalEditStroke(
+                mode: .block,
+                points: liveBrushPoints,
+                normalizedDiameter: normalizedDiameter
+            )
+        ])
+    }
+
+    private func clearLiveBrushPreview() {
+        liveBrushPoints = []
+        markersView.setLiveBrushStrokes([])
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        gestureRecognizer === livePreviewGesture || otherGestureRecognizer === livePreviewGesture
+    }
+
     func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) {
         guard !inputSuspended else { return }
         // A quick next stroke may start before the queued end-of-stroke callback runs.
@@ -454,14 +533,7 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
         }
         isCommitting = true
         for stroke in strokes {
-            let points = stroke.path.map { point in
-                let position = point.location.applying(stroke.transform)
-                return LocalPlanPoint(x: min(1, max(0, position.x / max(1, imageSize.width))),
-                                      y: min(1, max(0, position.y / max(1, imageSize.height))))
-            }
-            if !points.isEmpty {
-                onStroke?(LocalEditStroke(mode: context.mode, points: points, normalizedDiameter: context.diameter))
-            }
+            if let editStroke = editStroke(from: stroke, context: context) { onStroke?(editStroke) }
         }
         clearDrawing()
         strokeContext = nil
@@ -471,9 +543,25 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
     }
 
     private func clearDrawing() {
+        clearLiveBrushPreview()
         isClearingDrawing = true
         canvasView.drawing = PKDrawing()
         isClearingDrawing = false
+    }
+
+    private func editStroke(
+        from stroke: PKStroke,
+        context: (mode: LocalEditMode, diameter: Double)
+    ) -> LocalEditStroke? {
+        let points = stroke.path.map { point in
+            let position = point.location.applying(stroke.transform)
+            return LocalPlanPoint(
+                x: min(1, max(0, position.x / max(1, imageSize.width))),
+                y: min(1, max(0, position.y / max(1, imageSize.height)))
+            )
+        }
+        guard !points.isEmpty else { return nil }
+        return LocalEditStroke(mode: context.mode, points: points, normalizedDiameter: context.diameter)
     }
 
     private func discardPendingDrawing() {
@@ -502,7 +590,7 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
 private final class LocalFloorPlanMarkersView: UIView {
     var selection: [LocalPlanPoint] = []
     var pendingBrushStrokes: [LocalEditStroke] = []
-    var brushDiameter = 0.006
+    private var liveBrushStrokes: [LocalEditStroke] = []
     var scaleA: LocalPlanPoint?
     var scaleB: LocalPlanPoint?
     var scaleLabel: String?
@@ -514,14 +602,14 @@ private final class LocalFloorPlanMarkersView: UIView {
     var viewScale: CGFloat = 1 { didSet { if viewScale != oldValue { setNeedsDisplay() } } }
 
     func update(selection: [LocalPlanPoint],
-                pendingBrushStrokes: [LocalEditStroke], brushDiameter: Double,
+                pendingBrushStrokes: [LocalEditStroke],
                 scaleA: LocalPlanPoint?, scaleB: LocalPlanPoint?, scaleLabel: String?,
                 scaleALabel: String, scaleBLabel: String,
                 scaleMarkerAppearance: LocalScaleMarkerAppearance,
                 checkpointMarkers: [LocalScanCheckpointMarker],
                 checkpointAppearance: LocalScanCheckpointAppearance) {
         guard self.selection != selection
-                || self.pendingBrushStrokes != pendingBrushStrokes || self.brushDiameter != brushDiameter
+                || self.pendingBrushStrokes != pendingBrushStrokes
                 || self.scaleA != scaleA || self.scaleB != scaleB || self.scaleLabel != scaleLabel
                 || self.scaleALabel != scaleALabel || self.scaleBLabel != scaleBLabel
                 || self.scaleMarkerAppearance != scaleMarkerAppearance
@@ -529,7 +617,6 @@ private final class LocalFloorPlanMarkersView: UIView {
                 || self.checkpointAppearance != checkpointAppearance else { return }
         self.selection = selection
         self.pendingBrushStrokes = pendingBrushStrokes
-        self.brushDiameter = brushDiameter
         self.scaleA = scaleA
         self.scaleB = scaleB
         self.scaleLabel = scaleLabel
@@ -538,6 +625,12 @@ private final class LocalFloorPlanMarkersView: UIView {
         self.scaleMarkerAppearance = scaleMarkerAppearance
         self.checkpointMarkers = checkpointMarkers
         self.checkpointAppearance = checkpointAppearance
+        setNeedsDisplay()
+    }
+
+    func setLiveBrushStrokes(_ strokes: [LocalEditStroke]) {
+        guard liveBrushStrokes != strokes else { return }
+        liveBrushStrokes = strokes
         setNeedsDisplay()
     }
 
@@ -560,9 +653,21 @@ private final class LocalFloorPlanMarkersView: UIView {
         }
 
         context.setStrokeColor(UIColor.systemOrange.withAlphaComponent(0.8).cgColor)
-        context.setLineWidth(CGFloat(brushDiameter) * max(1, min(bounds.width, bounds.height)))
-        for stroke in pendingBrushStrokes {
+        for stroke in pendingBrushStrokes + liveBrushStrokes {
             guard let first = stroke.points.first else { continue }
+            let lineWidth = CGFloat(stroke.normalizedDiameter) * max(1, min(bounds.width, bounds.height))
+            context.setLineWidth(lineWidth)
+            if stroke.points.count == 1 {
+                let center = cg(first)
+                context.setFillColor(UIColor.systemOrange.withAlphaComponent(0.8).cgColor)
+                context.fillEllipse(in: CGRect(
+                    x: center.x - lineWidth / 2,
+                    y: center.y - lineWidth / 2,
+                    width: lineWidth,
+                    height: lineWidth
+                ))
+                continue
+            }
             context.move(to: cg(first))
             for point in stroke.points.dropFirst() { context.addLine(to: cg(point)) }
             context.strokePath()

@@ -826,8 +826,10 @@ struct FloorPlanCreateView: View {
 
                 Spacer(minLength: 0)
 
-                DSStepIndicator(current: 4, total: 4)
-                    .fixedSize()
+                if !app.isEditingFloorPlan {
+                    DSStepIndicator(current: 4, total: 4)
+                        .fixedSize()
+                }
             }
             .padding(.top, 40)
 
