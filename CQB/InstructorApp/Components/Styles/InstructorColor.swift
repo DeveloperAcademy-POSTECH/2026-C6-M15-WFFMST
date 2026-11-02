@@ -9,13 +9,13 @@ enum InstructorColor {
     // MARK: - Surfaces
 
     /// Figma: `color/canvas`
-    static let canvas = DSColor.background
+    static let canvas = DSColor.backgroundPrimary
 
     /// Figma: `color/surface/base`
-    static let surfaceBase = DSColor.area1
+    static let surfaceBase = DSColor.surfacePrimary
 
     /// Figma: `color/surface/raised`
-    static let surfaceRaised = DSColor.area2
+    static let surfaceRaised = DSColor.backgroundElevated
 
     /// Figma: `Liquid Glass - Regular - Medium`의 불투명 기본 면(#1A1A1A).
     static let savingOverlaySurface = Color("InstructorSavingOverlaySurface")
@@ -23,13 +23,13 @@ enum InstructorColor {
     // MARK: - Actions and borders
 
     /// Figma: `color/action/primary`
-    static let actionPrimary = DSColor.main
+    static let actionPrimary = DSColor.actionPrimary
 
     /// Figma: `color/action/disabled`
-    static let actionDisabled = Color("InstructorActionDisabled")
+    static let actionDisabled = DSColor.actionPrimaryDisabled
 
     /// Figma: `color/border/default`
-    static let borderDefault = DSColor.area3
+    static let borderDefault = DSColor.borderPrimary
 
     /// 도면 목록의 미선택 indicator와 미리보기 action border에 쓰는 Figma Gray/200.
     static let floorPlanSelectionIdle = DSPalette.Gray.g200
@@ -38,10 +38,10 @@ enum InstructorColor {
     // MARK: - Content
 
     /// Figma: `color/text/primary`
-    static let textPrimary = DSColor.white
+    static let textPrimary = DSColor.contentPrimary
 
     /// Figma: `color/text/secondary`
-    static let textSecondary = DSColor.darkGreen
+    static let textSecondary = DSColor.contentSecondary
 
     /// Figma: `color/icon/check`
     static let iconCheck = DSColor.white
@@ -69,7 +69,7 @@ enum InstructorColor {
     // MARK: - Player
 
     /// Figma: `color/player/surface`
-    static let playerSurface = DSColor.black
+    static let playerSurface = DSPalette.Gray.g900
 
     /// Figma: `color/player/play`
     static let playerPlay = Color("InstructorPlayerPlay")

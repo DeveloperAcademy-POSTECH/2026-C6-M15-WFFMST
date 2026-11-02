@@ -12,11 +12,11 @@ struct AARTimelineView: View {
                 onChange: aarStore.setPlaybackPosition
             )
             .frame(height: 44)
-            .padding(.top, 19)
+            .padding(.top, 21)
             .padding(.horizontal, AARLayout.timelineHorizontalPadding)
             .accessibilityIdentifier("aar.timeline")
 
-            HStack(spacing: 12) {
+            HStack(spacing: 32) {
                 skipButton(
                     seconds: -10,
                     systemImage: "10.arrow.trianglehead.counterclockwise",
@@ -45,7 +45,7 @@ struct AARTimelineView: View {
                     .foregroundStyle(InstructorColor.textPrimary)
                     .monospacedDigit()
             }
-            .padding(.top, 8)
+            .padding(.top, 12)
             .padding(.leading, AARLayout.timelineHorizontalPadding)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

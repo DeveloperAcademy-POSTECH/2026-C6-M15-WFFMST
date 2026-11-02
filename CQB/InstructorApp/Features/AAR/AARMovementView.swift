@@ -166,9 +166,9 @@ struct AARMovementView: View {
             Image(uiImage: image)
                 .resizable()
                 .frame(width: layout.imageFrame.width, height: layout.imageFrame.height)
+                .overlay(InstructorColor.aarFloorPlanOverlay)
                 .scaleEffect(viewport.scale)
                 .offset(viewport.translation)
-                .overlay(InstructorColor.aarFloorPlanOverlay)
                 .accessibilityLabel("선택한 훈련 도면")
         } else {
             floorPlanUnavailableState
