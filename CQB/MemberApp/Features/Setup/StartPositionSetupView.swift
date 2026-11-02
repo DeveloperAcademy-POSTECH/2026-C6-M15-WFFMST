@@ -27,7 +27,7 @@ struct StartPositionSetupView: View {
     private var isLandscape: Bool { verticalSizeClass == .compact }
 
     private var guidance: String {
-        startPoint == nil || (isLandscape && directionPoint != nil)
+        startPoint == nil
             ? "도면을 터치해 본인의 출발 위치를 선택해주세요."
             : "선택한 위치에서\n바라보는 방향을 터치하여 방향을 설정해주세요."
     }
@@ -47,7 +47,7 @@ struct StartPositionSetupView: View {
                             .padding(DSSpacing.s20)
                     }
                     .overlay(alignment: isLandscape ? .top : .bottom) {
-                        if !(isLandscape && directionPoint != nil) {
+                        if startPoint == nil || directionPoint == nil {
                             MemberGuidanceView(message: guidance, presentation: .map)
                                 .dsFloatingShadow()
                                 .frame(maxWidth: isLandscape ? 362 : .infinity)
