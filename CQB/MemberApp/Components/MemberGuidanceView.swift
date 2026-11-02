@@ -12,6 +12,9 @@ struct MemberGuidanceView: View {
     let presentation: Presentation
 
     var body: some View {
-        DSGuideToast(message, type: presentation == .map ? .compact : .card)
+        DSGuideToast(
+            message, type: presentation == .map ? .compact : .card,
+            horizontalPadding: DSSpacing.s16, fillsWidth: true
+        )
     }
 }

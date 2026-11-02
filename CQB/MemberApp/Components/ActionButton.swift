@@ -16,7 +16,7 @@ struct ActionButton: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.dsPrimary)
+        .buttonStyle(.dsPrimary(disabledBackground: DSColor.surfacePrimary))
     }
 }
 

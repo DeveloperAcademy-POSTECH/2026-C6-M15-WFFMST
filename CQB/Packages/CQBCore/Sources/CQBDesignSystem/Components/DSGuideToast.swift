@@ -11,15 +11,21 @@ public struct DSGuideToast: View {
     private let message: String
     private let type: DSGuideToastType
     private let systemImage: String
+    private let horizontalPadding: CGFloat?
+    private let fillsWidth: Bool
 
     public init(
         _ message: String,
         type: DSGuideToastType = .regular,
-        systemImage: String = "info.circle"
+        systemImage: String = "info.circle",
+        horizontalPadding: CGFloat? = nil,
+        fillsWidth: Bool = false
     ) {
         self.message = message
         self.type = type
         self.systemImage = systemImage
+        self.horizontalPadding = horizontalPadding
+        self.fillsWidth = fillsWidth
     }
 
     public var body: some View {
@@ -47,7 +53,7 @@ public struct DSGuideToast: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .foregroundStyle(DSColor.contentPrimary)
-        .padding(.horizontal, DSSpacing.s32)
+        .padding(.horizontal, horizontalPadding ?? DSSpacing.s32)
         .frame(minHeight: 100)
         .background(DSColor.surfaceSecondary)
         .clipShape(Capsule())
@@ -64,7 +70,8 @@ public struct DSGuideToast: View {
             .foregroundStyle(DSColor.contentPrimary)
             .lineLimit(2)
             .multilineTextAlignment(.center)
-            .padding(.horizontal, DSSpacing.s24)
+            .frame(maxWidth: fillsWidth ? .infinity : nil, minHeight: fillsWidth ? DSSpacing.s24 : nil)
+            .padding(.horizontal, horizontalPadding ?? DSSpacing.s24)
             .padding(.vertical, DSSpacing.s12)
             .background(DSColor.surfacePrimary)
             .clipShape(Capsule())
@@ -76,7 +83,7 @@ public struct DSGuideToast: View {
             .foregroundStyle(DSColor.contentPrimary)
             .lineLimit(2)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, DSSpacing.s20)
+            .padding(.horizontal, horizontalPadding ?? DSSpacing.s20)
             .padding(.vertical, DSSpacing.s16)
             .background(DSColor.surfaceSecondary)
             .clipShape(RoundedRectangle(cornerRadius: DSRadius.large))

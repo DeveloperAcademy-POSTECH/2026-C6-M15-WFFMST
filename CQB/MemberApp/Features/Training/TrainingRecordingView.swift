@@ -95,39 +95,44 @@ private struct TrainingRecordingContent: View {
     }
 
     var body: some View {
-        ZStack {
-            VStack(spacing: DSSpacing.s20) {
-                ScrollView {
-                    if isWaiting && !dynamicTypeSize.isAccessibilitySize {
-                        ZStack(alignment: .topLeading) {
-                            header
-                            guidance
-                                .frame(maxWidth: .infinity)
-                                .padding(.horizontal, DSSpacing.s60 * 2)
-                        }
-                    } else {
-                        VStack(alignment: .leading, spacing: DSSpacing.s20) {
-                            header
-                            guidance.frame(maxWidth: .infinity)
+        GeometryReader { geometry in
+            ZStack {
+                VStack(spacing: DSSpacing.s20) {
+                    ScrollView {
+                        if isWaiting && !dynamicTypeSize.isAccessibilitySize {
+                            ZStack(alignment: .topLeading) {
+                                header
+                                guidance
+                                    .frame(maxWidth: 562)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.horizontal, DSSpacing.s60 * 2 - DSSpacing.s4)
+                            }
+                        } else {
+                            VStack(alignment: .leading, spacing: DSSpacing.s20) {
+                                header
+                                guidance.frame(maxWidth: .infinity)
+                            }
                         }
                     }
-                }
-                .scrollBounceBehavior(.basedOnSize)
+                    .scrollBounceBehavior(.basedOnSize)
 
-                HStack {
-                    Spacer(minLength: 0)
-                    controls.frame(maxWidth: 362)
+                    HStack {
+                        Spacer(minLength: 0)
+                        controls.frame(maxWidth: 362)
+                    }
                 }
+                .padding(.horizontal, DSSpacing.s40)
+                .padding(.top, DSSpacing.s40)
+                .padding(.bottom, max(0, DSSpacing.s60 - geometry.safeAreaInsets.bottom))
             }
-            .padding(DSSpacing.s20)
-        }
-        .ignoresSafeArea(.container, edges: .horizontal)
-        .foregroundStyle(DSColor.contentPrimary)
-        .confirmationDialog("종료 신호를 받지 못했나요?", isPresented: $isShowingManualStopConfirmation) {
-            Button("훈련 직접 종료", role: .destructive, action: onFinish)
-            Button("취소", role: .cancel) {}
-        } message: {
-            Text("교관의 종료 신호를 받을 수 없을 때만 사용해주세요.")
+            .ignoresSafeArea(.container, edges: .horizontal)
+            .foregroundStyle(DSColor.contentPrimary)
+            .confirmationDialog("종료 신호를 받지 못했나요?", isPresented: $isShowingManualStopConfirmation) {
+                Button("훈련 직접 종료", role: .destructive, action: onFinish)
+                Button("취소", role: .cancel) {}
+            } message: {
+                Text("교관의 종료 신호를 받을 수 없을 때만 사용해주세요.")
+            }
         }
     }
 
@@ -140,7 +145,7 @@ private struct TrainingRecordingContent: View {
                     .accessibilityAddTraits(.isHeader)
                 if phase == .recording {
                     Text("네트워크가 끊겨도 기기에 계속 저장")
-                        .dsTextStyle(DSTypography.captionRegular14)
+                        .dsTextStyle(DSTypography.bodyRegular20)
                     Text(uploadStatusMessage)
                         .dsTextStyle(DSTypography.bodyRegular12)
                         .foregroundStyle(DSColor.contentSecondary)
@@ -149,6 +154,7 @@ private struct TrainingRecordingContent: View {
             Spacer(minLength: DSSpacing.s12)
             if phase == .recording, let startedAt { recordingTimer(startedAt: startedAt) }
         }
+        .foregroundStyle(phase == .recording ? DSPalette.Neutral.white : DSColor.contentPrimary)
     }
 
     @ViewBuilder
@@ -170,7 +176,7 @@ private struct TrainingRecordingContent: View {
                 if canRetryRecordingStart {
                     ActionButton(isStartingRecording ? "녹화 준비 중…" : "녹화 재시도", action: onRetryRecordingStart)
                         .disabled(!isCameraReady || isStartingRecording)
-                } else if allowsPositionReset, let onReset {
+                } else if allowsPositionReset, !isCameraReady, let onReset {
                     ActionButton("설정하기", action: onReset)
                         .accessibilityLabel("출발 위치 다시 설정하기")
                 }
@@ -184,21 +190,21 @@ private struct TrainingRecordingContent: View {
     }
 
     private func recordingTimer(startedAt: Date) -> some View {
-        HStack(spacing: DSSpacing.s12) {
+        HStack(spacing: DSSpacing.s16) {
             Circle()
-                .fill(DSColor.statusError)
+                .fill(DSPalette.Red.r400)
                 .frame(width: DSSpacing.s12, height: DSSpacing.s12)
                 .accessibilityHidden(true)
             TimelineView(.periodic(from: startedAt, by: 1)) { context in
                 let seconds = max(0, Int(context.date.timeIntervalSince(startedAt)))
                 Text(String(format: "%02d:%02d", seconds / 60, seconds % 60))
-                    .dsTextStyle(DSTypography.bodyRegular16)
+                    .dsTextStyle(DSTypography.bodyRegular20)
                     .monospacedDigit()
                     .fixedSize()
             }
         }
         .padding(.horizontal, DSSpacing.s12)
-        .padding(.vertical, DSSpacing.s4)
+        .frame(minWidth: 105, minHeight: 30)
         .background(DSColor.surfacePrimary, in: Capsule())
         .accessibilityElement(children: .combine)
         .accessibilityLabel("녹화 경과 시간")

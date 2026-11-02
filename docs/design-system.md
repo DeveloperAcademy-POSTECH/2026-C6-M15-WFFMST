@@ -102,7 +102,13 @@ Figma의 기기별 이름을 Package API에 노출하지 않고 시각적 역할
 
 Text Field의 Focused 상태는 `@FocusState` 값을 `DSTextFieldStyle`에 함께 전달한다. Focused 테두리와 cursor는 `Gray/50`을 사용하며, Error와 Focused가 동시에 참이면 Error 표현을 우선한다.
 
+입력 외형의 기본값은 `.outlined`다. `.ds(isFocused: focusedField, appearance: .filled)`는 값의 입력 여부와 관계없이 테두리 없는 면 형태를 사용하며, Regular 16pt와 좌우 16pt 패딩을 적용한다. Filled의 포커스는 흰색 커서로 표시하고 오류 상태에서는 오류 테두리를 표시한다.
+
+기본 Primary 비활성 배경은 Gray/600이며, 화면 시안에서 다른 배경이 필요한 경우 `.dsPrimary(disabledBackground:)`로 선택한다. 원형 버튼은 `.dsCircular(size: .compact, showsBorder: true)`로 Gray/600 테두리를 선택할 수 있다. 기존 호출의 기본 외형은 유지한다.
+
 `DSGuideToast`는 문구를 외부에서 받고 Store와 앱 도메인에 의존하지 않는다. Compact와 Card는 최대 두 줄까지 표시한다. 기존 `DSFloatingBanner`는 호환성을 위해 유지하며 내부에서 `DSGuideToast(type: .regular)`에 위임한다. 신규 코드는 `DSGuideToast`를 사용하고 기존 화면의 일괄 마이그레이션과 `DSFloatingBanner` 제거는 별도 이슈에서 진행한다.
+
+`horizontalPadding`은 타입 기본 패딩을 재정의한다. `fillsWidth: true`인 Compact는 부모가 제안한 너비를 채우며 최소 높이 48pt를 유지한다. 옵션을 생략한 기존 호출은 타입 기본값을 유지한다.
 
 ## 마이그레이션
 

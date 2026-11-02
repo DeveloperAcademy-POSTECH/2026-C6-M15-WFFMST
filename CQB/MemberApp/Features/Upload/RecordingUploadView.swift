@@ -20,7 +20,7 @@ struct RecordingUploadView: View {
 
     private var progressMessage: String {
         if isAbandoned { return "전송 실패로 종료" }
-        if isComplete { return isDemo ? "데모 처리 완료" : "전송 완료" }
+        if isComplete && isDemo { return "데모 처리 완료" }
         if isDemo { return "데모 결과 확인 중" }
         return isLandscape
             ? "전송 완료 전까지 앱을 종료하지 않고 대기해주세요"
@@ -30,6 +30,7 @@ struct RecordingUploadView: View {
     var body: some View {
         GeometryReader { geometry in
             let topPadding = max(0, DSSpacing.s40 - geometry.safeAreaInsets.top)
+            let bottomPadding = max(0, DSSpacing.s60 - geometry.safeAreaInsets.bottom)
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     Text("훈련 종료")
@@ -71,13 +72,14 @@ struct RecordingUploadView: View {
                     .frame(maxWidth: isLandscape ? 362 : .infinity)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                 }
-                .frame(minHeight: max(0, geometry.size.height - topPadding - DSSpacing.s8))
+                .frame(minHeight: max(0, geometry.size.height - topPadding - bottomPadding))
                 .padding(.horizontal, isLandscape ? DSSpacing.s40 : DSSpacing.s20)
                 .padding(.top, topPadding)
-                .padding(.bottom, DSSpacing.s8)
+                .padding(.bottom, bottomPadding)
             }
         }
         .foregroundStyle(DSColor.contentPrimary)
+        .ignoresSafeArea(.container, edges: .horizontal)
         .background(DSColor.backgroundPrimary.ignoresSafeArea())
         .alert("업로드를 종료할까요?", isPresented: $showsAbandonConfirmation) {
             Button("업로드 종료", role: .destructive) { Task { await onAbandon() } }

@@ -10,9 +10,10 @@ struct MemberBackButton: View {
             action?()
         } label: {
             Image("MemberBackIcon")
-                .renderingMode(.template)
+                .renderingMode(.original)
         }
-        .buttonStyle(.dsCircular(size: .compact))
+        .buttonStyle(.dsCircular(size: .compact, showsBorder: true))
+        .opacity(action == nil ? 0.4 : 1)
         .disabled(action == nil)
         .accessibilityLabel("뒤로 가기")
         .accessibilityHint(action == nil ? "현재 화면에서는 뒤로 갈 수 없습니다." : "이전 화면으로 돌아갑니다.")

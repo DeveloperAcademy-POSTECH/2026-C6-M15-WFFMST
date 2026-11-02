@@ -27,14 +27,15 @@ struct StartPositionSetupView: View {
     private var isLandscape: Bool { verticalSizeClass == .compact }
 
     private var guidance: String {
-        startPoint == nil
+        startPoint == nil || (isLandscape && directionPoint != nil)
             ? "도면을 터치해 본인의 출발 위치를 선택해주세요."
             : "선택한 위치에서\n바라보는 방향을 터치하여 방향을 설정해주세요."
     }
 
     var body: some View {
         GeometryReader { geometry in
-            let panelHeight = isLandscape ? geometry.size.height : min(240, geometry.size.height / 2)
+            let panelHeight = isLandscape ? geometry.size.height
+                : max(0, min(240, geometry.size.height / 2) - geometry.safeAreaInsets.bottom)
             let layout = isLandscape
                 ? AnyLayout(HStackLayout(spacing: 0))
                 : AnyLayout(VStackLayout(spacing: 0))
@@ -46,15 +47,17 @@ struct StartPositionSetupView: View {
                             .padding(DSSpacing.s20)
                     }
                     .overlay(alignment: isLandscape ? .top : .bottom) {
-                        if startPoint == nil || directionPoint == nil {
+                        if !(isLandscape && directionPoint != nil) {
                             MemberGuidanceView(message: guidance, presentation: .map)
-                                .frame(maxWidth: isLandscape ? 366 : .infinity)
+                                .dsFloatingShadow()
+                                .frame(maxWidth: isLandscape ? 362 : .infinity)
                                 .padding(.horizontal, isLandscape ? DSSpacing.s60 + DSSpacing.s20 : DSSpacing.s20)
-                                .padding(.vertical, isLandscape ? DSSpacing.s20 : DSSpacing.s12)
+                                .padding(.top, isLandscape ? DSSpacing.s40 : 0)
+                                .padding(.bottom, isLandscape ? 0 : DSSpacing.s12)
                         }
                     }
 
-                settingsPanel(height: panelHeight)
+                settingsPanel(height: panelHeight, bottomInset: geometry.safeAreaInsets.bottom)
                     .frame(width: isLandscape ? min(280, geometry.size.width * 0.4) : nil,
                            height: panelHeight)
             }
@@ -65,28 +68,36 @@ struct StartPositionSetupView: View {
         .background(DSColor.surfaceSecondary.ignoresSafeArea())
     }
 
-    private func settingsPanel(height: CGFloat) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: DSSpacing.s20) {
-                if !isLandscape {
-                    Text("출발 위치 설정")
-                        .dsTextStyle(DSTypography.headingBold20)
-                        .accessibilityAddTraits(.isHeader)
+    private func settingsPanel(height: CGFloat, bottomInset: CGFloat) -> some View {
+        let topPadding = isLandscape ? DSSpacing.s40 : DSSpacing.s20
+        let bottomPadding = max(0, DSSpacing.s60 - bottomInset)
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: DSSpacing.s20) {
+                    if !isLandscape {
+                        Text("출발 위치 설정")
+                            .dsTextStyle(DSTypography.headingBold20)
+                            .accessibilityAddTraits(.isHeader)
+                    }
+                    VStack(spacing: DSSpacing.s12) {
+                        SetupStatusRow("출발 위치", value: startPoint == nil ? "지정 안 됨" : "지정됨")
+                        SetupStatusRow("바라보는 방향", value: directionPoint == nil ? "설정 전" : "설정됨")
+                    }
                 }
-                VStack(spacing: DSSpacing.s4) {
-                    SetupStatusRow("출발 위치", value: startPoint == nil ? "지정 안 됨" : "지정됨")
-                    SetupStatusRow("바라보는 방향", value: directionPoint == nil ? "설정 전" : "설정됨")
-                }
-                Spacer(minLength: 0)
+                Spacer(minLength: DSSpacing.s12)
                 ActionButton("훈련 시작") {
                     if let startPoint, let directionPoint { onConfirm(startPoint, directionPoint) }
                 }
                 .disabled(startPoint == nil || directionPoint == nil)
                 .accessibilityHint("출발 위치와 방향을 고정하고 지휘관의 시작 신호를 기다립니다.")
                 .accessibilityIdentifier("setup.confirm")
+                .frame(maxWidth: isLandscape ? 240 : .infinity)
+                .frame(maxWidth: .infinity, alignment: .trailing)
             }
-            .frame(minHeight: max(0, height - DSSpacing.s40), alignment: .topLeading)
-            .padding(DSSpacing.s20)
+            .frame(minHeight: max(0, height - topPadding - bottomPadding), alignment: .topLeading)
+            .padding(.horizontal, DSSpacing.s20)
+            .padding(.top, topPadding)
+            .padding(.bottom, bottomPadding)
         }
         .background {
             UnevenRoundedRectangle(
@@ -137,7 +148,7 @@ struct StartPositionSetupView: View {
                         // 방향 표시는 사용자의 선택 좌표로 생성되는 동적 도형이다.
                         Path { path in
                             let angle = atan2(end.y - start.y, end.x - start.x)
-                            let perpendicular = CGPoint(x: -sin(angle) * 9.5, y: cos(angle) * 9.5)
+                            let perpendicular = CGPoint(x: -sin(angle) * 21, y: cos(angle) * 21)
                             path.move(to: start)
                             path.addLine(to: CGPoint(x: end.x + perpendicular.x, y: end.y + perpendicular.y))
                             path.addLine(to: CGPoint(x: end.x - perpendicular.x, y: end.y - perpendicular.y))
@@ -147,8 +158,8 @@ struct StartPositionSetupView: View {
                     }
                     Circle()
                         .fill(DSPalette.Blue.b500)
-                        .frame(width: 22, height: 22)
-                        .overlay { Circle().strokeBorder(DSPalette.Neutral.white, lineWidth: 2) }
+                        .frame(width: 34, height: 34)
+                        .overlay { Circle().strokeBorder(DSPalette.Neutral.white, lineWidth: 3) }
                         .position(start)
                 }
             }
