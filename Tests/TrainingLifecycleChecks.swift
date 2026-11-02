@@ -224,6 +224,7 @@ enum TrainingLifecycleChecks {
             sessionRepository: repository, memberRepository: repository, recordingRepository: repository
         )
         store.openSessionCreation()
+        store.setTrainingName("훈련 생명주기 검사")
         store.createSession()
         await wait("검사 세션 생성") { repository.memberCount == 1 }
         let members = [

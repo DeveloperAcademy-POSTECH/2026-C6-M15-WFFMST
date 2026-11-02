@@ -8,71 +8,23 @@ struct TeamReadinessView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            InstructorBackButton(action: store.goBack)
-                .disabled(!store.canGoBack)
+            navigationBar
+                .padding(.horizontal, DSSpacing.s40)
+                .padding(.top, DSSpacing.s40)
 
-            HStack(alignment: .top) {
-                Text("팀 준비 상태")
-                    .font(DSTypography.h1)
-                    .foregroundStyle(InstructorColor.textPrimary)
-                    .frame(height: 48, alignment: .leading)
+            Text("팀 준비 상태")
+                .dsTextStyle(DSTypography.headingBold36)
+                .foregroundStyle(DSColor.contentPrimary)
+                .padding(.horizontal, DSSpacing.s40)
+                .padding(.top, 100)
+                .padding(.bottom, DSSpacing.s20)
 
-                Spacer()
-
-                sessionPIN
-            }
-            .frame(height: 56, alignment: .top)
-
-            if store.isStartingTraining {
-                ProgressView("훈련 시작 중…")
-                    .padding(.top, 16)
-                    .accessibilityIdentifier("readiness.starting")
-            } else if store.isEndingSession {
-                ProgressView("세션 종료 중…")
-                    .padding(.top, 16)
-                    .accessibilityIdentifier("readiness.ending")
-            } else if store.memberConnectionState == .connecting {
-                ProgressView("참가자 준비 상태 연결 중…")
-                    .padding(.top, 16)
-                    .accessibilityIdentifier("readiness.connecting")
-            } else if let error = store.memberObservationError {
-                connectionError(error)
-                    .padding(.top, 16)
-            }
-
-            if let error = store.sessionEndError {
-                Text(error)
-                    .font(DSTypography.bodySmall)
-                    .foregroundStyle(InstructorColor.textSecondary)
-                    .padding(.top, 16)
-                    .accessibilityIdentifier("readiness.endError")
-            }
-
-            if let error = store.trainingActionError {
-                Text(error)
-                    .font(DSTypography.bodySmall)
-                    .foregroundStyle(InstructorColor.textSecondary)
-                    .padding(.top, 16)
-                    .accessibilityIdentifier("training.startError")
-            }
-
-            readinessList
-                .padding(.top, 42)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-
-            HStack {
-                Spacer()
-                ActionButton("훈련 시작", fillsWidth: true, action: requestTrainingStart)
-                    .frame(width: 354, height: 52)
-                    .disabled(!store.canRequestTrainingStart)
-                    .accessibilityIdentifier("readiness.start")
-            }
+            readinessContent
+                .padding(.horizontal, DSSpacing.s40)
+                .padding(.bottom, DSSpacing.s60)
         }
-        .padding(.top, 32)
-        .padding(.horizontal, 48)
-        .padding(.bottom, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(InstructorColor.canvas.ignoresSafeArea())
+        .background(DSColor.backgroundPrimary)
         .toolbar(.hidden, for: .navigationBar)
         .alert("미준비 대원 제외", isPresented: $isShowingExclusionConfirmation) {
             Button("제외하고 시작", role: .destructive) {
@@ -84,85 +36,201 @@ struct TeamReadinessView: View {
         }
     }
 
-    private var sessionPIN: some View {
-        let pin = store.currentSession?.pin ?? "------"
-        return Text("PIN · \(pin)")
-            .font(DSTypography.h2)
-            .foregroundStyle(InstructorColor.textPrimary)
-            .monospacedDigit()
-            .frame(width: 314, height: 56)
-            .background(InstructorColor.surfaceBase)
-            .clipShape(.rect(cornerRadius: 4))
-            .overlay {
-                RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
-            }
-            .accessibilityLabel("세션 PIN \(pin)")
-    }
-
-    private func connectionError(_ message: String) -> some View {
-        HStack(spacing: 16) {
-            Label(message, systemImage: "wifi.exclamationmark")
-                .font(DSTypography.bodySmall)
-                .foregroundStyle(InstructorColor.textSecondary)
+    private var navigationBar: some View {
+        HStack(spacing: 0) {
+            FloorPlanBackButton(action: store.goBack)
+                .disabled(!store.canGoBack)
 
             Spacer()
 
-            Button("다시 연결", action: store.retryMemberObservation)
-                .disabled(!store.canRetryMemberObservation)
-                .font(DSTypography.bodySmall)
-                .foregroundStyle(InstructorColor.actionPrimary)
-                .accessibilityIdentifier("readiness.reconnect")
+            Button(action: requestTrainingStart) {
+                Text("훈련 시작")
+                    .padding(.vertical, DSSpacing.s12)
+            }
+            .buttonStyle(.dsPrimary)
+            .frame(width: 180)
+            .disabled(!store.canRequestTrainingStart)
+            .accessibilityIdentifier("readiness.start")
         }
-        .padding(16)
-        .background(InstructorColor.surfaceBase)
-        .clipShape(.rect(cornerRadius: 4))
-        .overlay {
-            RoundedRectangle(cornerRadius: 4)
-                .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
-        }
+        .frame(height: DSSize.controlHeight)
     }
 
-    private var readinessList: some View {
-        ScrollView {
-            LazyVStack(spacing: 24) {
-                readinessHeader
+    private var readinessContent: some View {
+        GeometryReader { proxy in
+            let innerWidth = max(0, proxy.size.width - 20)
+            let columnGap: CGFloat = innerWidth >= 1_266 ? 60 : 40
+            let instructionWidth = min(320, max(280, innerWidth * 0.26))
 
-                if store.participants.isEmpty {
-                    ContentUnavailableView(
-                        "참가자가 없습니다",
-                        systemImage: "person.3",
-                        description: Text("대원이 세션에 참가하면 준비 상태가 표시됩니다.")
-                    )
-                    .foregroundStyle(InstructorColor.textSecondary)
-                    .frame(maxWidth: .infinity, minHeight: 240)
-                } else {
-                    ForEach(store.participants) { participant in
-                        ParticipantReadyRow(participant: participant)
+            HStack(alignment: .top, spacing: columnGap) {
+                readinessColumn
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(.top, DSSpacing.s16)
+
+                joinInstructions
+                    .frame(width: instructionWidth)
+                    .frame(maxHeight: .infinity)
+                    .padding(.bottom, 2)
+            }
+            .padding(.leading, DSSpacing.s8)
+            .padding(.trailing, DSSpacing.s12)
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(DSColor.backgroundElevated)
+        .clipShape(.rect(cornerRadius: DSRadius.large))
+    }
+
+    private var readinessColumn: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.s12) {
+            readinessHeader
+
+            if store.participants.isEmpty {
+                ContentUnavailableView(
+                    "참가자가 없습니다",
+                    systemImage: "person.3",
+                    description: Text("대원이 세션에 참가하면 준비 상태가 표시됩니다.")
+                )
+                .foregroundStyle(DSColor.contentSecondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: DSSpacing.s12) {
+                        ForEach(store.participants) { participant in
+                            ParticipantReadyRow(participant: participant)
+                        }
                     }
                 }
+                .scrollIndicators(.hidden)
             }
         }
-        .scrollIndicators(.hidden)
     }
 
     private var readinessHeader: some View {
-        HStack(spacing: 32) {
-            Text("대원명")
-                .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(spacing: 0) {
+            HStack(spacing: 35) {
+                Text("No.")
+                Text("대원명")
+            }
 
-            Text("준비상태")
+            Spacer()
 
-            Text("\(store.readyCount)/\(store.participants.count)")
-                .monospacedDigit()
+            Text("준비 상태")
+                .frame(width: 124, alignment: .leading)
         }
-        .font(DSTypography.h3)
-        .foregroundStyle(InstructorColor.textPrimary)
-        .padding(.horizontal, 16)
-        .frame(maxWidth: .infinity, minHeight: 56, maxHeight: 56)
-        .background(InstructorColor.surfaceRaised)
-        .clipShape(.rect(cornerRadius: 4))
+        .dsTextStyle(DSTypography.headingSemiBold20)
+        .foregroundStyle(DSColor.contentPrimary)
+        .padding(.horizontal, DSSpacing.s20)
+        .frame(maxWidth: .infinity, minHeight: 30, maxHeight: 30)
         .accessibilityElement(children: .combine)
+    }
+
+    private var joinInstructions: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("PIN")
+                    .dsTextStyle(InstructorTypography.bodyMedium20)
+                    .foregroundStyle(DSPalette.Gray.g200)
+
+                Text(formattedPIN)
+                    .dsTextStyle(DSTypography.displaySemiBold48)
+                    .foregroundStyle(DSColor.contentPrimary)
+                    .monospacedDigit()
+                    .padding(.top, DSSpacing.s8)
+                    .accessibilityLabel("세션 PIN \(store.currentSession?.pin ?? "없음")")
+            }
+            .padding(.top, DSSpacing.s40)
+            .padding(.horizontal, DSSpacing.s24)
+
+            Text("대원 기기에서 PIN을 입력해 훈련에 참가할 수 있습니다.")
+                .dsTextStyle(DSTypography.bodyRegular12)
+                .foregroundStyle(DSColor.contentSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .padding(.top, DSSpacing.s32)
+                .padding(.leading, 29)
+                .padding(.trailing, DSSpacing.s20)
+
+            Rectangle()
+                .fill(DSColor.surfaceSecondary)
+                .frame(height: 1)
+                .padding(.horizontal, DSSpacing.s20)
+                .padding(.top, DSSpacing.s24)
+
+            Text("대원 준비 완료")
+                .dsTextStyle(DSTypography.captionRegular14)
+                .foregroundStyle(DSColor.contentSecondary)
+                .padding(.top, 19)
+                .padding(.horizontal, DSSpacing.s24)
+
+            Text("\(store.readyCount) / \(store.participants.count)")
+                .dsTextStyle(DSTypography.displaySemiBold48)
+                .foregroundStyle(DSColor.contentPrimary)
+                .monospacedDigit()
+                .padding(.top, DSSpacing.s32)
+                .padding(.horizontal, DSSpacing.s24)
+                .accessibilityLabel("전체 \(store.participants.count)명 중 \(store.readyCount)명 준비 완료")
+
+            Spacer(minLength: DSSpacing.s20)
+
+            readinessNotice
+                .padding(.horizontal, DSSpacing.s20)
+                .padding(.bottom, DSSpacing.s40)
+        }
+        .background(DSColor.surfacePrimary)
+        .clipShape(.rect(cornerRadius: DSRadius.large))
+    }
+
+    private var readinessNotice: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.s8) {
+            Text(noticeTitle)
+                .dsTextStyle(DSTypography.captionMedium14)
+                .foregroundStyle(DSColor.contentPrimary)
+
+            HStack(alignment: .bottom, spacing: DSSpacing.s8) {
+                Text(noticeDescription)
+                    .dsTextStyle(InstructorTypography.captionRegular13)
+                    .foregroundStyle(DSColor.contentSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if store.memberConnectionState == .failed {
+                    Spacer(minLength: 0)
+                    Button("다시 연결", action: store.retryMemberObservation)
+                        .dsTextStyle(DSTypography.bodyRegular12)
+                        .foregroundStyle(DSColor.actionPrimary)
+                        .buttonStyle(.plain)
+                        .disabled(!store.canRetryMemberObservation)
+                        .accessibilityIdentifier("readiness.reconnect")
+                }
+            }
+        }
+        .padding(DSSpacing.s16)
+        .frame(maxWidth: .infinity, minHeight: 101, alignment: .topLeading)
+        .background(DSColor.surfacePrimary)
+        .clipShape(.rect(cornerRadius: DSRadius.medium))
+    }
+
+    private var formattedPIN: String {
+        let pin = store.currentSession?.pin ?? "------"
+        return pin.map(String.init).joined(separator: " ")
+    }
+
+    private var noticeTitle: String {
+        if store.isStartingTraining { return "훈련을 시작하고 있습니다" }
+        if store.isEndingSession { return "세션을 종료하고 있습니다" }
+        if store.memberConnectionState == .connecting { return "준비 상태를 연결하고 있습니다" }
+        if store.memberConnectionState == .failed { return "준비 상태를 불러오지 못했습니다" }
+        if store.sessionEndError != nil || store.trainingActionError != nil { return "요청을 처리하지 못했습니다" }
+        return "준비 상태를 확인해주세요"
+    }
+
+    private var noticeDescription: String {
+        if let error = store.memberObservationError { return error }
+        if let error = store.sessionEndError { return error }
+        if let error = store.trainingActionError { return error }
+        if store.isStartingTraining { return "준비된 대원으로 훈련을 시작합니다." }
+        if store.isEndingSession { return "현재 세션을 안전하게 종료하고 있습니다." }
+        if store.memberConnectionState == .connecting { return "대원 기기의 참가 상태를 확인하고 있습니다." }
+        return "모든 대원이 설정을 마치면 훈련을 시작할 수 있습니다."
     }
 
     private func requestTrainingStart() {
@@ -182,10 +250,14 @@ struct TeamReadinessView: View {
         referenceDistance: 15
     )
     var participants = InstructorPreviewFixture.participants
-    for index in participants.indices { participants[index].isReady = index < 3 }
+    for index in participants.indices { participants[index].isReady = index < 4 }
+    participants.append(contentsOf: [
+        InstructorParticipant(id: "member-7", number: 7, name: "새미", isReady: false, x: 0, y: 0),
+        InstructorParticipant(id: "member-8", number: 8, name: "노을", isReady: false, x: 0, y: 0)
+    ])
     let store = InstructorStore(
         floorPlans: [plan],
-        previewSession: InstructorPreviewFixture.session(floorPlan: plan.reference),
+        previewSession: InstructorPreviewFixture.session(floorPlan: plan.reference, pin: "123456"),
         previewParticipants: participants
     )
 
