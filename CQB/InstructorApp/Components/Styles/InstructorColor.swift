@@ -28,6 +28,10 @@ enum InstructorColor {
     /// Figma: `color/border/default`
     static let borderDefault = DSColor.area3
 
+    /// 도면 목록의 미선택 indicator와 미리보기 action border에 쓰는 Figma Gray/200.
+    static let floorPlanSelectionIdle = DSPalette.Gray.g200
+    static let floorPlanPreviewActionBorder = DSPalette.Gray.g200
+
     // MARK: - Content
 
     /// Figma: `color/text/primary`
