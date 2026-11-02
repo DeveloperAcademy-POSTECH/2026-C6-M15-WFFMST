@@ -7,7 +7,7 @@ Issue #141의 구현 전에 도면 목록, 상세 조회, 삭제 확인, 수정 
 - 기준 캔버스: iPad landscape `1366 × 1024`
 - InstructorApp은 iPad landscape left/right만 지원하며, 회전 방향을 보장하기 위해 full screen으로 실행한다.
 - 목록: [Figma `2714:4892`](https://www.figma.com/design/3tndfCqfeh1Z1dLRXu2qXk/?node-id=2714-4892)
-- 상세: [Figma `2714:5546`](https://www.figma.com/design/3tndfCqfeh1Z1dLRXu2qXk/?node-id=2714-5546)
+- 상세: [Figma `3009:2287`](https://www.figma.com/design/3tndfCqfeh1Z1dLRXu2qXk/?node-id=3009-2287)
 - 삭제 확인: [Figma `2714:5526`](https://www.figma.com/design/3tndfCqfeh1Z1dLRXu2qXk/?node-id=2714-5526)
 - 기능 기준: Issue #113의 상세·마스크 수정·삭제와 Issue #116의 목록 미리보기
 - 디자인 시스템 기준: Issue #128에서 추가한 의미 색상, Figma 타이포그래피, spacing/radius/control 토큰
@@ -47,7 +47,6 @@ Figma의 Apple SD Gothic Neo 스타일은 Issue #128의 `DSTypography`와 `dsTex
 | 섹션 제목 | 20 Bold, line height 30 | `headingBold20` |
 | 버튼·필드 라벨 | 20 SemiBold, line height 30 | `headingSemiBold20` |
 | 본문·생성일 | 16 Regular | `bodyRegular16` |
-| 상단 경로 라벨 | 16 Regular | `bodyRegular16` |
 | 시스템 alert | SF Pro 17 | SwiftUI `.alert`의 시스템 스타일 |
 
 공통 간격은 `DSSpacing`, 모서리는 `DSRadius`, 컨트롤 높이는 `DSSize`를 우선 사용한다. Figma에만 있는 `40`, `60`도 기존 토큰에 포함되어 있다.
@@ -60,8 +59,7 @@ Figma의 Apple SD Gothic Neo 스타일은 Issue #128의 `DSTypography`와 `dsTex
 | --- | --- | --- |
 | 화면 | `1366 × 1024` | 배경 `backgroundPrimary` |
 | 뒤로가기 | leading 40, top 40, `56 × 56` | `DSCircularButtonStyle(size: .regular)`, radius full, button shadow |
-| 경로 라벨 | 뒤로가기 내부 기준 x 64, 세로 중앙 | `훈련 도면`, body 16 |
-| 새 도면 추가 | trailing 40, top 40, `180 × 56` | primary, radius full, horizontal padding 20 |
+| 새 도면 추가 | trailing 40, top 40, 높이 56 | primary, radius full, 텍스트 기준 horizontal padding 40 |
 | 화면 제목 | leading 40, top 195, height 36 | `도면 관리`, heading 36 |
 | 콘텐츠 행 | leading/trailing 40, top 256, bottom 60 | 좌우 gap 24 |
 | 목록 패널 | `465 × 708` | radius 16, padding 12, `surfacePrimary`, border `surfaceSecondary` 1pt |
@@ -86,10 +84,11 @@ Figma의 Apple SD Gothic Neo 스타일은 Issue #128의 `DSTypography`와 `dsTex
 목록 로드가 끝나고 항목이 하나 이상이면 첫 항목을 기본 선택해 미리보기를 즉시 요청한다. 사용자가 항목을 누르면 선택과 미리보기만 바뀌고, 상세 진입은 미리보기 패널의 `상세보기 및 편집`으로 분리한다. 삭제 뒤에는 삭제된 위치의 다음 항목, 다음 항목이 없으면 이전 항목을 선택한다.
 
 Figma 좌측 바깥의 빨간 `40` 표시는 margin 주석이며 앱 UI에 포함하지 않는다.
+뒤로가기 옆에는 `훈련 도면` 등의 경로 문구를 표시하지 않는다.
 
 ### 미리보기 패널
 
-- 섹션 라벨 `도면 미리보기`는 leading/top 20pt, `headingBold20`, `DSColor.surfaceSelected`를 사용한다. 밝은 이미지 위에서도 대비가 부족하면 scrim을 추가한다.
+- 섹션 라벨 `도면 미리보기`는 leading/top 20pt, `headingBold20`, `DSColor.surfaceSelected`를 사용한다. 라벨에 별도 배경이나 scrim을 적용하지 않는다.
 - `상세보기 및 편집`은 trailing 12pt, top 12pt, `180 × 56`, radius full이다.
 - 버튼 배경은 `surfacePrimary`, border는 앱 토큰 `floorPlanPreviewActionBorder` 1pt, 텍스트는 `contentPrimary`이다.
 - 목록 미리보기에는 도면 원본 이미지만 표시하고 최종 마스크는 표시하거나 렌더링하지 않는다.
@@ -101,7 +100,7 @@ Figma 좌측 바깥의 빨간 `40` 표시는 margin 주석이며 앱 UI에 포�
 | 상태 | 표현 |
 | --- | --- |
 | 목록 loading | 두 패널 영역에 progress와 `등록한 도면을 불러오는 중입니다.` |
-| 목록 empty | 패널 전체에 `등록된 도면이 없습니다.`와 새 도면 추가 행동 유지 |
+| 목록 empty | 좌우 두 패널을 유지하고 왼쪽 목록 패널에 `등록된 도면이 없습니다.`, 오른쪽 미리보기 패널에 선택 안내 표시, 새 도면 추가 행동 유지 |
 | 미리보기 loading | 패널 크기를 유지한 채 progress overlay, 상세 버튼 disabled |
 | 미리보기 failed | 오류 문구와 `다시 불러오기`, 현재 선택 유지 |
 | loaded | 도면 원본 이미지, 상세 버튼 enabled |
@@ -112,14 +111,16 @@ Figma 좌측 바깥의 빨간 `40` 표시는 margin 주석이며 앱 UI에 포�
 
 | 요소 | 기준 위치·크기 | 내부 규칙 |
 | --- | --- | --- |
-| 왼쪽 미리보기 영역 | `962 × 1024` | 배경 `backgroundPrimary` |
-| 오른쪽 정보 패널 | trailing 고정 `404 × 1024` | 배경 `surfacePrimary` |
+| 왼쪽 미리보기 영역 | 정보 패널을 제외한 나머지 폭 | 배경 `backgroundPrimary` |
+| 오른쪽 정보 패널 | 1366pt 기준 `404 × 1024` | 배경 `surfacePrimary`, 화면 폭에 따라 360~404pt |
 | 뒤로가기 | leading/top 40, `56 × 56` | 목록과 동일 |
-| 도면 canvas | 기준 `409 × 864`, top 77 | 왼쪽 영역 중앙, aspect fit, pan/zoom 허용 |
-| 정보 패널 padding | horizontal 20, top 40, bottom 30 | leading 정렬 |
+| 도면 canvas | 최대 `409 × 864` | 왼쪽 영역 중앙, aspect fit, pan/zoom 허용 |
+| 정보 패널 padding | horizontal 20, top 40, bottom 40 | leading 정렬 |
 | 삭제 | `132 × 56` | secondary, radius full |
 | 도면 수정 | `220 × 56` | primary, radius full |
 | 버튼 gap | 12 | 하단 고정 |
+
+정보 패널은 기준 화면에서 404pt이며, 더 좁은 iPad 가로 화면에서는 기준 비율을 적용하되 최소 360pt를 유지한다. 도면 canvas는 정보 패널이 아니라 왼쪽 미리보기 영역을 기준으로 중앙 정렬하고, 미리보기의 화면·입력 영역이 정보 패널로 넘어가지 않게 clip한다.
 
 도면 canvas는 원본 이미지 위에 최종 마스크를 겹친다. 마스크의 이동 불가 외곽은 `statusError` 4pt, 기준점은 지름 20pt로 표시한다. 실제 마스크가 raster라면 같은 색과 인지 강도를 유지하되 임의의 벡터 외곽을 새 데이터로 저장하지 않는다.
 
@@ -174,14 +175,14 @@ WorldMap은 수정 화면에서 다시 스캔하지 않는다. 기존 구현은 
 - 선택 항목에는 `.isSelected` trait와 도면명 접근성 라벨을 제공한다.
 - 목록 미리보기 이미지는 하나의 접근성 요소로 묶고 `선택한 도면 미리보기`로 설명한다.
 - 제목과 버튼 텍스트는 Dynamic Type에서 잘리지 않게 하고, 도면명·생성일만 한 줄 말줄임을 허용한다.
-- 화면 폭이 줄어도 오른쪽 상세 패널 404pt와 주요 행동 버튼의 높이는 유지한다.
+- 화면 폭이 줄어들면 오른쪽 상세 패널을 최소 360pt까지 줄이고 주요 행동 버튼의 높이는 유지한다.
 - 화면은 landscape left/right에서만 실행하며 portrait와 iPad 멀티태스킹은 지원하지 않는다.
 - loading overlay는 기존 내용을 갑자기 제거하지 않아 선택 변경 시 화면 점프를 만들지 않는다.
 
 ## 구현 연결 지점
 
 - `FloorPlanListView`: 두 패널 layout, 기본 선택, 목록 item, 미리보기 상태와 상세 행동
-- `FloorPlanDetailView`: 962/404 layout, 상세 metadata, 하단 행동, 시스템 alert
+- `FloorPlanDetailView`: 왼쪽 가변 영역/오른쪽 360~404pt layout, 상세 metadata, 하단 행동, 시스템 alert
 - `FloorPlanCreateView`: 읽기 전용 범위 표시. 이름 변경이 별도 승인되면 수정 모드 이름 field 추가
 - `InstructorStore`: 삭제 후 인접 선택. 이름 변경이 별도 승인되면 이름-only 저장과 마스크 저장 시 이름 반영
 - `FloorPlanDraftStore`: 이름 변경이 별도 승인되면 수정 초안 이름과 dirty state
