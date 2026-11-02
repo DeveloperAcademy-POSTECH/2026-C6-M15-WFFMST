@@ -53,10 +53,12 @@ struct TrainingSessionCreateView: View {
             Button(action: store.createSession) {
                 Text("세션 생성")
                     .padding(.vertical, DSSpacing.s12)
+                    // DSPrimaryButtonStyle의 좌우 20pt padding을 포함해 최종 너비 180pt.
+                    .frame(width: 140)
             }
-                .buttonStyle(.dsPrimary)
-                .disabled(!store.canCreateSession)
-                .accessibilityIdentifier("session.create")
+            .buttonStyle(.dsPrimary)
+            .disabled(!store.canCreateSession)
+            .accessibilityIdentifier("session.create")
         }
         .padding(.top, 40)
         .padding(.horizontal, 40)
