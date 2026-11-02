@@ -352,8 +352,8 @@ private final class InstructorDemoRecordingRepository: RecordingRepository, @unc
                 identity: TrackIdentity(
                     sessionID: sessionID,
                     memberID: memberID,
-                    // 30초 영상으로 교체하기 전의 12초 데모 캐시와 구분한다.
-                    recordingID: UUID(uuidString: "30000000-0000-0000-0000-00000000019\(index + 1)")!
+                    // 앱을 덮어 설치해도 이전 번들 영상 캐시를 재사용하지 않도록 세대를 구분한다.
+                    recordingID: UUID(uuidString: "30000000-0000-0000-0000-00000000029\(index + 1)")!
                 ),
                 state: state,
                 startedAt: startedAt,
