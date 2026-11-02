@@ -38,8 +38,8 @@ enum TrainingLifecycleChecks {
         repository.sessions[0].send(updated(session, status: .waiting))
         repository.sessions[0].send(updated(session, status: .running, start: start))
         await wait("서버 시작 시각 수신") { store.currentSession?.startedAt == start }
-        expect(store.trainingElapsed(at: start.addingTimeInterval(3661)) == "01:01:01", "서버 시각 기준 경과 시간")
-        expect(store.trainingElapsed(at: start.addingTimeInterval(-10)) == "00:00:00", "음수 경과 시간 차단")
+        expect(store.trainingElapsed(at: start.addingTimeInterval(3661)) == "61:01", "서버 시각 기준 경과 시간")
+        expect(store.trainingElapsed(at: start.addingTimeInterval(-10)) == "00:00", "음수 경과 시간 차단")
         repository.sessions[0].finish(throwing: Failure.disconnected)
         await wait("세션 구독 실패") { store.canRetrySessionObservation }
         expect(store.currentSession?.startedAt == start, "세션 구독 실패 중 서버 시각 보존")
