@@ -38,6 +38,7 @@ struct LocalFloorPlanCanvas: UIViewRepresentable {
     var onCheckpointTap: ((Int) -> Void)? = nil
     var onScaleMarkerMoved: (LocalScaleMarker, LocalPlanPoint) -> Void = { _, _ in }
     var onEditingChanged: (Bool) -> Void = { _ in }
+    var onDisplayScaleChanged: (CGFloat) -> Void = { _ in }
 
     func makeUIView(context: Context) -> LocalFloorPlanCanvasView {
         let view = LocalFloorPlanCanvasView()
@@ -53,6 +54,7 @@ struct LocalFloorPlanCanvas: UIViewRepresentable {
         view.onCheckpointTap = onCheckpointTap
         view.onScaleMarkerMoved = onScaleMarkerMoved
         view.onEditingChanged = onEditingChanged
+        view.onDisplayScaleChanged = onDisplayScaleChanged
         view.update(image: image, mask: mask, tool: tool,
                     normalizedDiameter: normalizedDiameter, selection: selection,
                     pendingBrushStrokes: pendingBrushStrokes,
@@ -79,6 +81,7 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
     var onCheckpointTap: ((Int) -> Void)?
     var onScaleMarkerMoved: ((LocalScaleMarker, LocalPlanPoint) -> Void)?
     var onEditingChanged: ((Bool) -> Void)?
+    var onDisplayScaleChanged: ((CGFloat) -> Void)?
 
     private let scrollView = UIScrollView()
     private let contentView = UIView()
@@ -107,6 +110,7 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
     private var completionTask: DispatchWorkItem?
     private var strokeContext: (mode: LocalEditMode, diameter: Double)?
     private var draggedScaleMarker: LocalScaleMarker?
+    private var lastReportedDisplayScale: CGFloat?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -198,6 +202,7 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
         onCheckpointTap = nil
         onScaleMarkerMoved = nil
         onEditingChanged = nil
+        onDisplayScaleChanged = nil
         completionTask?.cancel()
         completionTask = nil
         canvasView.delegate = nil
@@ -339,6 +344,15 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
         let inset = UIEdgeInsets(top: vertical, left: horizontal, bottom: vertical, right: horizontal)
         if scrollView.contentInset != inset { scrollView.contentInset = inset }
         markersView.viewScale = scrollView.zoomScale
+        reportDisplayScaleIfNeeded(scrollView.zoomScale)
+    }
+
+    private func reportDisplayScaleIfNeeded(_ scale: CGFloat) {
+        guard lastReportedDisplayScale.map({ abs($0 - scale) > 0.0001 }) ?? true else { return }
+        lastReportedDisplayScale = scale
+        DispatchQueue.main.async { [weak self] in
+            self?.onDisplayScaleChanged?(scale)
+        }
     }
 
     @objc private func placePoint(_ recognizer: UITapGestureRecognizer) {

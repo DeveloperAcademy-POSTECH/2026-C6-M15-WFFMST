@@ -23,6 +23,7 @@ struct FloorPlanCreateView: View {
     @State private var scanFeedbackMessage: String?
     @State private var scanFeedbackID = UUID()
     @State private var registrationBrushMode: LocalEditMode = .block
+    @State private var editingCanvasDisplayScale: CGFloat = 1
     @FocusState private var focusedField: InputField?
 
     private enum InputField: Hashable { case name, distance }
@@ -209,7 +210,8 @@ struct FloorPlanCreateView: View {
                         store.applyBrushStroke(stroke, as: registrationBrushMode)
                     },
                     onPoint: store.placePoint,
-                    onEditingChanged: store.setDrawing
+                    onEditingChanged: store.setDrawing,
+                    onDisplayScaleChanged: { editingCanvasDisplayScale = $0 }
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .allowsHitTesting(!store.isImporting && store.processingStage != .preparingPreview
@@ -1032,9 +1034,10 @@ struct FloorPlanCreateView: View {
     }
 
     private var brushPreviewLineWidth: CGFloat {
-        guard let image = store.image else { return 12 }
-        let points = store.normalizedDiameter * Double(min(image.width, image.height))
-        return min(32, max(4, CGFloat(points) * 0.55))
+        guard let image = store.image else { return 1 }
+        let imageSpaceDiameter = CGFloat(store.normalizedDiameter)
+            * CGFloat(min(image.width, image.height))
+        return max(1, imageSpaceDiameter * editingCanvasDisplayScale)
     }
 
     private var editingGuideMessage: String {
