@@ -171,6 +171,59 @@ final class MemberPositioningTests: XCTestCase {
         XCTAssertEqual(store.phase, .join)
         XCTAssertNotNil(store.errorMessage)
         XCTAssertEqual(repository.joinCount, 0)
+        XCTAssertTrue(store.errorMessage?.contains("손상") == true)
+    }
+
+    func testCorruptCompressedWorldMapExplainsFailureAndAllowsRetry() async throws {
+        let map = try BundledTrainingMapLoader.load()
+        // 메타데이터와 해시는 맞지만 LZFSE 내용이 잘못된 파일이다.
+        let fixture = try WorldMapLoaderTestData.make(archive: Data([1, 2, 3, 4]))
+        let repository = PositioningRepository(map: map, worldMap: fixture.reference, worldMapFiles: fixture.files)
+        let store = makeStore(repository)
+        defer { store.shutdown() }
+        for _ in 0..<2 {
+            store.join(pin: "012345", memberName: "대원")
+            await waitForJoin(store)
+            XCTAssertEqual(store.phase, .join)
+            XCTAssertTrue(store.errorMessage?.contains("압축을 해제할 수 없습니다") == true)
+            XCTAssertFalse(store.canSetPositionManually)
+            XCTAssertEqual(repository.joinCount, 0)
+        }
+    }
+
+    func testWorldMapDownloadAndRestoreFailuresHaveSpecificMessages() async throws {
+        let map = try BundledTrainingMapLoader.load()
+        let reference = WorldMapReference(worldMapID: UUID(), setupSHA256: "test", floorPlan: map.reference)
+        let cases: [(Error, String)] = [
+            (MemberWorldMapLoadError.decompressedSizeLimitExceeded, "128MiB"),
+            (MemberWorldMapLoadError.invalidArchive, "복원할 수 없습니다"),
+            (RepositoryError.fileTooLarge, "허용 용량"),
+            (RepositoryError.notFound, "찾을 수 없습니다"),
+            (URLError(.notConnectedToInternet), "네트워크 연결")
+        ]
+        for (error, expected) in cases {
+            let repository = PositioningRepository(map: map, worldMap: reference, worldMapDownloadError: error)
+            let store = makeStore(repository)
+            store.join(pin: "012345", memberName: "대원")
+            await waitForJoin(store)
+            XCTAssertEqual(store.phase, .join)
+            XCTAssertTrue(store.errorMessage?.contains(expected) == true, store.errorMessage ?? "오류 안내 없음")
+            XCTAssertEqual(repository.joinCount, 0)
+            store.shutdown()
+        }
+    }
+
+    func testCancelledWorldMapLoadDoesNotShowFailureOrRegisterMember() async throws {
+        let map = try BundledTrainingMapLoader.load()
+        let reference = WorldMapReference(worldMapID: UUID(), setupSHA256: "test", floorPlan: map.reference)
+        let repository = PositioningRepository(map: map, worldMap: reference, worldMapDownloadError: CancellationError())
+        let store = makeStore(repository)
+        defer { store.shutdown() }
+        store.join(pin: "012345", memberName: "대원")
+        await waitForJoin(store)
+        XCTAssertEqual(store.phase, .join)
+        XCTAssertNil(store.errorMessage)
+        XCTAssertEqual(repository.joinCount, 0)
     }
 
     private func makeFixture() throws -> (store: MemberStore, pose: ARPose) {
@@ -228,9 +281,14 @@ private final class PositioningRepository: SessionRepository, MemberRepository, 
     WorldMapFileRepository, RecordingRepository, VideoChunkRepository, TrackResultRepository, @unchecked Sendable {
     let session: Session
     private let lock = NSLock()
+    private let worldMapFiles: WorldMapFiles?
+    private let worldMapDownloadError: Error?
     private var joins = 0
     var joinCount: Int { lock.withLock { joins } }
-    init(map: TrainingMap, worldMap: WorldMapReference? = nil) {
+    init(map: TrainingMap, worldMap: WorldMapReference? = nil,
+         worldMapFiles: WorldMapFiles? = nil, worldMapDownloadError: Error? = nil) {
+        self.worldMapFiles = worldMapFiles
+        self.worldMapDownloadError = worldMapDownloadError
         session = Session(id: UUID(), pin: "012345", name: "테스트", status: .waiting, floorPlan: map.reference, worldMap: worldMap)
     }
     func createSession(_ session: Session) async throws {}
@@ -254,7 +312,8 @@ private final class PositioningRepository: SessionRepository, MemberRepository, 
     }
     func upload(_ files: WorldMapFiles, for reference: WorldMapReference) async throws {}
     func download(_ reference: WorldMapReference) async throws -> WorldMapFiles {
-        WorldMapFiles(worldMapArchive: Data(), setupJSON: Data("invalid".utf8))
+        if let worldMapDownloadError { throw worldMapDownloadError }
+        return worldMapFiles ?? WorldMapFiles(worldMapArchive: Data(), setupJSON: Data("invalid".utf8))
     }
     func startRecording(_ recording: Recording) async throws {}
     func updateRecording(_ recording: Recording) async throws {}
