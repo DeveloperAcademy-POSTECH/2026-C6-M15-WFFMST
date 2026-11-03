@@ -9,8 +9,8 @@ struct TrainingHistoryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            InstructorBackButton(action: store.goBack)
-                .padding(.bottom, 111)
+            backButton
+                .padding(.bottom, 99)
 
             Text("이전 훈련 기록")
                 .dsTextStyle(DSTypography.headingBold36)
@@ -61,6 +61,25 @@ struct TrainingHistoryView: View {
             Text(store.trainingHistoryDeletionError ?? "")
         }
         .accessibilityIdentifier("trainingHistory")
+    }
+
+    /// Figma `Map navigation`: 56×56 원형 버튼, 1px 테두리, 버튼 그림자
+    private var backButton: some View {
+        Button(action: store.goBack) {
+            Image("TrainingHistoryBackIcon")
+                .renderingMode(.original)
+                .resizable()
+                .frame(width: DSSize.controlHeight, height: DSSize.controlHeight)
+                .overlay {
+                    Circle().strokeBorder(DSPalette.Gray.g600, lineWidth: 1)
+                }
+                .clipShape(Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .dsButtonShadow()
+        .accessibilityLabel("뒤로")
+        .accessibilityIdentifier("navigation.back")
     }
 
     @ViewBuilder
@@ -127,45 +146,48 @@ private struct TrainingHistoryRow: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .top, spacing: DSSpacing.s24) {
-                Button(action: onOpen) {
-                    HStack(alignment: .top, spacing: DSSpacing.s24) {
-                        thumbnail
-                            .frame(width: 323, height: 208)
-                            .clipShape(.rect(cornerRadius: DSRadius.small))
-                            .padding(.top, 1.5)
+            Button(action: onOpen) {
+                HStack(alignment: .top, spacing: DSSpacing.s24) {
+                    thumbnail
+                        .frame(width: 323, height: 208)
+                        .clipShape(.rect(cornerRadius: DSRadius.small))
+                        .padding(.top, 1.5)
 
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text(record.trainingName)
-                                .dsTextStyle(DSTypography.headingSemiBold32)
-                                .foregroundStyle(DSPalette.Gray.g50)
-                                .lineLimit(1)
-                                .frame(height: 42, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 0) {
+                        // Figma는 제목 줄 오른쪽 끝(열 끝에서 20 안쪽)에 `삭제`를 둔다. 버튼은 겹쳐 올리고 자리만 비운다.
+                        Text(record.trainingName)
+                            .dsTextStyle(DSTypography.headingSemiBold32)
+                            .foregroundStyle(DSPalette.Gray.g50)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, minHeight: 42, maxHeight: 42, alignment: .leading)
+                            .padding(.trailing, Self.deleteButtonSize + Self.deleteButtonTrailing + DSSpacing.s8)
 
-                            Text(record.detailText)
-                                .dsTextStyle(DSTypography.bodyRegular16)
-                                .foregroundStyle(DSPalette.Gray.g100)
-                                .lineLimit(1)
-                                .padding(.top, DSSpacing.s4)
+                        Text(record.detailText)
+                            .dsTextStyle(DSTypography.bodyRegular16)
+                            .foregroundStyle(DSPalette.Gray.g100)
+                            .lineLimit(1)
+                            .padding(.top, DSSpacing.s4)
+                            .padding(.trailing, Self.deleteButtonTrailing)
 
-                            Spacer(minLength: DSSpacing.s12)
+                        Spacer(minLength: DSSpacing.s12)
 
-                            Text(record.durationText)
-                                .dsTextStyle(DSTypography.bodyRegular24)
-                                .foregroundStyle(DSPalette.Gray.g100)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Text(record.durationText)
+                            .dsTextStyle(DSTypography.bodyRegular24)
+                            .foregroundStyle(DSPalette.Gray.g100)
                     }
-                    .frame(height: 211)
-                    .contentShape(.rect)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .buttonStyle(.plain)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(record.trainingName), \(record.detailText), 진행 시간 \(record.durationText)")
-                .accessibilityHint("AAR 화면으로 이동합니다.")
-                .accessibilityIdentifier("trainingHistory.record.\(record.sessionID.uuidString)")
-
+                .frame(height: 211)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(record.trainingName), \(record.detailText), 진행 시간 \(record.durationText)")
+            .accessibilityHint("AAR 화면으로 이동합니다.")
+            .accessibilityIdentifier("trainingHistory.record.\(record.sessionID.uuidString)")
+            .overlay(alignment: .topTrailing) {
                 deleteButton
+                    .padding(.trailing, Self.deleteButtonTrailing)
             }
             .padding(.top, DSSpacing.s20)
             .padding(.bottom, DSSpacing.s20)
@@ -177,17 +199,20 @@ private struct TrainingHistoryRow: View {
         }
     }
 
+    private static let deleteButtonSize: CGFloat = 42
+    private static let deleteButtonTrailing: CGFloat = DSSpacing.s20
+
     @ViewBuilder
     private var deleteButton: some View {
         if isDeleting {
             ProgressView()
-                .frame(width: 42, height: 42)
+                .frame(width: Self.deleteButtonSize, height: Self.deleteButtonSize)
                 .accessibilityLabel("삭제 중")
         } else {
             Button("삭제", action: onDelete)
                 .dsTextStyle(DSTypography.bodyRegular24)
                 .foregroundStyle(DSPalette.Gray.g300)
-                .frame(minWidth: 42, minHeight: 42)
+                .frame(minWidth: Self.deleteButtonSize, minHeight: Self.deleteButtonSize)
                 .accessibilityLabel("\(record.trainingName) 기록 삭제")
                 .accessibilityIdentifier("trainingHistory.delete.\(record.sessionID.uuidString)")
         }
@@ -200,6 +225,9 @@ private struct TrainingHistoryRow: View {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
+                // Figma 썸네일 위 `opacity-20` 덮개
+                Rectangle()
+                    .fill(DSPalette.Gray.g700Opacity20)
             } else {
                 Rectangle()
                     .fill(DSColor.backgroundElevated)
@@ -251,7 +279,7 @@ extension TrainingHistoryRecord {
     }
 }
 
-#Preview("이전 훈련 기록") {
+#Preview("이전 훈련 기록", traits: .landscapeLeft) {
     let floorPlan = FloorPlanReference(floorPlanID: UUID(), navigationSHA256: "preview")
     let records = (0..<3).map { index in
         TrainingHistoryRecord(
@@ -270,7 +298,7 @@ extension TrainingHistoryRecord {
         .preferredColorScheme(.dark)
 }
 
-#Preview("기록 없음") {
+#Preview("기록 없음", traits: .landscapeLeft) {
     TrainingHistoryView()
         .environment(InstructorStore())
         .frame(width: 1_366, height: 1_024)
