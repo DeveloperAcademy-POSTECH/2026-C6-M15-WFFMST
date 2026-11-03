@@ -49,6 +49,8 @@ final class AARStore {
     /// 이 세션의 모든 기록. AAR을 마칠 때 영상을 지우는 데 쓴다
     @ObservationIgnored private var sessionRecordings: [Recording] = []
     @ObservationIgnored private var playbackTask: Task<Void, Never>?
+    /// 큰 소리 후보 받기. 부가 정보라 AAR 로딩과 따로 돌고 reset 때 취소한다
+    @ObservationIgnored private var soundEventsTask: Task<Void, Never>?
     @ObservationIgnored private var loadedSessionID: UUID?
 
     /// 참가자 ID(`Member.id` 문자열)별 동선 상태
@@ -155,9 +157,8 @@ final class AARStore {
             if loadedSessionID == session.id {
                 rememberRecordings(session: sessionValue ?? session, recordings: recordingList ?? [], participantIDs: participantIDs)
                 startRequestedVideoLoads()
-                async let soundEventsLoaded: Void = loadSoundEvents()
+                startSoundEventsLoad()
                 await loadTracks(session: sessionValue ?? session, recordings: recordingList ?? [], participantIDs: participantIDs)
-                await soundEventsLoaded
             }
         } catch {
             if loadedSessionID == session.id {
@@ -220,6 +221,8 @@ final class AARStore {
         videos = [:]
         requestedVideoIDs = []
         participantRecordings = nil
+        soundEventsTask?.cancel()
+        soundEventsTask = nil
         soundEvents = []
         recordingsLoadFailed = false
         sessionRecordings = []
@@ -468,14 +471,29 @@ final class AARStore {
             .max { ($0.startedAt ?? .distantPast) < ($1.startedAt ?? .distantPast) }
     }
 
-    /// 세션 시작부터 기록 시작까지의 초. 둘 중 하나라도 모르면 0으로 둔다.
     /// 대원별 큰 소리 후보를 받아 세션 시간축으로 바꾸고 이벤트로 묶는다. 후보를 받지 못한 대원은 빼고 묶는다.
-    private func loadSoundEvents() async {
+    /// 마커는 부가 정보라 기다리지 않는다. 다운로드가 느리거나 끝나지 않아도 동선·영상 재생은 막지 않는다.
+    private func startSoundEventsLoad() {
         guard let participantRecordings else { return }
         let sessionID = loadedSessionID
         let loader = soundCandidateLoader
         let entries = participantRecordings.map { (participantID: $0.key, identity: $0.value.recording.identity, offset: $0.value.offset) }
-        let candidates = await withTaskGroup(of: (String, [Double]).self) { group in
+        soundEventsTask?.cancel()
+        soundEventsTask = Task { [weak self] in
+            let candidates = await Self.soundCandidateTimes(entries, loader: loader)
+            guard let self, !Task.isCancelled, self.loadedSessionID == sessionID else { return }
+            self.soundEventsTask = nil
+            // 한 대원만 들은 후보는 휴대폰 접촉음일 수 있어 표시하지 않는다(#168).
+            self.soundEvents = AARSoundEventFusion.events(from: candidates).filter(\.isCorroborated)
+        }
+    }
+
+    /// 참가자 ID별 후보 시각(세션 초). 후보가 없거나 받지 못한 대원은 빠진다.
+    private static func soundCandidateTimes(
+        _ entries: [(participantID: String, identity: TrackIdentity, offset: Double)],
+        loader: any AARSoundCandidateLoading
+    ) async -> [String: [Double]] {
+        await withTaskGroup(of: (String, [Double]).self) { group in
             for entry in entries {
                 group.addTask {
                     do {
@@ -493,11 +511,9 @@ final class AARStore {
             }
             return result
         }
-        guard loadedSessionID == sessionID else { return }
-        // 한 대원만 들은 후보는 휴대폰 접촉음일 수 있어 표시하지 않는다(#168).
-        soundEvents = AARSoundEventFusion.events(from: candidates).filter(\.isCorroborated)
     }
 
+    /// 세션 시작부터 기록 시작까지의 초. 둘 중 하나라도 모르면 0으로 둔다.
     private static func recordingOffset(session: Session, recording: Recording) -> Double {
         guard let sessionStart = session.startedAt, let recordingStart = recording.startedAt else { return 0 }
         return recordingStart.timeIntervalSince(sessionStart)
