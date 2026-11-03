@@ -54,6 +54,11 @@ struct FloorPlanCreateView: View {
         scanCheckpointMarkers
     }
 
+    private var scanCheckpointTapHandler: ((Int) -> Void)? {
+        guard store.worldMapStart != nil else { return nil }
+        return handleScanMarkerTap
+    }
+
     var body: some View {
         GeometryReader { proxy in
             let sidebarWidth = min(
@@ -303,7 +308,6 @@ struct FloorPlanCreateView: View {
                     scaleA: store.startPlanPoint,
                     scaleB: store.directionPlanPoint,
                     scaleMarkerAppearance: .scanHeading,
-                    isScanStartCaptured: false,
                     usesTransparentBackground: true,
                     maximumInitialDisplaySize: CGSize(
                         width: maximumPreviewWidth,
@@ -356,7 +360,7 @@ struct FloorPlanCreateView: View {
                     scaleA: store.startPlanPoint,
                     scaleB: store.directionPlanPoint,
                     scaleMarkerAppearance: .scanHeading,
-                    isScanStartCaptured: store.worldMapStart != nil,
+                    showsScanStartSelection: store.worldMapStart == nil,
                     usesTransparentBackground: true,
                     maximumInitialDisplaySize: CGSize(
                         width: maximumPreviewWidth,
@@ -368,7 +372,7 @@ struct FloorPlanCreateView: View {
                     layers: FloorPlanLayerDisplay(planOpacity: 1, maskOpacity: 0),
                     onStroke: { _ in },
                     onPoint: { _ in },
-                    onCheckpointTap: handleScanMarkerTap
+                    onCheckpointTap: scanCheckpointTapHandler
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("floorPlan.scanning.canvas")
