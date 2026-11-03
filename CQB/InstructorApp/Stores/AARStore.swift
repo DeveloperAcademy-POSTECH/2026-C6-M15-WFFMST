@@ -38,6 +38,7 @@ final class AARStore {
     @ObservationIgnored private let floorPlanFileRepository: any FloorPlanFileRepository
     @ObservationIgnored private let trackLoader: AARTrackLoader
     @ObservationIgnored private let videoLoader: AARVideoLoader
+    @ObservationIgnored private let soundCandidateLoader: any AARSoundCandidateLoading
     @ObservationIgnored private var videoTasks: [String: Task<Void, Never>] = [:]
     /// 영상을 보여 달라고 요청한 대원. 기록 목록을 받기 전에 요청되면 받은 뒤 불러온다
     @ObservationIgnored private var requestedVideoIDs: [String] = []
@@ -55,6 +56,8 @@ final class AARStore {
     /// 참가자 ID별 영상 상태. 영상 모드에서 선택한 대원만 담긴다
     private(set) var videos: [String: VideoState] = [:]
     private(set) var playbackPosition = 0.0
+    /// 재생 타임라인에 표시할 큰 소리 이벤트. 여러 대원이 함께 들은 것만 담는다. 시각 오름차순
+    private(set) var soundEvents: [AARSoundEvent] = []
     private(set) var playbackDuration = 0.0
     private(set) var isPlaying = false
     private(set) var isLoading = false
@@ -71,7 +74,8 @@ final class AARStore {
         recordingRepository: any RecordingRepository = DemoAARRecordingRepository(),
         trackResultRepository: any TrackResultRepository = DemoTrackResultRepository(),
         floorPlanFileRepository: any FloorPlanFileRepository = DemoFloorPlanFileRepository(),
-        videoChunkRepository: any VideoChunkRepository = DemoVideoChunkRepository()
+        videoChunkRepository: any VideoChunkRepository = DemoVideoChunkRepository(),
+        soundCandidateLoader: any AARSoundCandidateLoading = UnavailableAARSoundCandidateLoader()
     ) {
         self.sessionRepository = sessionRepository
         self.memberRepository = memberRepository
@@ -79,6 +83,7 @@ final class AARStore {
         self.floorPlanFileRepository = floorPlanFileRepository
         trackLoader = AARTrackLoader(repository: trackResultRepository)
         videoLoader = AARVideoLoader(repository: videoChunkRepository)
+        self.soundCandidateLoader = soundCandidateLoader
     }
 
     var canPlay: Bool { playbackDuration > 0 && !isLoading }
@@ -150,7 +155,9 @@ final class AARStore {
             if loadedSessionID == session.id {
                 rememberRecordings(session: sessionValue ?? session, recordings: recordingList ?? [], participantIDs: participantIDs)
                 startRequestedVideoLoads()
+                async let soundEventsLoaded: Void = loadSoundEvents()
                 await loadTracks(session: sessionValue ?? session, recordings: recordingList ?? [], participantIDs: participantIDs)
+                await soundEventsLoaded
             }
         } catch {
             if loadedSessionID == session.id {
@@ -181,6 +188,11 @@ final class AARStore {
         setPlaybackPosition(playbackPosition + seconds)
     }
 
+    /// 큰 소리가 난 시각으로 이동한다.
+    func jumpToSoundEvent(_ event: AARSoundEvent) {
+        setPlaybackPosition(event.time)
+    }
+
     /// AAR을 마치고 나갈 때 이 세션의 영상을 Storage와 기기 캐시에서 지운다.
     /// 지금은 영상을 남기기로 해 부르지 않는다(#66).
     /// 삭제가 실패해도 나가는 것을 막지 않는다. 남은 영상은 Storage 수명 주기 규칙이 켜져 있으면 1일 뒤 지워진다.
@@ -208,6 +220,7 @@ final class AARStore {
         videos = [:]
         requestedVideoIDs = []
         participantRecordings = nil
+        soundEvents = []
         recordingsLoadFailed = false
         sessionRecordings = []
         playbackPosition = 0
@@ -456,6 +469,35 @@ final class AARStore {
     }
 
     /// 세션 시작부터 기록 시작까지의 초. 둘 중 하나라도 모르면 0으로 둔다.
+    /// 대원별 큰 소리 후보를 받아 세션 시간축으로 바꾸고 이벤트로 묶는다. 후보를 받지 못한 대원은 빼고 묶는다.
+    private func loadSoundEvents() async {
+        guard let participantRecordings else { return }
+        let sessionID = loadedSessionID
+        let loader = soundCandidateLoader
+        let entries = participantRecordings.map { (participantID: $0.key, identity: $0.value.recording.identity, offset: $0.value.offset) }
+        let candidates = await withTaskGroup(of: (String, [Double]).self) { group in
+            for entry in entries {
+                group.addTask {
+                    do {
+                        let found = try await loader.candidates(for: entry.identity)
+                        return (entry.participantID, found.map { $0.recordingTime + entry.offset })
+                    } catch {
+                        Self.logger.error("큰 소리 후보 불러오기 실패: \(error.localizedDescription, privacy: .private)")
+                        return (entry.participantID, [])
+                    }
+                }
+            }
+            var result: [String: [Double]] = [:]
+            for await (participantID, times) in group where !times.isEmpty {
+                result[participantID] = times
+            }
+            return result
+        }
+        guard loadedSessionID == sessionID else { return }
+        // 한 대원만 들은 후보는 휴대폰 접촉음일 수 있어 표시하지 않는다(#168).
+        soundEvents = AARSoundEventFusion.events(from: candidates).filter(\.isCorroborated)
+    }
+
     private static func recordingOffset(session: Session, recording: Recording) -> Double {
         guard let sessionStart = session.startedAt, let recordingStart = recording.startedAt else { return 0 }
         return recordingStart.timeIntervalSince(sessionStart)
