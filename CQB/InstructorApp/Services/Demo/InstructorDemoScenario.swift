@@ -46,10 +46,6 @@ enum InstructorDemoScenario {
             sessionRepository: sessionRepository,
             memberRepository: memberRepository,
             recordingRepository: recordingRepository,
-            trainingVideoDeleter: RecordedTrainingVideoDeleter(
-                recordingRepository: recordingRepository,
-                videoChunkRepository: videoChunkRepository
-            ),
             trainingHistory: samples.map(\.record),
             pinGenerator: { "012345" }
         )

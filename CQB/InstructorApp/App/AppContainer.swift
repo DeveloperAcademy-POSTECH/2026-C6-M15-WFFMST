@@ -22,11 +22,7 @@ struct AppContainer: View {
             sessionRepository: FirestoreSessionRepository(),
             memberRepository: FirestoreMemberRepository(),
             recordingRepository: FirestoreRecordingRepository(),
-            trainingHistoryRepository: trainingHistoryRepository,
-            trainingVideoDeleter: RecordedTrainingVideoDeleter(
-                recordingRepository: FirestoreRecordingRepository(),
-                videoChunkRepository: StorageVideoChunkRepository()
-            )
+            trainingHistoryRepository: trainingHistoryRepository
         ))
         _aarStore = State(initialValue: AARStore(
             sessionRepository: FirestoreSessionRepository(),

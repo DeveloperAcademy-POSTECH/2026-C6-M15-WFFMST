@@ -9,8 +9,8 @@ enum TrainingHistoryChecks {
         await checkOpenAndReturnHome()
         await checkOpenFailureAndCancellation()
         await checkLeavingWhileOpening()
-        await checkDeletion()
-        print("PASS: 이전 훈련 기록 복원·재시도, 기록에서 AAR 열기·홈 복귀, 열기 실패·취소·화면 이탈, 서버 영상과 함께 삭제")
+        checkDeletion()
+        print("PASS: 이전 훈련 기록 복원·재시도, 기록에서 AAR 열기·홈 복귀, 열기 실패·취소·화면 이탈, 기기 목록에서만 삭제")
     }
 
     private static func checkLoadAndRetry() {
@@ -115,33 +115,27 @@ enum TrainingHistoryChecks {
         expect(store.phase == .home && store.canSelectTrainingHistoryRecord, "홈으로 돌아오면 기록을 다시 누를 수 있음")
     }
 
-    private static func checkDeletion() async {
+    private static func checkDeletion() {
         let first = makeRecord(minutesAfterBase: 0)
         let second = makeRecord(minutesAfterBase: 60)
         let repository = InMemoryTrainingHistoryRepository(records: [first, second])
-        let deleter = RecordingVideoDeleter()
-        let store = InstructorStore(trainingHistoryRepository: repository, trainingVideoDeleter: deleter)
+        let store = InstructorStore(trainingHistoryRepository: repository)
         store.loadTrainingHistory()
         store.deleteTrainingHistoryRecord(first.sessionID)
-        expect(store.deletingTrainingHistorySessionID == nil, "목록 화면 밖에서는 삭제하지 않음")
+        expect(store.trainingHistory == [second, first], "목록 화면 밖에서는 삭제하지 않음")
 
         store.openTrainingHistory()
-        deleter.failure = Failure.unavailable
+        repository.deleteError = Failure.unavailable
         store.deleteTrainingHistoryRecord(first.sessionID)
-        expect(store.deletingTrainingHistorySessionID == first.sessionID && !store.canSelectTrainingHistoryRecord,
-               "삭제 중에는 다른 기록 선택 차단")
-        await wait("서버 영상 삭제 실패") { store.deletingTrainingHistorySessionID == nil }
         expect(store.trainingHistoryDeletionError != nil && store.trainingHistory == [second, first]
                && (try? repository.fetchAll()) == [second, first],
-               "서버 삭제 실패 시 목록에 남겨 다시 시도")
+               "기기 저장 실패 시 목록에 남겨 다시 시도")
 
-        deleter.failure = nil
+        repository.deleteError = nil
         store.deleteTrainingHistoryRecord(first.sessionID)
-        await wait("삭제 완료") { store.deletingTrainingHistorySessionID == nil }
-        expect(deleter.deletedSessionIDs == [first.sessionID, first.sessionID], "요청한 세션 영상만 삭제")
         expect(store.trainingHistoryDeletionError == nil && store.trainingHistory == [second]
                && (try? repository.fetchAll()) == [second],
-               "서버 영상을 지운 뒤 기기 목록에서 삭제")
+               "기기 목록에서만 삭제")
     }
 
     static func makeRecord(minutesAfterBase minutes: Double) -> TrainingHistoryRecord {
@@ -175,25 +169,6 @@ enum TrainingHistoryChecks {
     }
     private static func settle() async { try? await Task.sleep(for: .milliseconds(30)) }
     private enum Failure: Error { case unavailable }
-}
-
-private final class RecordingVideoDeleter: TrainingVideoDeleting, @unchecked Sendable {
-    private let lock = NSLock()
-    private var deleted: [UUID] = []
-    private var error: Error?
-    var deletedSessionIDs: [UUID] { lock.withLock { deleted } }
-    var failure: Error? {
-        get { lock.withLock { error } }
-        set { lock.withLock { error = newValue } }
-    }
-
-    func deleteVideos(sessionID: UUID) async throws {
-        let failure = lock.withLock { () -> Error? in
-            deleted.append(sessionID)
-            return error
-        }
-        if let failure { throw failure }
-    }
 }
 
 private final class HistoryFeed<Value: Sendable>: @unchecked Sendable {

@@ -2,7 +2,7 @@ import CQBCore
 import CQBDesignSystem
 import SwiftUI
 
-/// 이전 훈련 기록 전체 목록. 기록을 누르면 AAR을 다시 열고, `삭제`로 서버 영상과 기기 목록에서 지운다.
+/// 이전 훈련 기록 전체 목록. 기록을 누르면 AAR을 다시 열고, `삭제`는 기기 목록에서만 지운다.
 struct TrainingHistoryView: View {
     @Environment(InstructorStore.self) private var store
     @State private var pendingDeletion: TrainingHistoryRecord?
@@ -106,7 +106,6 @@ struct TrainingHistoryView: View {
                         TrainingHistoryRow(
                             record: record,
                             isOpening: store.openingTrainingHistorySessionID == record.sessionID,
-                            isDeleting: store.deletingTrainingHistorySessionID == record.sessionID,
                             isEnabled: store.canSelectTrainingHistoryRecord,
                             onOpen: { store.openTrainingHistoryRecord(record.sessionID) },
                             onDelete: { pendingDeletion = record }
@@ -139,7 +138,6 @@ private struct TrainingHistoryRow: View {
 
     let record: TrainingHistoryRecord
     let isOpening: Bool
-    let isDeleting: Bool
     let isEnabled: Bool
     let onOpen: () -> Void
     let onDelete: () -> Void
@@ -202,20 +200,13 @@ private struct TrainingHistoryRow: View {
     private static let deleteButtonSize: CGFloat = 42
     private static let deleteButtonTrailing: CGFloat = DSSpacing.s20
 
-    @ViewBuilder
     private var deleteButton: some View {
-        if isDeleting {
-            ProgressView()
-                .frame(width: Self.deleteButtonSize, height: Self.deleteButtonSize)
-                .accessibilityLabel("삭제 중")
-        } else {
-            Button("삭제", action: onDelete)
-                .dsTextStyle(DSTypography.bodyRegular24)
-                .foregroundStyle(DSPalette.Gray.g300)
-                .frame(minWidth: Self.deleteButtonSize, minHeight: Self.deleteButtonSize)
-                .accessibilityLabel("\(record.trainingName) 기록 삭제")
-                .accessibilityIdentifier("trainingHistory.delete.\(record.sessionID.uuidString)")
-        }
+        Button("삭제", action: onDelete)
+            .dsTextStyle(DSTypography.bodyRegular24)
+            .foregroundStyle(DSPalette.Gray.g300)
+            .frame(minWidth: Self.deleteButtonSize, minHeight: Self.deleteButtonSize)
+            .accessibilityLabel("\(record.trainingName) 기록 삭제")
+            .accessibilityIdentifier("trainingHistory.delete.\(record.sessionID.uuidString)")
     }
 
     @ViewBuilder

@@ -26,8 +26,6 @@ xcrun swiftc -parse-as-library -module-cache-path "$test_build_dir/ModuleCache" 
   "$task_root/CQB/InstructorApp/Services/Import/"*.swift \
   "$task_root/CQB/InstructorApp/Services/Geometry/"*.swift \
   "$task_root/CQB/InstructorApp/Services/AAR/AARFloorPlanLayout.swift" \
-  "$task_root/CQB/InstructorApp/Services/AAR/AARVideoLoader.swift" \
-  "$task_root/CQB/InstructorApp/Services/AAR/TrainingVideoDeleter.swift" \
   "$task_root/CQB/InstructorApp/Services/Storage/"*.swift \
   "$task_root/CQB/InstructorApp/Stores/FloorPlanDraftStore.swift" \
   "$task_root/CQB/InstructorApp/Stores/InstructorPhase.swift" \

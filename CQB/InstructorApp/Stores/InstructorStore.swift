@@ -56,9 +56,7 @@ final class InstructorStore {
     @ObservationIgnored private let sessionRepository: any SessionRepository
     @ObservationIgnored private let memberRepository: any MemberRepository
     @ObservationIgnored private let trainingHistoryRepository: any TrainingHistoryRepository
-    @ObservationIgnored private let trainingVideoDeleter: any TrainingVideoDeleting
     @ObservationIgnored private var trainingHistoryOpenTask: Task<Void, Never>?
-    @ObservationIgnored private var trainingHistoryDeletionTask: Task<Void, Never>?
     @ObservationIgnored private let pinGenerator: () -> String
     @ObservationIgnored private var floorPlanUploadTask: Task<Void, Never>?
     @ObservationIgnored private var floorPlanDetailTask: Task<Void, Never>?
@@ -124,7 +122,6 @@ final class InstructorStore {
     /// AAR을 열려고 서버 기록을 받는 중인 기록
     private(set) var openingTrainingHistorySessionID: UUID?
     private(set) var trainingHistoryOpenError: String?
-    private(set) var deletingTrainingHistorySessionID: UUID?
     private(set) var trainingHistoryDeletionError: String?
     /// 이전 훈련 기록에서 연 AAR이다. 닫으면 `AAR 종료` 화면 없이 홈으로 간다.
     private(set) var isReviewingTrainingHistory = false
@@ -148,7 +145,6 @@ final class InstructorStore {
         memberRepository: any MemberRepository = DemoMemberRepository(),
         recordingRepository: any RecordingRepository = DemoRecordingRepository(),
         trainingHistoryRepository: (any TrainingHistoryRepository)? = nil,
-        trainingVideoDeleter: any TrainingVideoDeleting = SkippedTrainingVideoDeleter(),
         trainingHistory: [TrainingHistoryRecord] = [],
         pinGenerator: @escaping () -> String = InstructorStore.makePIN,
         previewSession: Session? = nil,
@@ -165,7 +161,6 @@ final class InstructorStore {
         self.memberRepository = memberRepository
         self.trainingHistoryRepository = trainingHistoryRepository
             ?? InMemoryTrainingHistoryRepository(records: trainingHistory)
-        self.trainingVideoDeleter = trainingVideoDeleter
         self.trainingHistory = trainingHistory.sorted { $0.startedAt > $1.startedAt }
         self.trainingHistoryState = trainingHistory.isEmpty ? .idle : .loaded
         self.trainingRecords = TrainingRecordStore(repository: recordingRepository)
@@ -249,10 +244,9 @@ final class InstructorStore {
         guard case .failed(let message) = trainingHistoryState else { return nil }
         return message
     }
-    /// AAR을 여는 중이거나 지우는 중에는 다른 기록을 누를 수 없다.
+    /// AAR을 여는 중에는 다른 기록을 누를 수 없다.
     var canSelectTrainingHistoryRecord: Bool {
-        (phase == .home || phase == .trainingHistory)
-            && openingTrainingHistorySessionID == nil && deletingTrainingHistorySessionID == nil
+        (phase == .home || phase == .trainingHistory) && openingTrainingHistorySessionID == nil
     }
 
     func formattedTrainingElapsed(at date: Date) -> String {
@@ -337,27 +331,18 @@ final class InstructorStore {
         trainingHistoryOpenError = nil
     }
 
-    /// 서버 영상을 지운 뒤 기기 목록에서 지운다. 서버 삭제가 실패하면 다시 시도할 수 있게 목록에 남긴다.
+    /// 기기 목록에서만 지운다. 서버 영상·기록은 남긴다(#126 임시 가정).
     func deleteTrainingHistoryRecord(_ sessionID: UUID) {
         guard phase == .trainingHistory, canSelectTrainingHistoryRecord,
               trainingHistory.contains(where: { $0.sessionID == sessionID }) else { return }
-        deletingTrainingHistorySessionID = sessionID
         trainingHistoryDeletionError = nil
         trainingHistoryOpenError = nil
-        let deleter = trainingVideoDeleter
-        trainingHistoryDeletionTask = Task { [weak self] in
-            do {
-                try await deleter.deleteVideos(sessionID: sessionID)
-                guard let self else { return }
-                try self.trainingHistoryRepository.delete(sessionID: sessionID)
-                self.trainingHistory.removeAll { $0.sessionID == sessionID }
-            } catch {
-                let failure = error as NSError
-                Self.logger.error("이전 훈련 기록 삭제 실패: domain=\(failure.domain, privacy: .public) code=\(failure.code) description=\(failure.localizedDescription, privacy: .private)")
-                self?.trainingHistoryDeletionError = "기록을 삭제하지 못했습니다. 연결을 확인한 뒤 다시 시도해주세요."
-            }
-            self?.deletingTrainingHistorySessionID = nil
-            self?.trainingHistoryDeletionTask = nil
+        do {
+            try trainingHistoryRepository.delete(sessionID: sessionID)
+            trainingHistory.removeAll { $0.sessionID == sessionID }
+        } catch {
+            Self.logger.error("이전 훈련 기록 삭제 실패: \(error.localizedDescription, privacy: .private)")
+            trainingHistoryDeletionError = "기록을 삭제하지 못했습니다. 잠시 후 다시 시도해주세요."
         }
     }
 
