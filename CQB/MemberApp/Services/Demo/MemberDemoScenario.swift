@@ -23,6 +23,7 @@ enum MemberDemoScenario {
     @MainActor
     static func makeEnvironment(
         runID: UUID = UUID(),
+        relocalizationTimeout: Duration = .seconds(10),
         uploadSimulator: MemberDemoUploadSimulator = MemberDemoUploadSimulator()
     ) -> Environment {
         let session = Session(
@@ -43,6 +44,7 @@ enum MemberDemoScenario {
             recordingRepository: MemberDemoRecordingRepository(),
             videoChunkRepository: MemberDemoVideoChunkRepository(),
             trackResultRepository: MemberDemoTrackResultRepository(),
+            relocalizationTimeout: relocalizationTimeout,
             executionEnvironment: .demo(runID: runID),
             demoUploadSimulator: uploadSimulator
         )

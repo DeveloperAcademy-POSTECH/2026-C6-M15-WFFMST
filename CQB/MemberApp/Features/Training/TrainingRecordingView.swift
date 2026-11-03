@@ -14,6 +14,11 @@ struct TrainingRecordingView: View {
     var uploadStatusMessage = "영상 조각 업로드 준비 중"
     var onRetryRecordingStart: () -> Void = {}
     var onCameraReadinessChange: (Bool) -> Void = { _ in }
+    var onCameraVisibilityChange: (Bool) -> Void = { _ in }
+    var isSimulatingDemoScan = false
+    var positioningReady: Bool? = nil
+    var positioningState: MemberPositioningState? = nil
+    var isDemoMode = false
     var cameraService = ARRecordingService()
     var onStopRecording: () async -> Void = {}
     @State private var isCameraReady = false
@@ -28,7 +33,8 @@ struct TrainingRecordingView: View {
                 onAvailabilityChange: {
                     isCameraReady = $0
                     onCameraReadinessChange($0)
-                }
+                },
+                onVisibilityChange: onCameraVisibilityChange
             )
             TrainingRecordingContent(
                 phase: phase, startedAt: startedAt, onFinish: onFinish,
@@ -36,8 +42,9 @@ struct TrainingRecordingView: View {
                 allowsManualStop: allowsManualStop, canRetryRecordingStart: canRetryRecordingStart,
                 isStartingRecording: isStartingRecording, uploadStatusMessage: uploadStatusMessage,
                 onRetryRecordingStart: onRetryRecordingStart,
-                isCameraReady: isCameraReady, cameraStatusMessage: cameraService.statusMessage,
-                cameraError: cameraService.fatalError,
+                isCameraReady: positioningReady ?? isCameraReady,
+                positioningState: positioningState, isDemoMode: isDemoMode, cameraStatusMessage: cameraService.statusMessage,
+                cameraError: isSimulatingDemoScan ? nil : cameraService.fatalError,
                 trackingWarning: cameraService.trackingWarning, audioWarning: cameraService.audioWarning,
                 onPrepareCamera: { Task { await cameraService.start() } }
             )
@@ -48,7 +55,7 @@ struct TrainingRecordingView: View {
 }
 
 /// 카메라를 실행하지 않고 동일한 상태 UI를 Preview에서 재현한다.
-private struct TrainingRecordingContent: View {
+struct TrainingRecordingContent: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let phase: MemberPhase
     let startedAt: Date?
@@ -61,6 +68,8 @@ private struct TrainingRecordingContent: View {
     var uploadStatusMessage = "영상 조각 업로드 준비 중"
     var onRetryRecordingStart: () -> Void = {}
     var isCameraReady = false
+    var positioningState: MemberPositioningState? = nil
+    var isDemoMode = false
     var cameraStatusMessage = "카메라 준비 중"
     var cameraError: String? = nil
     var trackingWarning: String? = nil
@@ -72,7 +81,9 @@ private struct TrainingRecordingContent: View {
 
     private var title: String {
         switch phase {
-        case .waiting: isCameraReady ? "준비 완료" : "추적 준비 중"
+        case .waiting:
+            isCameraReady ? "준비 완료"
+                : (positioningState == .relocalizing || positioningState == .manualAvailable ? "스캔 중" : "추적 준비 중")
         case .saving: "영상·동선 저장 중"
         case .correcting: "동선 보정 중"
         default: "영상 및 동선 수집 중"
@@ -86,10 +97,20 @@ private struct TrainingRecordingContent: View {
             return warnings.isEmpty ? nil : warnings.joined(separator: "\n")
         }
         if isWaiting {
-            // isReady는 AR 추적 준비 상태이며, WorldMap 스캔·재위치 인식 완료를 뜻하지 않는다.
-            return isCameraReady
-                ? "카메라와 동선 추적 준비가 완료됐습니다.\n중앙에서 통제하기 전까지 방탄 캐리어에 가로로 넣고 대기해주세요."
-                : cameraStatusMessage
+            if isCameraReady {
+                let completion = positioningState == .automaticReady ? "스캔이 완료됐습니다." : "카메라와 동선 추적 준비가 완료됐습니다."
+                return completion + "\n중앙에서 통제하기 전까지 방탄 캐리어에 가로로 넣고 대기해주세요."
+            }
+            switch positioningState {
+            case .manualAvailable:
+                return "주변이 인식되지 않아 직접 출발 위치를 설정해야 합니다."
+            case .manualRequired where isDemoMode:
+                return "데모 체험을 위해 출발 위치와 방향을 설정해주세요."
+            case .relocalizing:
+                return "주변의 구조를 스캔해야 위치를 보다 정확하게 잡을 수 있습니다.\n카메라로 주변 구조를 충분히 스캔해주세요."
+            default:
+                return cameraStatusMessage
+            }
         }
         return phase == .correcting ? "동선을 보정하고 있습니다." : "녹화 파일을 저장하고 있습니다."
     }
@@ -98,32 +119,33 @@ private struct TrainingRecordingContent: View {
         GeometryReader { geometry in
             ZStack {
                 VStack(spacing: DSSpacing.s20) {
-                    ScrollView {
-                        if isWaiting && !dynamicTypeSize.isAccessibilitySize {
-                            ZStack(alignment: .topLeading) {
-                                header
-                                guidance
-                                    .frame(maxWidth: 562)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.horizontal, DSSpacing.s60 * 2 - DSSpacing.s4)
-                            }
-                        } else {
+                    if isWaiting && !dynamicTypeSize.isAccessibilitySize {
+                        ZStack(alignment: .topLeading) {
+                            header
+                            guidance
+                                .frame(maxWidth: positioningState == .manualAvailable ? 472 : 562)
+                                .frame(maxWidth: .infinity)
+                                .padding(.horizontal, DSSpacing.s60 * 2 - DSSpacing.s4)
+                        }
+                        .frame(maxHeight: .infinity, alignment: .top)
+                    } else {
+                        ScrollView {
                             VStack(alignment: .leading, spacing: DSSpacing.s20) {
                                 header
                                 guidance.frame(maxWidth: .infinity)
                             }
                         }
+                        .scrollBounceBehavior(.basedOnSize)
                     }
-                    .scrollBounceBehavior(.basedOnSize)
 
                     HStack {
                         Spacer(minLength: 0)
                         controls.frame(maxWidth: 362)
                     }
                 }
-                .padding(.horizontal, DSSpacing.s40)
-                .padding(.top, DSSpacing.s40)
-                .padding(.bottom, max(0, DSSpacing.s60 - geometry.safeAreaInsets.bottom))
+                .padding(.horizontal, DSSpacing.s20)
+                .padding(.top, DSSpacing.s20)
+                .padding(.bottom, max(0, DSSpacing.s20 - geometry.safeAreaInsets.bottom))
             }
             .ignoresSafeArea(.container, edges: .horizontal)
             .foregroundStyle(DSColor.contentPrimary)
@@ -331,5 +353,22 @@ private struct TrainingRecordingContent: View {
 
 #Preview("04 보정 중", traits: .landscapeLeft) {
     TrainingRecordingContent(phase: .correcting, startedAt: nil, onFinish: {})
+        .background(DSColor.backgroundPrimary.ignoresSafeArea())
+}
+
+#Preview("03 월드맵 스캔 중", traits: .landscapeLeft) {
+    TrainingRecordingContent(phase: .waiting, startedAt: nil, onFinish: {}, positioningState: .relocalizing)
+        .background(DSColor.backgroundPrimary.ignoresSafeArea())
+}
+
+#Preview("03 10초 미인식", traits: .landscapeLeft) {
+    TrainingRecordingContent(phase: .waiting, startedAt: nil, onFinish: {},
+                             onReset: {}, allowsPositionReset: true, positioningState: .manualAvailable)
+        .background(DSColor.backgroundPrimary.ignoresSafeArea())
+}
+
+#Preview("03 데모 스캔 중", traits: .landscapeLeft) {
+    TrainingRecordingContent(phase: .waiting, startedAt: nil, onFinish: {},
+                             positioningState: .relocalizing, isDemoMode: true)
         .background(DSColor.backgroundPrimary.ignoresSafeArea())
 }
