@@ -34,9 +34,14 @@ struct FloorPlanCreateView: View {
 
     private var scanCheckpointMarkers: [LocalScanCheckpointMarker] {
         store.scanCheckpoints.enumerated().map { index, point in
-            let state: LocalScanCheckpointState = store.step == .scanning
-                && store.completedScanCheckpointIndices.contains(index)
-                ? .completed : .planned
+            let state: LocalScanCheckpointState
+            if store.step == .scanning && store.completedScanCheckpointIndices.contains(index) {
+                state = .completed
+            } else if store.step == .scanning && store.selectedScanCheckpointIndex == index {
+                state = .selected
+            } else {
+                state = .planned
+            }
             return LocalScanCheckpointMarker(point: point, number: index + 1, state: state)
         }
     }
@@ -1353,7 +1358,7 @@ struct FloorPlanCreateView: View {
                     }
                     .foregroundStyle(DSColor.contentPrimary)
 
-                    Text("미완료 점 위치로 이동해 주변을 촬영한 뒤, 도면의 해당 점을 탭하세요.")
+                    Text("도면에서 체크포인트를 선택한 뒤 현재 위치를 기록하세요.")
                         .dsTextStyle(DSTypography.captionRegular14)
                         .foregroundStyle(DSColor.contentTertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1394,15 +1399,25 @@ struct FloorPlanCreateView: View {
                     .buttonStyle(.dsSecondary)
                     .accessibilityIdentifier("floorPlan.scan.previous")
 
-                    Button(action: {
-                        Task { await store.saveWorldMap() }
-                    }) {
-                        Text("다음")
-                            .frame(maxWidth: .infinity)
+                    if store.completedScanCheckpointCount == store.scanCheckpoints.count {
+                        Button(action: {
+                            Task { await store.saveWorldMap() }
+                        }) {
+                            Text("다음")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.dsPrimary)
+                        .disabled(!store.canSaveWorldMap)
+                        .accessibilityIdentifier("floorPlan.scan.next")
+                    } else {
+                        Button(action: handleCheckpointCapture) {
+                            Text("현재 위치 기록")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.dsPrimary)
+                        .disabled(!store.canCaptureSelectedCheckpoint)
+                        .accessibilityIdentifier("floorPlan.scan.captureCurrentLocation")
                     }
-                    .buttonStyle(.dsPrimary)
-                    .disabled(!store.canSaveWorldMap)
-                    .accessibilityIdentifier("floorPlan.scan.next")
                 }
                 .padding(.bottom, 40)
             }
@@ -1423,12 +1438,17 @@ struct FloorPlanCreateView: View {
     }
 
     private var scanningGuideMessage: String {
-        if store.worldMapStart == nil, store.frameState.trackingMessage == "추적 정상" {
+        if !store.frameState.tracking.canCapture {
+            return store.frameState.tracking.message
+        }
+        if store.worldMapStart == nil {
             return "출발점으로 이동해 방향 표시가 가리키는 곳을 바라본 후,\n도면의 출발점을 클릭해 스캔 정보를 저장합니다."
         }
-        if store.completedScanCheckpointCount < store.scanCheckpoints.count,
-           store.frameState.trackingMessage == "추적 정상" {
-            return "미완료 체크포인트 위치로 이동 후,\n도면의 해당 지점을 클릭해 스캔 정보를 저장합니다."
+        if store.selectedScanCheckpointIndex != nil {
+            return "선택한 체크포인트의 실제 위치에서\n현재 위치 기록 버튼을 눌러주세요."
+        }
+        if store.completedScanCheckpointCount < store.scanCheckpoints.count {
+            return "미완료 체크포인트 위치로 이동 후,\n도면에서 기록할 체크포인트를 선택해주세요."
         }
         return "이동 시에 카메라가 가려지지 않고, 주변을 많이 촬영할수록 정확도를 높일 수 있습니다."
     }
@@ -1447,8 +1467,8 @@ struct FloorPlanCreateView: View {
             showScanFeedback("출발 위치의 스캔 정보가 이미 저장되었습니다.")
             return
         }
-        guard store.frameState.trackingMessage == "추적 정상" else {
-            showScanFeedback("주변을 천천히 촬영해 카메라 추적을 안정시켜주세요.")
+        guard store.frameState.tracking.canCapture else {
+            showScanFeedback(store.frameState.tracking.message)
             return
         }
         store.captureWorldMapStart()
@@ -1458,15 +1478,30 @@ struct FloorPlanCreateView: View {
     }
 
     private func handleScanMarkerTap(_ markerIndex: Int) {
-        switch store.captureScanCheckpoint(at: markerIndex) {
-        case .captured:
-            showScanFeedback("체크포인트의 스캔 정보를 저장했습니다.")
+        switch store.selectScanCheckpoint(at: markerIndex) {
+        case .selected:
+            break
         case .startRequired:
             showScanFeedback("먼저 출발 위치로 이동해 도면의 출발점을 탭해주세요.")
-        case .trackingUnavailable:
-            showScanFeedback("주변을 천천히 촬영해 카메라 추적을 안정시켜주세요.")
         case .alreadyCaptured:
             showScanFeedback("이미 스캔 정보를 저장한 체크포인트입니다.")
+        case .invalidCheckpoint:
+            showScanFeedback("선택한 체크포인트를 확인할 수 없습니다.")
+        }
+    }
+
+    private func handleCheckpointCapture() {
+        switch store.captureSelectedScanCheckpoint() {
+        case .captured:
+            showScanFeedback("체크포인트의 현재 위치를 기록했습니다.")
+        case .startRequired:
+            showScanFeedback("먼저 출발 위치로 이동해 도면의 출발점을 탭해주세요.")
+        case .selectionRequired:
+            showScanFeedback("도면에서 기록할 체크포인트를 선택해주세요.")
+        case .trackingUnavailable(let tracking):
+            showScanFeedback(tracking.message)
+        case .alreadyCaptured:
+            showScanFeedback("이미 현재 위치를 기록한 체크포인트입니다.")
         case .invalidCheckpoint:
             showScanFeedback("선택한 체크포인트를 확인할 수 없습니다.")
         case .failed(let message):

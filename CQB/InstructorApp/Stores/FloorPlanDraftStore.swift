@@ -73,11 +73,12 @@ final class FloorPlanDraftStore {
     private var undoneWorldMapPoints: [LocalWorldMapPointPlacement] = []
     private(set) var frameState = LocalWorldMapFrameState(
         mapping: .unavailable,
-        trackingMessage: "스캔을 시작해주세요"
+        tracking: .notAvailable
     )
     private(set) var worldMapStart: WorldMapStart?
     private(set) var worldMapCorrespondences: [WorldMapCorrespondence] = []
     private(set) var completedScanCheckpointIndices: Set<Int> = []
+    private(set) var selectedScanCheckpointIndex: Int?
     private(set) var worldMapDraft: LocalWorldMapScanDraft?
     private(set) var isSavingWorldMap = false
 #if canImport(UIKit)
@@ -155,10 +156,17 @@ final class FloorPlanDraftStore {
     }
     var canRedoWorldMapPoint: Bool { step == .alignment && !undoneWorldMapPoints.isEmpty }
     var canCaptureStartAlignment: Bool {
-        step == .scanning && worldMapStart == nil && frameState.trackingMessage == "추적 정상"
+        step == .scanning && worldMapStart == nil && frameState.tracking.canCapture
     }
     var completedScanCheckpointCount: Int {
         completedScanCheckpointIndices.count
+    }
+    var canCaptureSelectedCheckpoint: Bool {
+        guard step == .scanning, worldMapStart != nil,
+              let selectedScanCheckpointIndex else { return false }
+        return scanCheckpoints.indices.contains(selectedScanCheckpointIndex)
+            && !completedScanCheckpointIndices.contains(selectedScanCheckpointIndex)
+            && frameState.tracking.canCapture
     }
     var canSaveWorldMap: Bool {
         step == .scanning && worldMapStart != nil && worldMapCorrespondences.count >= 2
@@ -575,10 +583,11 @@ final class FloorPlanDraftStore {
         worldMapStart = nil
         worldMapCorrespondences = []
         completedScanCheckpointIndices.removeAll()
+        selectedScanCheckpointIndex = nil
         worldMapDraft = nil
         frameState = LocalWorldMapFrameState(
             mapping: .unavailable,
-            trackingMessage: "주변을 천천히 비추며 초기화하세요"
+            tracking: .initializing
         )
         do {
             try await worldMapScanner.start()
@@ -599,8 +608,8 @@ final class FloorPlanDraftStore {
     func captureWorldMapStart() {
         guard canCaptureStartAlignment, let worldMapScanner,
               let startPlanPoint, let directionPlanPoint else { return }
-        do {
-            let pose = try worldMapScanner.currentPose()
+        switch worldMapScanner.captureCurrentPose() {
+        case .captured(let pose):
             let start = WorldMapStart(
                 pose: pose,
                 planPoint: NormalizedPoint(x: startPlanPoint.x, y: startPlanPoint.y),
@@ -614,18 +623,33 @@ final class FloorPlanDraftStore {
                 capturedAt: .now
             )]
             errorMessage = nil
-        } catch { errorMessage = error.localizedDescription }
+        case .trackingUnavailable(let tracking):
+            frameState.tracking = tracking
+            errorMessage = tracking.message
+        case .failed(let message):
+            errorMessage = message
+        }
     }
 
     @discardableResult
-    func captureScanCheckpoint(at index: Int) -> LocalScanCheckpointCaptureResult {
+    func selectScanCheckpoint(at index: Int) -> LocalScanCheckpointSelectionResult {
         guard step == .scanning, worldMapStart != nil else { return .startRequired }
         guard scanCheckpoints.indices.contains(index) else { return .invalidCheckpoint }
         guard !completedScanCheckpointIndices.contains(index) else { return .alreadyCaptured }
-        guard frameState.trackingMessage == "추적 정상" else { return .trackingUnavailable }
+        selectedScanCheckpointIndex = index
+        return .selected
+    }
+
+    @discardableResult
+    func captureSelectedScanCheckpoint() -> LocalScanCheckpointCaptureResult {
+        guard step == .scanning, worldMapStart != nil else { return .startRequired }
+        guard let index = selectedScanCheckpointIndex else { return .selectionRequired }
+        guard scanCheckpoints.indices.contains(index) else { return .invalidCheckpoint }
+        guard !completedScanCheckpointIndices.contains(index) else { return .alreadyCaptured }
         guard let worldMapScanner else { return .failed("카메라 스캔을 사용할 수 없습니다.") }
-        do {
-            let pose = try worldMapScanner.currentPose()
+
+        switch worldMapScanner.captureCurrentPose() {
+        case .captured(let pose):
             let point = scanCheckpoints[index]
             worldMapCorrespondences.append(WorldMapCorrespondence(
                 label: "checkpoint-\(index + 1)",
@@ -634,11 +658,15 @@ final class FloorPlanDraftStore {
                 capturedAt: .now
             ))
             completedScanCheckpointIndices.insert(index)
+            selectedScanCheckpointIndex = nil
             errorMessage = nil
             return .captured
-        } catch {
-            errorMessage = error.localizedDescription
-            return .failed(error.localizedDescription)
+        case .trackingUnavailable(let tracking):
+            frameState.tracking = tracking
+            return .trackingUnavailable(tracking)
+        case .failed(let message):
+            errorMessage = message
+            return .failed(message)
         }
     }
 
@@ -714,6 +742,7 @@ final class FloorPlanDraftStore {
             worldMapStart = nil
             worldMapCorrespondences = []
             completedScanCheckpointIndices.removeAll()
+            selectedScanCheckpointIndex = nil
             step = .alignment
             tool = .alignmentPoint
         case .editing:
@@ -934,10 +963,11 @@ final class FloorPlanDraftStore {
         scanCheckpoints = []
         worldMapPointTarget = .start
         undoneWorldMapPoints = []
-        frameState = LocalWorldMapFrameState(mapping: .unavailable, trackingMessage: "스캔을 시작해주세요")
+        frameState = LocalWorldMapFrameState(mapping: .unavailable, tracking: .notAvailable)
         worldMapStart = nil
         worldMapCorrespondences = []
         completedScanCheckpointIndices.removeAll()
+        selectedScanCheckpointIndex = nil
         worldMapDraft = nil
         maskPNGData = nil
         tool = .move
