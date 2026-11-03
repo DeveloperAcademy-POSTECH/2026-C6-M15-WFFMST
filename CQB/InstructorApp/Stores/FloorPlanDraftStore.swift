@@ -180,6 +180,11 @@ final class FloorPlanDraftStore {
     var canProceedFromWorldMapAlignment: Bool {
         canReturnToEditingWithWorldMap || canStartWorldMapScan
     }
+#if DEBUG && targetEnvironment(simulator)
+    var canPreviewExtractedMask: Bool {
+        step == .alignment && maskExtractionState == .succeeded && canContinueEditing
+    }
+#endif
 
     func begin() { reset() }
     func beginMaskEditing(_ snapshot: LocalFloorPlanSnapshot) {
@@ -697,6 +702,18 @@ final class FloorPlanDraftStore {
         tool = editorMode == .pen ? .pen : .brush
         errorMessage = nil
     }
+
+#if DEBUG && targetEnvironment(simulator)
+    /// AR WorldMap을 만들 수 없는 Simulator에서 추출된 마스크만 시각 검수한다.
+    /// worldMapDraft는 비워 두어 실제 도면 등록은 계속 차단한다.
+    func previewExtractedMask() {
+        guard canPreviewExtractedMask else { return }
+        step = .editing
+        editorMode = .pen
+        tool = .pen
+        errorMessage = nil
+    }
+#endif
 
     func worldMapScanDraft() -> LocalWorldMapScanDraft? { worldMapDraft }
 
