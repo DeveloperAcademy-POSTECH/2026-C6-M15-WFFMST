@@ -1,15 +1,12 @@
+import CQBDesignSystem
 import SwiftUI
 
-public struct DSStepIndicator: View {
-    private let current: Int
-    private let total: Int
+/// InstructorApp 도면 생성 흐름의 현재 단계를 표시합니다.
+struct InstructorStepIndicator: View {
+    let current: Int
+    let total: Int
 
-    public init(current: Int, total: Int) {
-        self.current = current
-        self.total = total
-    }
-
-    public var body: some View {
+    var body: some View {
         Text("\(current) / \(total)")
             .dsTextStyle(DSTypography.bodyRegular16)
             .foregroundStyle(DSColor.contentPrimary)

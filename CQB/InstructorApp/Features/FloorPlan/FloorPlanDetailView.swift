@@ -48,7 +48,7 @@ struct FloorPlanDetailView: View {
                 .frame(maxWidth: maximumPreviewWidth, maxHeight: maximumPreviewHeight)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
 
-            FloorPlanBackButton(action: store.goBack)
+            InstructorBackButton(action: store.goBack)
                 .disabled(!store.canGoBack)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .padding(.top, DSSpacing.s40)

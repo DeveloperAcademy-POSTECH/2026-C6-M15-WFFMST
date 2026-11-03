@@ -12,7 +12,8 @@ import Testing
         DSSpacing.s32,
         DSSpacing.s40,
         DSSpacing.s60,
-    ] == [4, 8, 12, 16, 20, 24, 32, 40, 60])
+        DSSpacing.s80,
+    ] == [4, 8, 12, 16, 20, 24, 32, 40, 60, 80])
 }
 
 @Test func radiusScaleMatchesFigma() {
@@ -23,6 +24,7 @@ import Testing
 }
 
 @Test func standardControlHeightMatchesFigma() {
+    #expect(DSSize.actionButtonHeight == 55)
     #expect(DSSize.controlHeight == 56)
     #expect(DSSize.compactControlHeight == 44)
     #expect(DSCircularButtonSize.regular.dimension == 56)

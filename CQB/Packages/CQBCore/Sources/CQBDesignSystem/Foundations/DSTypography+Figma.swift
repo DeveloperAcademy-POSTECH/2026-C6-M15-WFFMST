@@ -1,5 +1,8 @@
 import SwiftUI
 
+/// Figma에 정의된 CQB 타이포그래피의 namespace입니다.
+public enum DSTypography {}
+
 /// Figma 텍스트 스타일의 폰트와 행간·자간을 함께 보존합니다.
 public struct DSTextStyle: @unchecked Sendable {
     public let postScriptName: String

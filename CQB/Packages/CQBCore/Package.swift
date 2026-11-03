@@ -62,9 +62,6 @@ let package = Package(
         .target(
             name: "CQBDesignSystem",
             dependencies: ["CQBCore"],
-            resources: [
-                .process("Resources")
-            ],
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],
