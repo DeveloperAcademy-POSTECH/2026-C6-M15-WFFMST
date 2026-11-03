@@ -199,6 +199,49 @@ final class FloorPlanManagementTests: XCTestCase {
         XCTAssertEqual(result.uploads.first?.1.worldMapArchive, existingWorldMap.files.worldMapArchive)
     }
 
+    func testOversizedWorldMapPreventsAnyFloorPlanUpload() async throws {
+        let registration = try makeRegistration()
+        let floorPlanUpload = try LocalFloorPlanFileBuilder.build(from: registration)
+        let archive = Data(count: LocalUploadSizeValidator.maximumWorldMapBytes + 1)
+        let setup = WorldMapSetup(
+            schemaVersion: 1, worldMapID: UUID(), createdAt: .now, floorPlan: floorPlanUpload.reference,
+            start: WorldMapStart(
+                pose: ARPose(x: 0, y: 0, z: 0, forwardX: 1, forwardZ: 0),
+                planPoint: NormalizedPoint(x: 0, y: 0.5),
+                directionPoint: NormalizedPoint(x: 1, y: 0.5)
+            ),
+            correspondences: [],
+            alignment: WorldMapAlignment(rotationDegrees: 0, pixelsPerMeter: 4,
+                translation: ImagePoint(x: 0, y: 8), rmsErrorMeters: 0, algorithmVersion: "test"),
+            compression: .lzfse,
+            worldMapSHA256: LocalFloorPlanFileBuilder.sha256(archive), worldMapBytes: archive.count
+        )
+        let setupJSON = try JSONEncoder().encode(setup)
+        let reference = WorldMapReference(worldMapID: setup.worldMapID,
+            setupSHA256: LocalFloorPlanFileBuilder.sha256(setupJSON), floorPlan: floorPlanUpload.reference)
+        let worldMapRepository = WorldMapRebindRepositoryStub(reference: reference,
+            files: WorldMapFiles(worldMapArchive: archive, setupJSON: setupJSON))
+        let plan = makePlan(registration: registration, reference: floorPlanUpload.reference, worldMap: reference)
+        let recorder = FloorPlanUploadRecorder()
+        let store = InstructorStore(floorPlans: [plan],
+            floorPlanFileRepository: RecordingFloorPlanFileRepository(recorder: recorder),
+            worldMapFileRepository: worldMapRepository)
+        store.openFloorPlanList()
+        store.openFloorPlanDetail(plan.id)
+        let loaded = await waitUntil { store.floorPlanDetailState == .loaded }
+        XCTAssertTrue(loaded)
+        store.beginFloorPlanMaskEditing()
+        store.saveFloorPlanMaskEdit()
+        let failed = await waitUntil { store.floorPlanUploadError != nil }
+        XCTAssertTrue(failed)
+        let floorPlanUploadCount = await recorder.uploadCount
+        let worldMapResult = await worldMapRepository.result()
+        XCTAssertEqual(floorPlanUploadCount, 0)
+        XCTAssertTrue(worldMapResult.uploads.isEmpty)
+        XCTAssertTrue(store.floorPlanUploadError?.contains("압축 후 용량:") == true)
+        XCTAssertTrue(store.floorPlanUploadError?.contains("52428801바이트") == true)
+    }
+
     func testDeleteRemovesLocalCatalogEntryButDoesNotRequestStorageDeletion() async throws {
         let registration = try makeRegistration()
         let plan = makePlan(

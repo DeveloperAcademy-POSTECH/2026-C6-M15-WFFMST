@@ -129,6 +129,30 @@ final class RecordingStartLifecycleTests: XCTestCase {
         XCTAssertThrowsError(try files.discardUncommittedFiles(foreign))
     }
 
+    func testStartSignalDuringManualSetupKeepsExistingUnpreparedMemberPolicy() async throws {
+        let fixture = try Fixture(ready: false)
+        fixture.store.resetPosition()
+        XCTAssertEqual(fixture.store.phase, .setup)
+        fixture.feed.send(.running, session: fixture.session)
+        await eventually { fixture.store.phase == .join }
+        XCTAssertEqual(fixture.starter.startCount, 0)
+        XCTAssertFalse(fixture.store.isReady)
+        await fixture.cleanup()
+    }
+
+    func testSessionEndDuringAutomaticPositioningClearsPositionAndPendingState() async throws {
+        let fixture = try Fixture(ready: false)
+        fixture.store.configurePositioning(setup: PositioningTestData.setup(fixture.map))
+        fixture.store.cameraSessionRunningChanged(true)
+        fixture.feed.send(.ended, session: fixture.session)
+        await eventually { fixture.store.phase == .join }
+        XCTAssertNil(fixture.store.startPoint)
+        XCTAssertFalse(fixture.store.isReady)
+        XCTAssertFalse(fixture.store.canSetPositionManually)
+        XCTAssertEqual(fixture.starter.startCount, 0)
+        await fixture.cleanup()
+    }
+
     private func assertCancelled(_ fixture: Fixture, file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertEqual(fixture.store.phase, .join, file: file, line: line)
         XCTAssertFalse(fixture.store.canRetryRecordingStart, file: file, line: line)
@@ -179,6 +203,7 @@ private final class Fixture {
         let x = (Double(index % grid.columns) + 0.5) * grid.cellSize
         let y = (Double(index / grid.columns) + 0.5) * grid.cellSize
         let dx = x + 10 <= Double(map.manifest.imageWidth) ? 10.0 : -10.0
+        store.resetPosition()
         store.confirmPosition(start: CGPoint(x: x / Double(map.manifest.imageWidth), y: y / Double(map.manifest.imageHeight)),
                               direction: CGPoint(x: (x + dx) / Double(map.manifest.imageWidth), y: y / Double(map.manifest.imageHeight)))
         XCTAssertEqual(store.phase, .waiting)

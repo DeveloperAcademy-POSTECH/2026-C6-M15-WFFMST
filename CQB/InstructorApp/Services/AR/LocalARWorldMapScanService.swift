@@ -26,14 +26,23 @@ final class LocalARWorldMapScanService: NSObject, WorldMapScanning, ARSessionDel
         session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
     }
 
-    func currentPose() throws -> ARPose {
-        guard let transform = session.currentFrame?.camera.transform else {
-            throw LocalARWorldMapScanError.poseUnavailable
+    func captureCurrentPose() -> LocalWorldMapPoseCaptureResult {
+        guard let frame = session.currentFrame else {
+            return .failed(LocalARWorldMapScanError.poseUnavailable.localizedDescription)
         }
+        let tracking = Self.trackingState(for: frame.camera.trackingState)
+        guard tracking.canCapture else { return .trackingUnavailable(tracking) }
+        guard let pose = Self.pose(from: frame.camera.transform) else {
+            return .failed(LocalARWorldMapScanError.poseUnavailable.localizedDescription)
+        }
+        return .captured(pose)
+    }
+
+    private static func pose(from transform: simd_float4x4) -> ARPose? {
         let rawX = -Double(transform.columns.2.x)
         let rawZ = -Double(transform.columns.2.z)
         let length = hypot(rawX, rawZ)
-        guard length > 0.0001 else { throw LocalARWorldMapScanError.poseUnavailable }
+        guard length > 0.0001 else { return nil }
         return ARPose(
             x: Double(transform.columns.3.x),
             y: Double(transform.columns.3.y),
@@ -71,20 +80,26 @@ final class LocalARWorldMapScanService: NSObject, WorldMapScanning, ARSessionDel
         case .mapped: .mapped
         @unknown default: .unavailable
         }
-        let trackingMessage: String = switch frame.camera.trackingState {
-        case .normal: "추적 정상"
-        case .notAvailable: "카메라 추적을 시작할 수 없습니다"
-        case .limited(.initializing): "주변을 천천히 비추며 초기화하세요"
-        case .limited(.excessiveMotion): "iPad를 조금 더 천천히 움직이세요"
-        case .limited(.insufficientFeatures): "특징이 많은 벽과 모서리를 비추세요"
-        case .limited(.relocalizing): "저장된 공간을 다시 찾는 중입니다"
-        case .limited: "카메라 추적이 제한되었습니다"
-        }
+        let tracking = Self.trackingState(for: frame.camera.trackingState)
         Task { @MainActor [weak self] in
             self?.onFrameUpdate?(LocalWorldMapFrameState(
                 mapping: mapping,
-                trackingMessage: trackingMessage
+                tracking: tracking
             ))
+        }
+    }
+
+    private nonisolated static func trackingState(
+        for state: ARCamera.TrackingState
+    ) -> LocalWorldMapTrackingState {
+        switch state {
+        case .normal: .normal
+        case .notAvailable: .notAvailable
+        case .limited(.initializing): .initializing
+        case .limited(.excessiveMotion): .excessiveMotion
+        case .limited(.insufficientFeatures): .insufficientFeatures
+        case .limited(.relocalizing): .relocalizing
+        case .limited: .limited
         }
     }
 }

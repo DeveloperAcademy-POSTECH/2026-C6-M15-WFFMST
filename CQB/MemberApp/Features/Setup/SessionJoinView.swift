@@ -40,49 +40,71 @@ struct SessionJoinView: View {
                             .dsTextStyle(DSTypography.headingBold32)
                             .accessibilityAddTraits(.isHeader)
 
-                        let layout = isLandscape && !dynamicTypeSize.isAccessibilitySize
-                            ? AnyLayout(HStackLayout(alignment: .top, spacing: DSSpacing.s32))
-                            : AnyLayout(VStackLayout(alignment: .leading, spacing: DSSpacing.s24))
-                        layout {
-                            VStack(alignment: .leading, spacing: DSSpacing.s8) {
-                                Text("PIN 번호").dsTextStyle(DSTypography.bodyRegular16)
-                                SwiftUI.TextField(
-                                    "6자리 PIN 입력", text: $pin,
-                                    prompt: Text("6자리 PIN 입력").foregroundStyle(DSPalette.Gray.g500)
-                                )
-                                .textFieldStyle(.ds(isFocused: focusedField == .pin, appearance: .filled))
-                                .keyboardType(.numberPad)
-                                .textContentType(.oneTimeCode)
-                                .focused($focusedField, equals: .pin)
-                                .accessibilityLabel("PIN 번호")
-                                .accessibilityIdentifier("join.pin")
-                                .onChange(of: pin) { _, value in
-                                    pin = String(value.filter { $0.isASCII && $0.isNumber }.prefix(6))
+                        VStack(alignment: .leading, spacing: DSSpacing.s12) {
+                            let layout = isLandscape && !dynamicTypeSize.isAccessibilitySize
+                                ? AnyLayout(HStackLayout(alignment: .top, spacing: DSSpacing.s32))
+                                : AnyLayout(VStackLayout(alignment: .leading, spacing: DSSpacing.s24))
+                            layout {
+                                VStack(alignment: .leading, spacing: DSSpacing.s8) {
+                                    Text("PIN 번호").dsTextStyle(DSTypography.bodyRegular16)
+                                    SwiftUI.TextField(
+                                        "6자리 PIN 입력", text: $pin,
+                                        prompt: Text("6자리 PIN 입력").foregroundStyle(DSPalette.Gray.g500)
+                                    )
+                                    .textFieldStyle(.ds(isFocused: focusedField == .pin, appearance: .filled))
+                                    .keyboardType(.numberPad)
+                                    .textContentType(.oneTimeCode)
+                                    .focused($focusedField, equals: .pin)
+                                    .accessibilityLabel("PIN 번호")
+                                    .accessibilityIdentifier("join.pin")
+                                    .onChange(of: pin) { _, value in
+                                        pin = String(value.filter { $0.isASCII && $0.isNumber }.prefix(6))
+                                    }
                                 }
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .id(Field.pin)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .id(Field.pin)
 
-                            VStack(alignment: .leading, spacing: DSSpacing.s8) {
-                                Text("대원명").dsTextStyle(DSTypography.bodyRegular16)
-                                SwiftUI.TextField(
-                                    namePlaceholder, text: $memberName,
-                                    prompt: Text(namePlaceholder).foregroundStyle(DSPalette.Gray.g500)
-                                )
-                                .textFieldStyle(.ds(isFocused: focusedField == .name, appearance: .filled))
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                                .focused($focusedField, equals: .name)
-                                .submitLabel(.done)
-                                .onSubmit { focusedField = nil }
-                                .accessibilityLabel("대원명")
-                                .accessibilityIdentifier("join.name")
+                                VStack(alignment: .leading, spacing: DSSpacing.s8) {
+                                    Text("대원명").dsTextStyle(DSTypography.bodyRegular16)
+                                    SwiftUI.TextField(
+                                        namePlaceholder, text: $memberName,
+                                        prompt: Text(namePlaceholder).foregroundStyle(DSPalette.Gray.g500)
+                                    )
+                                    .textFieldStyle(.ds(isFocused: focusedField == .name, appearance: .filled))
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                    .focused($focusedField, equals: .name)
+                                    .submitLabel(.done)
+                                    .onSubmit { focusedField = nil }
+                                    .accessibilityLabel("대원명")
+                                    .accessibilityIdentifier("join.name")
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .id(Field.name)
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .id(Field.name)
+
+                            if let onStartDemo {
+                                Button {
+                                    focusedField = nil
+                                    onStartDemo()
+                                } label: {
+                                    Text("PIN이 없으신가요? \(Text("데모로 둘러보기").underline())")
+                                        .dsTextStyle(DSTypography.captionRegular14)
+                                        .foregroundStyle(DSColor.contentTertiary)
+                                        .multilineTextAlignment(.center)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .accessibilityLabel("데모로 둘러보기")
+                                .accessibilityHint("PIN과 별도 iPad 없이 Capture의 주요 기능을 체험합니다.")
+                                .accessibilityIdentifier("join.demo")
+                            }
                         }
                     }
-                    .padding(.horizontal, isLandscape ? DSSpacing.s40 : DSSpacing.s20)
+                    .padding(.horizontal, isLandscape ? 0 : DSSpacing.s20)
                     .padding(.top, max(0, DSSpacing.s40 - geometry.safeAreaInsets.top))
                     .padding(.bottom, DSSpacing.s20)
                 }
@@ -93,27 +115,15 @@ struct SessionJoinView: View {
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if focusedField == nil {
-                    VStack(spacing: DSSpacing.s12) {
-                        ActionButton(isJoining ? "세션 도면 불러오는 중…" : "참가") {
-                            focusedField = nil
-                            onJoin(pin, memberName.trimmingCharacters(in: .whitespacesAndNewlines))
-                        }
-                        .disabled(!canJoin || isJoining)
-                        .accessibilityIdentifier("join.submit")
-
-                        if let onStartDemo {
-                            Button(action: onStartDemo) {
-                                Label("데모 모드 시작", systemImage: "testtube.2")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.dsSecondary)
-                            .accessibilityHint("PIN과 별도 iPad 없이 Capture의 주요 기능을 체험합니다.")
-                            .accessibilityIdentifier("join.demo")
-                        }
+                    ActionButton(isJoining ? "세션 도면 불러오는 중…" : "참가") {
+                        focusedField = nil
+                        onJoin(pin, memberName.trimmingCharacters(in: .whitespacesAndNewlines))
                     }
+                    .disabled(!canJoin || isJoining)
+                    .accessibilityIdentifier("join.submit")
                     .frame(maxWidth: isLandscape ? 381 : .infinity)
                     .frame(maxWidth: .infinity, alignment: .trailing)
-                    .padding(.horizontal, isLandscape ? DSSpacing.s40 : DSSpacing.s20)
+                    .padding(.horizontal, isLandscape ? 0 : DSSpacing.s20)
                     .padding(.top, DSSpacing.s12)
                     .padding(.bottom, max(0, DSSpacing.s60 - geometry.safeAreaInsets.bottom))
                     .background(DSColor.backgroundPrimary)
@@ -133,18 +143,20 @@ struct SessionJoinView: View {
             }
         }
         .foregroundStyle(DSColor.contentPrimary)
-        .ignoresSafeArea(.container, edges: .horizontal)
         .tint(DSColor.actionPrimary)
         .background(DSColor.backgroundPrimary.ignoresSafeArea())
     }
 }
 
 #Preview("01 참가 · 세로") {
-    SessionJoinView { pin, name in print("Preview 참가: \(pin), \(name)") }
+    SessionJoinView(onStartDemo: { print("Preview 데모") }) { pin, name in
+        print("Preview 참가: \(pin), \(name)")
+    }
 }
 
 #Preview("01 참가 · 가로 · 입력 완료", traits: .landscapeLeft) {
-    SessionJoinView(pin: "123456", memberName: "강유키") { _, _ in print("Preview 참가") }
+    SessionJoinView(pin: "123456", memberName: "강유키",
+        onStartDemo: { print("Preview 데모") }) { _, _ in print("Preview 참가") }
 }
 
 #Preview("01 참가 · 큰 글자") {

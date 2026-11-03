@@ -20,6 +20,15 @@ final class MemberStore {
     @ObservationIgnored private let sessionRepository: any SessionRepository
     @ObservationIgnored private let memberRepository: any MemberRepository
     @ObservationIgnored private let floorPlanFileRepository: any FloorPlanFileRepository
+    @ObservationIgnored private let worldMapFileRepository: (any WorldMapFileRepository)?
+    @ObservationIgnored private let relocalizationTimeout: Duration
+    @ObservationIgnored private var relocalizationTask: Task<Void, Never>?
+    @ObservationIgnored private var automaticWorldMap: WorldMapSetup?
+    @ObservationIgnored private var cameraSessionIsRunning = false
+    private(set) var isSimulatingDemoScan = false
+    @ObservationIgnored private var cameraScreenIsVisible = false
+    private(set) var positioningState: MemberPositioningState = .manualRequired
+    private(set) var isSetupFromCamera = false
     @ObservationIgnored private let recordingRepository: any RecordingRepository
     @ObservationIgnored private let videoChunkRepository: any VideoChunkRepository
     @ObservationIgnored private let trackResultRepository: any TrackResultRepository
@@ -78,6 +87,8 @@ final class MemberStore {
         recordingRepository: any RecordingRepository,
         videoChunkRepository: any VideoChunkRepository,
         trackResultRepository: any TrackResultRepository,
+        worldMapFileRepository: (any WorldMapFileRepository)? = nil,
+        relocalizationTimeout: Duration = .seconds(10),
         cameraService: ARRecordingService? = nil,
         recordingStarter: (any MemberRecordingStarting)? = nil,
         executionEnvironment: MemberExecutionEnvironment = .operational,
@@ -86,6 +97,8 @@ final class MemberStore {
         self.sessionRepository = sessionRepository
         self.memberRepository = memberRepository
         self.floorPlanFileRepository = floorPlanFileRepository
+        self.worldMapFileRepository = worldMapFileRepository
+        self.relocalizationTimeout = relocalizationTimeout
         self.recordingRepository = recordingRepository
         self.videoChunkRepository = videoChunkRepository
         self.trackResultRepository = trackResultRepository
@@ -102,6 +115,12 @@ final class MemberStore {
         }
         self.memberID = Self.loadOrCreateMemberID()
         self.trainingMap = nil
+        resolvedCamera.onSessionRunningChange = { [weak self] running in
+            self?.cameraSessionRunningChanged(running)
+        }
+        resolvedCamera.onTrackingUpdate = { [weak self] pose, normal, ready in
+            self?.updatePositioning(pose: pose, isNormal: normal, trackingReady: ready)
+        }
     }
 
     var isDemoMode: Bool {
@@ -109,7 +128,11 @@ final class MemberStore {
         return false
     }
 
-    var isReady: Bool { startPoint != nil && directionPoint != nil && isTrackingReady }
+    var isReady: Bool { !isSimulatingDemoScan && startPoint != nil && directionPoint != nil && isTrackingReady }
+    var canSetPositionManually: Bool {
+        canResetPosition && (positioningState == .manualRequired || positioningState == .manualAvailable
+                            || (positioningState == .manualReady && !isReady))
+    }
     var canResetPosition: Bool { phase == .waiting && !startRequestedBySession }
     var isWaitingForTrainingStart: Bool { phase == .waiting && startRequestedBySession }
     var canAbandonUpload: Bool {
@@ -137,7 +160,13 @@ final class MemberStore {
             pin = session.pin
             self.memberName = memberName
             lastSessionStatus = session.status
-            phase = .setup
+            cameraService.configureWorldMap(nil)
+            configurePositioning(setup: nil)
+            if isDemoMode {
+                isSimulatingDemoScan = true
+                positioningState = .relocalizing
+            }
+            phase = .waiting
             observeSession(id: session.id)
         } catch {
             errorMessage = "데모 도면을 불러오지 못했습니다. 데모를 종료한 뒤 다시 시도해주세요."
@@ -169,7 +198,7 @@ final class MemberStore {
         return isReady
     }
 
-    /// PIN으로 세션을 조회하고 대원 등록이 성공한 뒤에만 setup으로 전환한다.
+    /// 도면·스캔을 준비하고 대원 등록이 성공한 뒤 위치 설정 방식에 맞춰 화면을 전환한다.
     func join(pin: String, memberName: String) {
         let name = memberName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard phase == .join, !isJoining, pin.count == 6,
@@ -190,6 +219,18 @@ final class MemberStore {
                 } catch {
                     throw SessionFloorPlanLoadFailure()
                 }
+                let loadedWorldMap: LoadedMemberWorldMap?
+                do {
+                    if let reference = session.worldMap {
+                        guard session.worldMapMatchesFloorPlan, let worldMapFileRepository else {
+                            throw RepositoryError.integrityMismatch
+                        }
+                        let files = try await worldMapFileRepository.download(reference)
+                        loadedWorldMap = try await MemberWorldMapLoader.load(files: files, reference: reference)
+                    } else { loadedWorldMap = nil }
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch { throw SessionWorldMapLoadFailure(underlying: error) }
                 let member = Member(
                     id: memberID,
                     sessionID: session.id,
@@ -204,9 +245,15 @@ final class MemberStore {
                 self.pin = pin
                 self.memberName = name
                 lastSessionStatus = session.status
-                phase = .setup
+                cameraService.configureWorldMap(loadedWorldMap, map: sessionMap)
+                configurePositioning(setup: loadedWorldMap?.setup)
+                phase = loadedWorldMap == nil ? .setup : .waiting
                 observeSession(id: session.id)
                 startReadinessHeartbeat()
+            } catch is CancellationError {
+                // 취소된 복원 작업은 참가 실패 안내를 표시하지 않는다.
+            } catch let failure as SessionWorldMapLoadFailure {
+                errorMessage = Self.worldMapLoadMessage(for: failure.underlying)
             } catch is SessionFloorPlanLoadFailure {
                 errorMessage = "이 세션의 도면을 불러오지 못했습니다. 네트워크 연결을 확인하고 다시 시도해주세요."
             } catch let error as RepositoryError {
@@ -222,6 +269,108 @@ final class MemberStore {
                 errorMessage = "세션에 참가하지 못했습니다. 네트워크 연결을 확인해주세요."
             }
         }
+    }
+
+    private struct SessionWorldMapLoadFailure: Error {
+        let underlying: Error
+    }
+
+    private static func worldMapLoadMessage(for error: Error) -> String {
+        if let loadError = error as? MemberWorldMapLoadError { return loadError.localizedDescription }
+        switch error as? RepositoryError {
+        case .integrityMismatch:
+            return "이 세션의 공간 정보가 손상되었거나 도면과 일치하지 않습니다. 교관에게 공간 스캔을 확인해 달라고 요청해주세요."
+        case .fileTooLarge:
+            return "이 세션의 공간 정보가 허용 용량을 초과했습니다. 교관에게 공간 스캔을 확인해 달라고 요청해주세요."
+        case .notFound:
+            return "이 세션의 공간 정보 파일을 찾을 수 없습니다. 교관에게 공간 스캔을 확인해 달라고 요청해주세요."
+        default:
+            return "이 세션의 공간 정보를 불러오지 못했습니다. 네트워크 연결을 확인하고 다시 참가해주세요."
+        }
+    }
+
+    func configurePositioning(setup: WorldMapSetup?) {
+        cancelRelocalizationTimer()
+        isSimulatingDemoScan = false
+        automaticWorldMap = setup
+        startPoint = nil
+        directionPoint = nil
+        isTrackingReady = false
+        isSetupFromCamera = false
+        positioningState = setup == nil ? .manualRequired : .relocalizing
+    }
+
+    /// 데모는 실제 AR 세션과 무관하게 카메라 화면의 활성 시간으로 스캔 흐름을 재현한다.
+    func cameraScreenVisibilityChanged(_ visible: Bool) {
+        cameraScreenIsVisible = visible
+        guard isSimulatingDemoScan, phase == .waiting else { return }
+        cancelRelocalizationTimer()
+        if visible {
+            startRelocalizationTimer()
+        } else {
+            positioningState = .relocalizing
+        }
+    }
+
+    func cameraSessionRunningChanged(_ running: Bool) {
+        cameraSessionIsRunning = running
+        if isSimulatingDemoScan {
+            updateTrackingReadiness(false)
+            return
+        }
+        cancelRelocalizationTimer()
+        updateTrackingReadiness(false)
+        guard automaticWorldMap != nil, phase == .waiting else { return }
+        startPoint = nil
+        directionPoint = nil
+        positioningState = .relocalizing
+        if running { startRelocalizationTimer() }
+    }
+
+    func updatePositioning(pose: ARPose?, isNormal: Bool, trackingReady: Bool) {
+        guard phase == .waiting else { return }
+        if isSimulatingDemoScan {
+            updateTrackingReadiness(false)
+            return
+        }
+        if let worldMap = automaticWorldMap, let map = trainingMap {
+            if isNormal, let pose,
+               let position = WorldMapPositionCalculator.position(pose: pose, alignment: worldMap.alignment, map: map) {
+                cancelRelocalizationTimer()
+                startPoint = position.start
+                directionPoint = position.direction
+                positioningState = trackingReady ? .automaticReady : .relocalizing
+            } else {
+                startPoint = nil
+                directionPoint = nil
+                if positioningState != .manualAvailable { positioningState = .relocalizing }
+                if cameraSessionIsRunning { startRelocalizationTimer() }
+            }
+        }
+        updateTrackingReadiness(trackingReady && startPoint != nil && directionPoint != nil)
+    }
+
+    private func startRelocalizationTimer() {
+        guard relocalizationTask == nil, positioningState != .manualAvailable else { return }
+        relocalizationTask = Task { @MainActor [weak self, relocalizationTimeout] in
+            do { try await Task.sleep(for: relocalizationTimeout) } catch { return }
+            guard let self, self.phase == .waiting,
+                  (self.isSimulatingDemoScan && self.cameraScreenIsVisible)
+                    || (self.automaticWorldMap != nil && self.cameraSessionIsRunning) else { return }
+            self.positioningState = .manualAvailable
+            self.relocalizationTask = nil
+        }
+    }
+
+    private func cancelRelocalizationTimer() {
+        relocalizationTask?.cancel()
+        relocalizationTask = nil
+    }
+
+    func returnFromPositionSetup() {
+        guard phase == .setup, isSetupFromCamera else { return }
+        phase = .waiting
+        scheduleReadinessReport()
     }
 
     private static let memberIDDefaultsKey = "com.wffmst.cqb.memberID"
@@ -252,12 +401,19 @@ final class MemberStore {
         }
         startPoint = start
         directionPoint = direction
+        positioningState = .manualReady
         phase = .waiting
         scheduleReadinessReport()
     }
 
     func resetPosition() {
-        guard phase == .waiting, !startRequestedBySession else { return }
+        guard canSetPositionManually else { return }
+        cancelRelocalizationTimer()
+        automaticWorldMap = nil
+        isSimulatingDemoScan = false
+        cameraService.configureWorldMap(nil)
+        isSetupFromCamera = true
+        positioningState = .manualRequired
         startPoint = nil
         directionPoint = nil
         isTrackingReady = false
@@ -344,6 +500,10 @@ final class MemberStore {
                 cameraService.onVideoChunkReady = nil
                 try? recordingFileStore.discardUncommittedFiles(files)
                 return
+            }
+            if let position = cameraService.recordingPosition {
+                self.startPoint = position.start
+                self.directionPoint = position.direction
             }
             self.identity = identity
             recordingFiles = files
@@ -528,6 +688,13 @@ final class MemberStore {
     }
 
     private func leaveSessionWithoutRecording(message: String) {
+        cancelRelocalizationTimer()
+        automaticWorldMap = nil
+        isSimulatingDemoScan = false
+        cameraScreenIsVisible = false
+        positioningState = .manualRequired
+        isSetupFromCamera = false
+        cameraService.configureWorldMap(nil)
         startRequestedBySession = false
         cancelRecordingStart()
         sessionObservationTask?.cancel()
@@ -575,7 +742,7 @@ final class MemberStore {
         catch { errorMessage = error.localizedDescription }
         rawTrack = RawTrackDocument(identity: identity, floorPlan: map.reference,
             localStartedAt: recordingStartedAt, start: map.pixel(startPoint), direction: map.pixel(directionPoint),
-            pixelsPerMeter: map.pixelsPerMeter, rotationDegrees: cameraService.rotationDegrees,
+            pixelsPerMeter: cameraService.recordingPixelsPerMeter ?? map.pixelsPerMeter, rotationDegrees: cameraService.rotationDegrees,
             samples: cameraService.samples)
         cameraService.stop()
         await saveAndCorrect()
@@ -804,6 +971,8 @@ final class MemberStore {
 
     /// 화면 구성 해제 시 세션 구독과 카메라를 정리한다. 녹화 중에는 기존 종료 흐름을 먼저 완료해야 한다.
     func shutdown() {
+        cancelRelocalizationTimer()
+        cameraScreenIsVisible = false
         startRequestedBySession = false
         cancelRecordingStart()
         sessionObservationTask?.cancel()
@@ -854,6 +1023,13 @@ final class MemberStore {
     }
 
     private func resetToJoin() {
+        cancelRelocalizationTimer()
+        automaticWorldMap = nil
+        isSimulatingDemoScan = false
+        cameraScreenIsVisible = false
+        positioningState = .manualRequired
+        isSetupFromCamera = false
+        cameraService.configureWorldMap(nil)
         startRequestedBySession = false
         cancelRecordingStart()
         sessionObservationTask?.cancel()

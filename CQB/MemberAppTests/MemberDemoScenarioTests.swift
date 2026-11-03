@@ -18,17 +18,21 @@ final class MemberDemoScenarioTests: XCTestCase {
         XCTAssertTrue(mode.isActive)
     }
 
-    func testDemoScenarioLoadsBundledMapAndReachesWaiting() throws {
-        let environment = MemberDemoScenario.makeEnvironment()
+    func testDemoScenarioLoadsBundledMapAndReachesWaiting() async throws {
+        let environment = MemberDemoScenario.makeEnvironment(relocalizationTimeout: .milliseconds(1))
         let store = environment.store
 
         environment.enter()
 
-        XCTAssertEqual(store.phase, .setup)
+        XCTAssertEqual(store.phase, .waiting)
+        XCTAssertFalse(store.canSetPositionManually)
+        XCTAssertEqual(store.positioningState, .relocalizing)
         XCTAssertEqual(store.pin, "012345")
         XCTAssertEqual(store.memberName, "데모 대원")
+        await enableManualSetup(store)
         let points = try freePoints(in: XCTUnwrap(store.trainingMap))
 
+        store.resetPosition()
         store.confirmPosition(start: points.start, direction: points.direction)
 
         XCTAssertEqual(store.phase, .waiting)
@@ -38,10 +42,12 @@ final class MemberDemoScenarioTests: XCTestCase {
     }
 
     func testDemoStartSignalArrivesWithoutAnExternalInstructor() async throws {
-        let environment = MemberDemoScenario.makeEnvironment()
+        let environment = MemberDemoScenario.makeEnvironment(relocalizationTimeout: .milliseconds(1))
         let store = environment.store
         environment.enter()
+        await enableManualSetup(store)
         let points = try freePoints(in: XCTUnwrap(store.trainingMap))
+        store.resetPosition()
         store.confirmPosition(start: points.start, direction: points.direction)
 
         await environment.control.startTraining()
@@ -53,14 +59,16 @@ final class MemberDemoScenarioTests: XCTestCase {
         store.shutdown()
     }
 
-    func testEachDemoEnvironmentStartsFromJoinState() throws {
-        let first = MemberDemoScenario.makeEnvironment()
+    func testEachDemoEnvironmentStartsFromJoinState() async throws {
+        let first = MemberDemoScenario.makeEnvironment(relocalizationTimeout: .milliseconds(1))
         first.enter()
+        await enableManualSetup(first.store)
         let points = try freePoints(in: XCTUnwrap(first.store.trainingMap))
+        first.store.resetPosition()
         first.store.confirmPosition(start: points.start, direction: points.direction)
         XCTAssertEqual(first.store.phase, .waiting)
 
-        let restarted = MemberDemoScenario.makeEnvironment()
+        let restarted = MemberDemoScenario.makeEnvironment(relocalizationTimeout: .milliseconds(1))
 
         XCTAssertEqual(restarted.store.phase, .join)
         XCTAssertNil(restarted.store.trainingMap)
@@ -87,12 +95,15 @@ final class MemberDemoScenarioTests: XCTestCase {
             recordingRepository: TestRecordingRepository(),
             videoChunkRepository: TestVideoChunkRepository(),
             trackResultRepository: TestTrackResultRepository(),
+            relocalizationTimeout: .milliseconds(1),
             executionEnvironment: .demo(runID: UUID()),
             demoUploadSimulator: MemberDemoUploadSimulator(stepDelay: .zero)
         )
 
         store.enterDemoSession(session: session, memberName: "데모 대원")
+        await enableManualSetup(store)
         let points = try freePoints(in: XCTUnwrap(store.trainingMap))
+        store.resetPosition()
         store.confirmPosition(start: points.start, direction: points.direction)
         store.updateTrackingReadiness(true)
         try await Task.sleep(for: .milliseconds(20))
@@ -104,6 +115,12 @@ final class MemberDemoScenarioTests: XCTestCase {
         XCTAssertEqual(spy.memberJoinCount, 0)
         XCTAssertEqual(spy.memberReadinessUpdateCount, 0)
         store.shutdown()
+    }
+
+    private func enableManualSetup(_ store: MemberStore) async {
+        store.cameraScreenVisibilityChanged(true)
+        let available = await waitUntil { store.canSetPositionManually }
+        XCTAssertTrue(available)
     }
 
     private func freePoints(in map: TrainingMap) throws -> (start: CGPoint, direction: CGPoint) {

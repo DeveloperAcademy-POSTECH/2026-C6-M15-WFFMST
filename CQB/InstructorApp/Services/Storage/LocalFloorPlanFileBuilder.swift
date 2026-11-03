@@ -63,13 +63,15 @@ nonisolated enum LocalFloorPlanFileBuilder {
             floorPlanID: registration.id,
             navigationSHA256: sha256(navigationMap)
         )
+        let files = FloorPlanFiles(
+            imagePNG: image.pngData,
+            navigationMapJSON: navigationMap,
+            resolvedMask: mask
+        )
+        try LocalUploadSizeValidator.validate(files)
         return LocalFloorPlanUpload(
             registration: registration,
-            files: FloorPlanFiles(
-                imagePNG: image.pngData,
-                navigationMapJSON: navigationMap,
-                resolvedMask: mask
-            ),
+            files: files,
             reference: reference
         )
     }

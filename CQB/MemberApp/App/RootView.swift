@@ -101,7 +101,9 @@ struct RootView: View {
                 startPoint: store.startPoint,
                 directionPoint: store.directionPoint,
                 onBack: {
-                    if demoMode.isActive {
+                    if store.isSetupFromCamera {
+                        store.returnFromPositionSetup()
+                    } else if demoMode.isActive {
                         demoMode.stop()
                     } else {
                         store.returnToJoin()

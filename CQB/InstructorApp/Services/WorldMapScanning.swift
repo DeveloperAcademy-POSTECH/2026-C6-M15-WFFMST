@@ -7,7 +7,7 @@ protocol WorldMapScanning: AnyObject {
     var onFrameUpdate: ((LocalWorldMapFrameState) -> Void)? { get set }
 
     func start() async throws
-    func currentPose() throws -> ARPose
+    func captureCurrentPose() -> LocalWorldMapPoseCaptureResult
     func makeWorldMapArchive() async throws -> Data
     func stop()
 }

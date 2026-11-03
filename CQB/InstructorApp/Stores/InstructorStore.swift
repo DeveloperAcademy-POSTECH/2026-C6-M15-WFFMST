@@ -1305,32 +1305,27 @@ final class InstructorStore {
         let catalogRepository = floorPlanCatalogRepository
         let expectedPhase: InstructorPhase = existingPlan == nil ? .floorPlanCreation : .floorPlanEditing
         let preparation = Task.detached(priority: .userInitiated) {
-            try LocalFloorPlanFileBuilder.build(from: registration)
+            let upload = try LocalFloorPlanFileBuilder.build(from: registration)
+            let worldMapUpload = try worldMapDraft.map {
+                try LocalWorldMapFileBuilder.build(from: $0, floorPlan: upload.reference)
+            }
+            try Task.checkCancellation()
+            return (upload, worldMapUpload)
         }
         floorPlanUploadTask = Task { [weak self] in
             do {
-                let upload = try await withTaskCancellationHandler {
+                let (upload, preparedWorldMap) = try await withTaskCancellationHandler {
                     try await preparation.value
                 } onCancel: {
                     preparation.cancel()
                 }
                 try Task.checkCancellation()
-                try await repository.upload(upload.files, for: upload.reference)
-                try Task.checkCancellation()
-                let worldMapReference: WorldMapReference?
-                if let worldMapDraft {
-                    guard let worldMapRepository else {
+                let worldMapUpload: LocalWorldMapUpload?
+                if let preparedWorldMap {
+                    guard worldMapRepository != nil else {
                         throw LocalFloorPlanError.invalid("WorldMap 저장소가 구성되지 않았습니다.")
                     }
-                    let worldMapUpload = try LocalWorldMapFileBuilder.build(
-                        from: worldMapDraft,
-                        floorPlan: upload.reference
-                    )
-                    try await worldMapRepository.upload(
-                        worldMapUpload.files,
-                        for: worldMapUpload.reference
-                    )
-                    worldMapReference = worldMapUpload.reference
+                    worldMapUpload = preparedWorldMap
                 } else if let existingWorldMap = existingPlan?.worldMap {
                     guard let worldMapRepository else {
                         throw LocalFloorPlanError.invalid("WorldMap 저장소가 구성되지 않았습니다.")
@@ -1342,11 +1337,18 @@ final class InstructorStore {
                         from: existingWorldMap,
                         to: upload.reference
                     )
-                    try await worldMapRepository.upload(rebound.files, for: rebound.reference)
-                    worldMapReference = rebound.reference
+                    worldMapUpload = rebound
                 } else {
-                    worldMapReference = nil
+                    worldMapUpload = nil
                 }
+                // 두 파일 묶음의 크기 검증이 끝난 뒤 업로드를 시작한다.
+                try Task.checkCancellation()
+                try await repository.upload(upload.files, for: upload.reference)
+                try Task.checkCancellation()
+                if let worldMapUpload, let worldMapRepository {
+                    try await worldMapRepository.upload(worldMapUpload.files, for: worldMapUpload.reference)
+                }
+                let worldMapReference = worldMapUpload?.reference
                 try Task.checkCancellation()
                 let now = Date.now
                 let plan = InstructorFloorPlan(
@@ -1413,6 +1415,9 @@ final class InstructorStore {
     }
 
     private static func floorPlanUploadMessage(for error: Error) -> String {
+        if let sizeError = error as? LocalUploadFileSizeError {
+            return sizeError.localizedDescription
+        }
         if error as? FloorPlanRegistrationError == .localSave {
             return "도면 파일은 업로드했지만 기기에 목록을 저장하지 못했습니다. 다시 시도해주세요."
         }

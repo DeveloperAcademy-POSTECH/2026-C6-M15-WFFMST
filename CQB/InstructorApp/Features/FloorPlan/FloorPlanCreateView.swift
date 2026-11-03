@@ -20,8 +20,6 @@ struct FloorPlanCreateView: View {
     )
     @State private var showsNameValidation = false
     @State private var showsExitConfirmation = false
-    @State private var scanFeedbackMessage: String?
-    @State private var scanFeedbackID = UUID()
     @State private var registrationBrushMode: LocalEditMode = .block
     @State private var editingCanvasDisplayScale: CGFloat = 1
     @FocusState private var focusedField: InputField?
@@ -34,9 +32,14 @@ struct FloorPlanCreateView: View {
 
     private var scanCheckpointMarkers: [LocalScanCheckpointMarker] {
         store.scanCheckpoints.enumerated().map { index, point in
-            let state: LocalScanCheckpointState = store.step == .scanning
-                && store.completedScanCheckpointIndices.contains(index)
-                ? .completed : .planned
+            let state: LocalScanCheckpointState
+            if store.step == .scanning && store.completedScanCheckpointIndices.contains(index) {
+                state = .completed
+            } else if store.step == .scanning && store.selectedScanCheckpointIndex == index {
+                state = .selected
+            } else {
+                state = .planned
+            }
             return LocalScanCheckpointMarker(point: point, number: index + 1, state: state)
         }
     }
@@ -49,6 +52,11 @@ struct FloorPlanCreateView: View {
 
     private var scanningLocationMarkers: [LocalScanCheckpointMarker] {
         scanCheckpointMarkers
+    }
+
+    private var scanCheckpointTapHandler: ((Int) -> Void)? {
+        guard store.worldMapStart != nil else { return nil }
+        return handleScanMarkerTap
     }
 
     var body: some View {
@@ -102,6 +110,14 @@ struct FloorPlanCreateView: View {
             Button("계속 등록", role: .cancel) {}
         } message: {
             Text("지금 나가면 입력한 도면 설정 정보가 저장되지 않습니다.")
+        }
+        .alert("공간 스캔을 저장하지 못했습니다", isPresented: Binding(
+            get: { store.worldMapSaveErrorMessage != nil },
+            set: { if !$0 { store.dismissWorldMapSaveError() } }
+        )) {
+            Button("확인", role: .cancel, action: store.dismissWorldMapSaveError)
+        } message: {
+            Text(store.worldMapSaveErrorMessage ?? "")
         }
         .overlay {
             if app.isUploadingFloorPlan {
@@ -352,6 +368,7 @@ struct FloorPlanCreateView: View {
                     scaleA: store.startPlanPoint,
                     scaleB: store.directionPlanPoint,
                     scaleMarkerAppearance: .scanHeading,
+                    showsScanStartSelection: store.worldMapStart == nil,
                     usesTransparentBackground: true,
                     maximumInitialDisplaySize: CGSize(
                         width: maximumPreviewWidth,
@@ -363,8 +380,7 @@ struct FloorPlanCreateView: View {
                     layers: FloorPlanLayerDisplay(planOpacity: 1, maskOpacity: 0),
                     onStroke: { _ in },
                     onPoint: { _ in },
-                    onScanStartTap: handleScanStartTap,
-                    onCheckpointTap: handleScanMarkerTap
+                    onCheckpointTap: scanCheckpointTapHandler
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("floorPlan.scanning.canvas")
@@ -380,14 +396,6 @@ struct FloorPlanCreateView: View {
                 .padding(.leading, 175)
                 .padding(.trailing, DSSpacing.s40)
                 .padding(.top, DSSpacing.s40)
-
-            if let scanFeedbackMessage {
-                DSGuideToast(scanFeedbackMessage, type: .compact)
-                    .accessibilityIdentifier("floorPlan.scan.feedback")
-                    .padding(.leading, 175)
-                    .padding(.top, 152)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
 
             statusOverlay
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -1366,7 +1374,7 @@ struct FloorPlanCreateView: View {
                     }
                     .foregroundStyle(DSColor.contentPrimary)
 
-                    Text("미완료 점 위치로 이동해 주변을 촬영한 뒤, 도면의 해당 점을 탭하세요.")
+                    Text("도면에서 체크포인트를 선택한 뒤 현재 위치를 기록하세요.")
                         .dsTextStyle(DSTypography.captionRegular14)
                         .foregroundStyle(DSColor.contentTertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1407,15 +1415,33 @@ struct FloorPlanCreateView: View {
                     .buttonStyle(.dsSecondary)
                     .accessibilityIdentifier("floorPlan.scan.previous")
 
-                    Button(action: {
-                        Task { await store.saveWorldMap() }
-                    }) {
-                        Text("다음")
-                            .frame(maxWidth: .infinity)
+                    if store.worldMapStart == nil {
+                        Button(action: store.captureWorldMapStart) {
+                            Text("출발 위치 기록")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.dsPrimary)
+                        .disabled(!store.canCaptureStartAlignment)
+                        .accessibilityIdentifier("floorPlan.scan.captureStartLocation")
+                    } else if store.completedScanCheckpointCount == store.scanCheckpoints.count {
+                        Button(action: {
+                            Task { await store.saveWorldMap() }
+                        }) {
+                            Text(store.isSavingWorldMap ? "공간 스캔 저장 중" : "다음")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.dsPrimary)
+                        .disabled(!store.canSaveWorldMap)
+                        .accessibilityIdentifier("floorPlan.scan.next")
+                    } else {
+                        Button(action: handleCheckpointCapture) {
+                            Text("현재 위치 기록")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.dsPrimary)
+                        .disabled(!store.canCaptureSelectedCheckpoint)
+                        .accessibilityIdentifier("floorPlan.scan.captureCurrentLocation")
                     }
-                    .buttonStyle(.dsPrimary)
-                    .disabled(!store.canSaveWorldMap)
-                    .accessibilityIdentifier("floorPlan.scan.next")
                 }
                 .padding(.bottom, 40)
             }
@@ -1436,12 +1462,17 @@ struct FloorPlanCreateView: View {
     }
 
     private var scanningGuideMessage: String {
-        if store.worldMapStart == nil, store.frameState.trackingMessage == "추적 정상" {
-            return "출발점으로 이동해 방향 표시가 가리키는 곳을 바라본 후,\n도면의 출발점을 클릭해 스캔 정보를 저장합니다."
+        if !store.frameState.tracking.canCapture {
+            return store.frameState.tracking.message
         }
-        if store.completedScanCheckpointCount < store.scanCheckpoints.count,
-           store.frameState.trackingMessage == "추적 정상" {
-            return "미완료 체크포인트 위치로 이동 후,\n도면의 해당 지점을 클릭해 스캔 정보를 저장합니다."
+        if store.worldMapStart == nil {
+            return "출발점으로 이동해 방향 표시가 가리키는 곳을 바라본 후,\n출발 위치 기록 버튼을 눌러주세요."
+        }
+        if store.selectedScanCheckpointIndex != nil {
+            return "선택한 체크포인트의 실제 위치에서\n현재 위치 기록 버튼을 눌러주세요."
+        }
+        if store.completedScanCheckpointCount < store.scanCheckpoints.count {
+            return "미완료 체크포인트 위치로 이동 후,\n도면에서 기록할 체크포인트를 선택해주세요."
         }
         return "이동 시에 카메라가 가려지지 않고, 주변을 많이 촬영할수록 정확도를 높일 수 있습니다."
     }
@@ -1455,51 +1486,12 @@ struct FloorPlanCreateView: View {
         }
     }
 
-    private func handleScanStartTap() {
-        guard store.worldMapStart == nil else {
-            showScanFeedback("출발 위치의 스캔 정보가 이미 저장되었습니다.")
-            return
-        }
-        guard store.frameState.trackingMessage == "추적 정상" else {
-            showScanFeedback("주변을 천천히 촬영해 카메라 추적을 안정시켜주세요.")
-            return
-        }
-        store.captureWorldMapStart()
-        if store.worldMapStart != nil {
-            showScanFeedback("출발 위치와 방향을 저장했습니다. 이제 체크포인트로 이동해주세요.")
-        }
-    }
-
     private func handleScanMarkerTap(_ markerIndex: Int) {
-        switch store.captureScanCheckpoint(at: markerIndex) {
-        case .captured:
-            showScanFeedback("체크포인트의 스캔 정보를 저장했습니다.")
-        case .startRequired:
-            showScanFeedback("먼저 출발 위치로 이동해 도면의 출발점을 탭해주세요.")
-        case .trackingUnavailable:
-            showScanFeedback("주변을 천천히 촬영해 카메라 추적을 안정시켜주세요.")
-        case .alreadyCaptured:
-            showScanFeedback("이미 스캔 정보를 저장한 체크포인트입니다.")
-        case .invalidCheckpoint:
-            showScanFeedback("선택한 체크포인트를 확인할 수 없습니다.")
-        case .failed(let message):
-            showScanFeedback(message)
-        }
+        store.selectScanCheckpoint(at: markerIndex)
     }
 
-    private func showScanFeedback(_ message: String) {
-        let feedbackID = UUID()
-        scanFeedbackID = feedbackID
-        withAnimation(.easeOut(duration: 0.2)) {
-            scanFeedbackMessage = message
-        }
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(2))
-            guard scanFeedbackID == feedbackID else { return }
-            withAnimation(.easeIn(duration: 0.2)) {
-                scanFeedbackMessage = nil
-            }
-        }
+    private func handleCheckpointCapture() {
+        store.captureSelectedScanCheckpoint()
     }
 
     private var alignmentInstruction: String {
@@ -1654,3 +1646,48 @@ private struct FloorPlanSavingGlassStyle: ViewModifier {
         .frame(width: 1_366, height: 1_024)
         .preferredColorScheme(.dark)
 }
+
+#if DEBUG
+#Preview("AR 출발점 · 기록 전", traits: .landscapeLeft) {
+    let draft = FloorPlanDraftStore.makeScanningPreview(hasCapturedStart: false)
+    let app = InstructorStore(floorPlanDraft: draft)
+    return FloorPlanCreateView()
+        .environment(app)
+        .environment(draft)
+        .frame(width: 1_366, height: 1_024)
+        .preferredColorScheme(.dark)
+}
+
+#Preview("AR 체크포인트 · 선택 및 기록 가능", traits: .landscapeLeft) {
+    let draft = FloorPlanDraftStore.makeScanningPreview(selectedIndex: 1)
+    let app = InstructorStore(floorPlanDraft: draft)
+    return FloorPlanCreateView()
+        .environment(app)
+        .environment(draft)
+        .frame(width: 1_366, height: 1_024)
+        .preferredColorScheme(.dark)
+}
+
+#Preview("AR 체크포인트 · 추적 불안정", traits: .landscapeLeft) {
+    let draft = FloorPlanDraftStore.makeScanningPreview(
+        tracking: .insufficientFeatures,
+        selectedIndex: 1
+    )
+    let app = InstructorStore(floorPlanDraft: draft)
+    return FloorPlanCreateView()
+        .environment(app)
+        .environment(draft)
+        .frame(width: 1_366, height: 1_024)
+        .preferredColorScheme(.dark)
+}
+
+#Preview("AR 체크포인트 · 기록 완료", traits: .landscapeLeft) {
+    let draft = FloorPlanDraftStore.makeScanningPreview(completedIndices: [0, 1, 2])
+    let app = InstructorStore(floorPlanDraft: draft)
+    return FloorPlanCreateView()
+        .environment(app)
+        .environment(draft)
+        .frame(width: 1_366, height: 1_024)
+        .preferredColorScheme(.dark)
+}
+#endif
