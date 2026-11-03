@@ -91,6 +91,7 @@ private final class ControlledWorldMapScanner: NSObject, WorldMapScanning {
     var previewSession: AnyObject { self }
     private var poses: [ARPose] = []
     private var delaysArchive: Bool
+    private var captureTracking: LocalWorldMapTrackingState = .normal
     private(set) var isArchivePending = false
     private(set) var startCount = 0
 
@@ -106,12 +107,14 @@ private final class ControlledWorldMapScanner: NSObject, WorldMapScanning {
             ARPose(x: 2, y: 1.4, z: 0, forwardX: 1, forwardZ: 0),
             ARPose(x: 3, y: 1.4, z: 0, forwardX: 1, forwardZ: 0),
         ]
-        onFrameUpdate?(LocalWorldMapFrameState(mapping: .mapped, trackingMessage: "추적 정상"))
+        captureTracking = .normal
+        emitFrame(tracking: .normal)
     }
 
-    func currentPose() throws -> ARPose {
-        guard !poses.isEmpty else { throw LocalFloorPlanError.invalid("test pose unavailable") }
-        return poses.removeFirst()
+    func captureCurrentPose() -> LocalWorldMapPoseCaptureResult {
+        guard captureTracking.canCapture else { return .trackingUnavailable(captureTracking) }
+        guard !poses.isEmpty else { return .failed("test pose unavailable") }
+        return .captured(poses.removeFirst())
     }
 
     func makeWorldMapArchive() async throws -> Data {
@@ -125,6 +128,15 @@ private final class ControlledWorldMapScanner: NSObject, WorldMapScanning {
     }
 
     func releaseArchive() { delaysArchive = false }
+    func setCaptureTracking(_ tracking: LocalWorldMapTrackingState) {
+        captureTracking = tracking
+    }
+    func emitFrame(
+        tracking: LocalWorldMapTrackingState,
+        mapping: LocalWorldMapMappingState = .mapped
+    ) {
+        onFrameUpdate?(LocalWorldMapFrameState(mapping: mapping, tracking: tracking))
+    }
     func stop() {}
 }
 
@@ -152,6 +164,7 @@ enum FloorPlanRegistrationChecks {
         try await checkImportLifecycle()
         try await checkWorldMapPointUndoRedo()
         try await checkFreeOrderCheckpointCapture()
+        try await checkCheckpointTrackingRevalidation()
         try await checkWorldMapSaveCancellation()
         try await checkWorldMapDraftReuseAfterBackNavigation()
         try await checkMaskCancellationRecovery()
@@ -534,7 +547,8 @@ enum FloorPlanRegistrationChecks {
         draft.placePoint(LocalPlanPoint(x: 0.8, y: 0.5))
         await draft.startWorldMapScan()
         draft.captureWorldMapStart()
-        precondition(draft.captureScanCheckpoint(at: 0) == .captured)
+        precondition(draft.selectScanCheckpoint(at: 0) == .selected)
+        precondition(draft.captureSelectedScanCheckpoint() == .captured)
         precondition(draft.canSaveWorldMap)
     }
 
@@ -617,18 +631,73 @@ enum FloorPlanRegistrationChecks {
         draft.placePoint(LocalPlanPoint(x: 0.8, y: 0.7))
         await draft.startWorldMapScan()
 
-        precondition(draft.captureScanCheckpoint(at: 2) == .startRequired)
+        precondition(draft.selectScanCheckpoint(at: 2) == .startRequired)
         draft.captureWorldMapStart()
-        precondition(draft.captureScanCheckpoint(at: 2) == .captured)
+        precondition(draft.selectScanCheckpoint(at: 2) == .selected)
+        precondition(draft.worldMapCorrespondences.map(\.label) == ["start"],
+                     "체크포인트 탭만으로 pose를 기록하면 안 된다")
+        precondition(draft.captureSelectedScanCheckpoint() == .captured)
         precondition(draft.completedScanCheckpointIndices == [2])
-        precondition(draft.captureScanCheckpoint(at: 2) == .alreadyCaptured)
-        precondition(draft.captureScanCheckpoint(at: 0) == .captured)
-        precondition(draft.captureScanCheckpoint(at: 1) == .captured)
+        precondition(draft.selectScanCheckpoint(at: 2) == .alreadyCaptured)
+        precondition(draft.selectScanCheckpoint(at: 0) == .selected)
+        precondition(draft.captureSelectedScanCheckpoint() == .captured)
+        precondition(draft.selectScanCheckpoint(at: 1) == .selected)
+        precondition(draft.captureSelectedScanCheckpoint() == .captured)
         precondition(draft.completedScanCheckpointIndices == [0, 1, 2])
         precondition(draft.worldMapCorrespondences.map(\.label) == [
             "start", "checkpoint-3", "checkpoint-1", "checkpoint-2",
         ])
         precondition(draft.canSaveWorldMap)
+    }
+
+    private static func checkCheckpointTrackingRevalidation() async throws {
+        let importer = ControlledImporter()
+        let scanner = ControlledWorldMapScanner()
+        let draft = FloorPlanDraftStore(importer: importer, worldMapScanner: scanner)
+        draft.setName("추적 상태 재검증")
+        draft.importImage(from: URL(fileURLWithPath: "/virtual/tracking-revalidation.png"))
+        try await wait { await importer.has("tracking-revalidation.png") }
+        await importer.succeedNormalization("tracking-revalidation.png")
+        try await wait { await importer.hasExtraction("tracking-revalidation.png") }
+        await importer.succeedExtraction("tracking-revalidation.png")
+        try await wait { !draft.isProcessing }
+
+        draft.continueToWorldMapAlignment()
+        draft.placePoint(LocalPlanPoint(x: 0.1, y: 0.1))
+        draft.placePoint(LocalPlanPoint(x: 0.2, y: 0.1))
+        draft.placePoint(LocalPlanPoint(x: 0.4, y: 0.4))
+        await draft.startWorldMapScan()
+
+        scanner.setCaptureTracking(.excessiveMotion)
+        draft.captureWorldMapStart()
+        precondition(draft.worldMapStart == nil)
+        precondition(draft.frameState.tracking == .excessiveMotion,
+                     "출발 위치도 버튼 탭 순간 최신 추적 상태를 다시 확인해야 한다")
+
+        scanner.setCaptureTracking(.normal)
+        scanner.emitFrame(tracking: .normal)
+        draft.captureWorldMapStart()
+        precondition(draft.worldMapStart != nil)
+        precondition(draft.selectScanCheckpoint(at: 0) == .selected)
+        precondition(draft.canCaptureSelectedCheckpoint)
+
+        scanner.setCaptureTracking(.excessiveMotion)
+        precondition(draft.captureSelectedScanCheckpoint() == .trackingUnavailable(.excessiveMotion))
+        precondition(draft.completedScanCheckpointIndices.isEmpty)
+        precondition(draft.worldMapCorrespondences.map(\.label) == ["start"])
+        precondition(draft.selectedScanCheckpointIndex == 0,
+                     "추적 실패 후 선택을 유지해 다시 기록할 수 있어야 한다")
+
+        scanner.setCaptureTracking(.normal)
+        scanner.emitFrame(tracking: .normal)
+        precondition(draft.captureSelectedScanCheckpoint() == .captured)
+        precondition(draft.selectedScanCheckpointIndex == nil)
+        precondition(draft.completedScanCheckpointIndices == [0])
+
+        precondition(LocalWorldMapTrackingState.initializing.message.contains("천천히"))
+        precondition(LocalWorldMapTrackingState.excessiveMotion.message.contains("천천히"))
+        precondition(LocalWorldMapTrackingState.insufficientFeatures.message.contains("벽 모서리"))
+        precondition(LocalWorldMapTrackingState.limited.message.contains("기록할 수 없습니다"))
     }
 
     private static func prepareDraft(_ draft: FloorPlanDraftStore, importer: ControlledImporter) async throws -> LocalEditStroke {
@@ -652,7 +721,8 @@ enum FloorPlanRegistrationChecks {
         precondition(draft.step == .scanning, "scan did not start: \(String(describing: draft.errorMessage))")
         draft.captureWorldMapStart()
         precondition(draft.worldMapStart != nil, "start pose not captured: \(String(describing: draft.errorMessage))")
-        precondition(draft.captureScanCheckpoint(at: 0) == .captured)
+        precondition(draft.selectScanCheckpoint(at: 0) == .selected)
+        precondition(draft.captureSelectedScanCheckpoint() == .captured)
         precondition(draft.worldMapCorrespondences.count == 2, "checkpoint pose not captured")
         precondition(draft.completedScanCheckpointCount == 1, "checkpoint not completed")
         await draft.saveWorldMap()
