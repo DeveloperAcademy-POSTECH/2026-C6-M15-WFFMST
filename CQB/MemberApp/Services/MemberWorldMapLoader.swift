@@ -10,6 +10,8 @@ nonisolated struct LoadedMemberWorldMap {
 }
 
 nonisolated enum MemberWorldMapLoader {
+    static let maximumDecompressedBytes = 128 * 1_048_576
+
     @concurrent static func load(files: WorldMapFiles, reference: WorldMapReference) async throws -> sending LoadedMemberWorldMap {
         let setup = try JSONDecoder().decode(WorldMapSetup.self, from: files.setupJSON)
         guard setup.schemaVersion == 1, setup.matches(reference),
@@ -36,21 +38,28 @@ nonisolated enum MemberWorldMapLoader {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
-    private static func decompress(_ data: Data) throws -> Data {
+    static func decompress(_ data: Data, maximumOutputBytes: Int = maximumDecompressedBytes) throws -> Data {
         // 압축 파일로 인한 무제한 메모리 할당을 방지한다. 저장 파일 제한은 Repository에서 검사한다.
-        var capacity = 1_048_576
-        while capacity <= 128 * 1_048_576 {
-            var output = Data(count: capacity)
+        guard maximumOutputBytes > 0, maximumOutputBytes <= maximumDecompressedBytes else {
+            throw RepositoryError.integrityMismatch
+        }
+        var capacity = min(1_048_576, maximumOutputBytes)
+        while true {
+            // 상한 + 1 바이트까지 받아야 정확히 상한인 출력과 초과 출력을 구분할 수 있다.
+            let destinationCapacity = capacity == maximumOutputBytes ? maximumOutputBytes + 1 : capacity
+            var output = Data(count: destinationCapacity)
             let count = output.withUnsafeMutableBytes { destination in
                 data.withUnsafeBytes { source in
                     guard let dst = destination.bindMemory(to: UInt8.self).baseAddress,
                           let src = source.bindMemory(to: UInt8.self).baseAddress else { return 0 }
-                    return compression_decode_buffer(dst, capacity, src, data.count, nil, COMPRESSION_LZFSE)
+                    return compression_decode_buffer(dst, destinationCapacity, src, data.count, nil, COMPRESSION_LZFSE)
                 }
             }
-            if count > 0, count < capacity { return output.prefix(count) }
-            capacity *= 2
+            if count > 0, count < destinationCapacity { return output.prefix(count) }
+            guard count == destinationCapacity, capacity < maximumOutputBytes else {
+                throw RepositoryError.integrityMismatch
+            }
+            capacity = min(capacity * 2, maximumOutputBytes)
         }
-        throw RepositoryError.integrityMismatch
     }
 }
