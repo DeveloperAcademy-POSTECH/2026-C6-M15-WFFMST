@@ -285,7 +285,12 @@ public struct SoundCandidate: Codable, Equatable, Sendable {
 - 마이크 권한이 없거나 전화 등으로 녹음이 끊긴 구간은 `analyzedRanges`에서 뺀다. 읽는 쪽은 분석 구간 밖을 "소리 없음"이 아니라 "분석 안 됨"으로 본다.
 - 대원 앱은 최종 판정보다 낮은 기준으로 후보를 넉넉히 남긴다. 임계값 적용, 기기 간 합의, 표시는 교관 앱이 맡는다. 기준이 바뀌어도 교관 앱만 고치면 지난 기록도 다시 판정할 수 있다.
 - `classifierScores`에서 모르는 키는 무시한다.
-- 근거 값을 더할 때는 선택 필드로 추가하고 `schemaVersion`을 유지한다. 기존 필드의 의미가 바뀌면 `schemaVersion`을 올린다. 읽는 쪽은 모르는 `schemaVersion`이면 후보가 없는 것으로 처리한다.
+- 근거 값을 더할 때는 선택 필드로 추가하고 `schemaVersion`을 유지한다. 기존 필드의 의미가 바뀌면 `schemaVersion`을 올린다.
+- `SoundCandidateDocument.validate()`가 다음을 확인한다. 쓰는 쪽은 올리기 전에, 읽는 쪽은 받은 뒤에 부른다.
+  - `schemaVersion`이 이 앱이 아는 버전이다. 아니면 `SoundCandidateValidationError.unsupportedSchema`이고, 읽는 쪽은 "분석 안 됨"으로 처리한다.
+  - `analyzedRanges`: 모든 값이 유한하고, 0 이상이며, 각 구간은 `start < end`, 시작 순으로 정렬되고 겹치지 않는다. 어기면 `invalidRanges`.
+  - `candidates`: `time`이 유한하고 오름차순이며 분석 구간 안에 있다. `peakLevelDBFS`는 0 이하, `decaySeconds`는 없거나 0 이상, 분류기 점수는 0~1이다. 어기면 `invalidCandidates`.
+  - 모르는 버전과 달리 손상된 문서(`invalidRanges`, `invalidCandidates`, JSON 디코딩 실패, 다른 기록의 문서)는 "분석 안 됨"으로 숨기지 않는다. 오류로 알리고 다시 받는다.
 - 대원 앱은 `finishing` 동안 보정 결과·영상 조각과 함께 올리고 `done` 전에 끝낸다. 재시도해도 올리지 못하면 파일 없이 `done`으로 바꾼다. 후보 파일 때문에 기록이 `failed`가 되지 않는다.
 - 파일이 없는 기록도 유효하다. 이 기능 이전 기록, 마이크 권한 없음, 분석·업로드 실패가 여기에 해당한다. 교관 앱은 "분석 안 됨"으로 처리하고 동선·영상 재생은 그대로 연다.
 - 같은 기록에 다시 올리면 덮어쓴다. 파일 크기는 기록 파일 제한(20MB) 안이다. 후보가 수천 개여도 수백 KB 수준이다.
