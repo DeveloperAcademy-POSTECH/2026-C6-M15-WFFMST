@@ -309,22 +309,28 @@ final class InstructorStore {
                 guard let session = try await fetchedSession else { throw TrainingHistoryOpenError.sessionNotFound }
                 let memberList = try await fetchedMembers ?? []
                 try Task.checkCancellation()
-                guard let self, self.openingTrainingHistorySessionID == sessionID, self.phase == origin else { return }
-                self.trainingHistoryOpenTask = nil
-                self.openingTrainingHistorySessionID = nil
+                // 응답을 받으면 이 요청의 로딩 상태를 먼저 비운다. 그 사이 다른 화면으로 갔으면 AAR로 넘어가지 않는다.
+                guard let self, self.openingTrainingHistorySessionID == sessionID else { return }
+                self.finishTrainingHistoryOpen()
+                guard self.phase == origin else { return }
                 self.enterAAR(reviewing: session, members: memberList, fromHistory: true)
             } catch {
                 guard let self, !(error is CancellationError),
                       self.openingTrainingHistorySessionID == sessionID else { return }
                 let failure = error as NSError
                 Self.logger.error("이전 훈련 AAR 열기 실패: domain=\(failure.domain, privacy: .public) code=\(failure.code) description=\(failure.localizedDescription, privacy: .private)")
-                self.trainingHistoryOpenTask = nil
-                self.openingTrainingHistorySessionID = nil
+                self.finishTrainingHistoryOpen()
+                guard self.phase == origin else { return }
                 self.trainingHistoryOpenError = error is TrainingHistoryOpenError
                     ? "서버에서 훈련 기록을 찾지 못했습니다."
                     : "훈련 기록을 불러오지 못했습니다. 연결을 확인한 뒤 다시 시도해주세요."
             }
         }
+    }
+
+    private func finishTrainingHistoryOpen() {
+        trainingHistoryOpenTask = nil
+        openingTrainingHistorySessionID = nil
     }
 
     func dismissTrainingHistoryOpenError() {

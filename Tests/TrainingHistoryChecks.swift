@@ -8,8 +8,9 @@ enum TrainingHistoryChecks {
         checkLoadAndRetry()
         await checkOpenAndReturnHome()
         await checkOpenFailureAndCancellation()
+        await checkLeavingWhileOpening()
         await checkDeletion()
-        print("PASS: 이전 훈련 기록 복원·재시도, 기록에서 AAR 열기·홈 복귀, 열기 실패·취소, 서버 영상과 함께 삭제")
+        print("PASS: 이전 훈련 기록 복원·재시도, 기록에서 AAR 열기·홈 복귀, 열기 실패·취소·화면 이탈, 서버 영상과 함께 삭제")
     }
 
     private static func checkLoadAndRetry() {
@@ -83,6 +84,35 @@ enum TrainingHistoryChecks {
         feeds.members[1].send([])
         await settle()
         expect(store.phase == .home && !store.isReviewingTrainingHistory, "화면 이탈 후 늦은 응답 무시")
+    }
+
+    /// 홈에서 기록을 누르고 응답 전에 다른 화면으로 가도 기록 선택이 잠기지 않는다.
+    private static func checkLeavingWhileOpening() async {
+        let record = makeRecord(minutesAfterBase: 0)
+        let feeds = HistoryFeeds()
+        let store = InstructorStore(sessionRepository: feeds, memberRepository: feeds, trainingHistory: [record])
+
+        store.openTrainingHistoryRecord(record.sessionID)
+        await wait("홈에서 연 기록 구독") { feeds.sessionCount == 1 && feeds.memberCount == 1 }
+        store.openTrainingHistory()
+        feeds.sessions[0].send(makeSession(for: record))
+        feeds.members[0].send([])
+        await wait("응답 후 로딩 정리") { store.openingTrainingHistorySessionID == nil }
+        expect(store.phase == .trainingHistory && !store.isReviewingTrainingHistory
+               && store.trainingHistoryOpenError == nil && store.canSelectTrainingHistoryRecord,
+               "모두보기로 이동한 뒤 성공 응답은 AAR로 넘어가지 않고 선택 잠금도 풀림")
+
+        store.goBack()
+        store.openTrainingHistoryRecord(record.sessionID)
+        await wait("두 번째 기록 구독") { feeds.sessionCount == 2 && feeds.memberCount == 2 }
+        store.openFloorPlanList()
+        feeds.sessions[1].finish()
+        feeds.members[1].send([])
+        await wait("실패 응답 후 로딩 정리") { store.openingTrainingHistorySessionID == nil }
+        expect(store.phase == .floorPlanList && store.trainingHistoryOpenError == nil,
+               "다른 화면으로 간 뒤 실패 응답은 안내하지 않음")
+        store.goBack()
+        expect(store.phase == .home && store.canSelectTrainingHistoryRecord, "홈으로 돌아오면 기록을 다시 누를 수 있음")
     }
 
     private static func checkDeletion() async {
