@@ -5,7 +5,8 @@ import XCTest
 
 @MainActor
 final class InstructorDemoScenarioTests: XCTestCase {
-    func testDemoModeCreatesANewRunWhenRestarted() {
+    // Xcode 27 + iOS 26 런타임에서 동기 테스트가 끝날 때 @MainActor 객체 해제가 크래시해 async로 둔다(#161).
+    func testDemoModeCreatesANewRunWhenRestarted() async {
         let demoMode = InstructorDemoMode()
         let initialRunID = demoMode.runID
 
