@@ -22,7 +22,7 @@ Store는 `CQBCore`의 프로토콜만 안다. Firebase 구현을 아는 곳은 �
   - 교관은 자기가 만든 세션(`instructorUid`)만 바꾼다. 상태는 앞으로만 바뀐다.
   - 대원은 맞는 PIN으로 `preparing`·`waiting` 세션에만 입장하고, 본인 문서(`uid`)와 본인 기록만 쓴다. 다른 대원 목록은 볼 수 없다.
   - 문서 목록 조회는 교관이 자기 세션의 대원·기록을 볼 때만 된다.
-  - Storage의 보정 결과·영상은 기록 주인이 올리고, 그 세션의 교관이 받고 지운다. 도면은 처음 한 번만 올린다.
+  - Storage의 보정 결과·음향 후보·영상은 기록 주인이 올리고, 그 세션의 교관이 받고 지운다. 도면은 처음 한 번만 올린다.
 - Storage 버킷의 `.mp4` 1일 자동 삭제(수명 주기 규칙)는 **UT 영상을 남기려고 2026-10-13부터 꺼 두었다.** 지금은 영상이 지워지지 않고 쌓인다(10분 훈련·대원 4명에 약 600MB). UT가 끝나면 영상을 백업하고 다시 켠다.
 
   ```bash
@@ -43,6 +43,7 @@ Store는 `CQBCore`의 프로토콜만 안다. Firebase 구현을 아는 곳은 �
 | `FloorPlanFileRepository` | `upload` | `download` |
 | `WorldMapFileRepository` | `upload` | `download` |
 | `TrackResultRepository` | `download` | `upload` |
+| `SoundCandidateRepository` | `download` | `upload` |
 | `VideoChunkRepository` | `downloadVideo`, `deleteVideo` | `upload` |
 
 ## Store에 넣기
@@ -208,6 +209,7 @@ Storage Repository도 Firestore와 같은 방식으로 `AppContainer`에서 넣�
 // 교관 앱
 floorPlanFileRepository: StorageFloorPlanFileRepository(),
 trackResultRepository: StorageTrackResultRepository(),
+soundCandidateRepository: StorageSoundCandidateRepository(),
 videoChunkRepository: StorageVideoChunkRepository(),
 ```
 
@@ -224,9 +226,9 @@ try await sessionRepository.createSession(session)
 let files = try await floorPlanFileRepository.download(session.floorPlan)
 ```
 
-### 보정 결과와 영상 (대원 → 교관)
+### 보정 결과, 음향 후보와 영상 (대원 → 교관)
 
-대원 앱은 녹화하면서 영상 조각을 하나씩 올리고, 녹화가 끝나면 보정 결과를 올린 뒤 기록을 `done`으로 바꾼다.
+대원 앱은 녹화하면서 영상 조각을 하나씩 올리고, 녹화가 끝나면 보정 결과와 음향 후보를 올린 뒤 기록을 `done`으로 바꾼다.
 
 ```swift
 // 대원 앱: 녹화 중, 조각이 만들어질 때마다 (index는 0부터)
@@ -236,6 +238,11 @@ try await videoChunkRepository.upload(fileURL: chunkURL, identity: identity, ind
 try await recordingRepository.updateRecording(
     Recording(identity: identity, state: .finishing, lastActiveAt: .now, videoChunkCount: chunkCount))
 try await trackResultRepository.upload(result)
+do {
+    try await soundCandidateRepository.upload(candidates)
+} catch {
+    // 재시도해도 실패하면 후보 파일 없이 done으로 넘어간다. 기록을 failed로 만들지 않는다.
+}
 try await recordingRepository.updateRecording(
     Recording(identity: identity, state: .done, lastActiveAt: .now, videoChunkCount: chunkCount))
 ```
@@ -245,6 +252,9 @@ try await recordingRepository.updateRecording(
 ```swift
 // 교관 앱
 let result = try await trackResultRepository.download(recording.identity)
+
+// 후보 파일이 없으면(.notFound) 분석 안 된 기록으로 보고 동선·영상은 그대로 연다.
+let candidates = try? await soundCandidateRepository.download(recording.identity)
 
 let directory = FileManager.default.temporaryDirectory
     .appending(path: recording.identity.recordingID.uuidString)
@@ -301,6 +311,13 @@ do {
 
 - `upload`: 경로는 `result.identity`로 정한다. 같은 기록에 다시 올리면 덮어쓴다.
 - `download`: 아직 올라오지 않았으면 `RepositoryError.notFound`. 기록이 `done`이 된 뒤에 부른다.
+
+### SoundCandidateRepository
+
+- `upload`: 경로는 `document.identity`로 정한다. 같은 기록에 다시 올리면 덮어쓴다. 20MB를 넘으면 `RepositoryError.fileTooLarge`.
+- `download`: 파일이 없으면 `RepositoryError.notFound`. 이 기능 이전 기록, 마이크 권한 없음, 분석·업로드 실패일 수 있으므로 오류가 아니라 "분석 안 됨"으로 처리한다. 기록이 `done`이 된 뒤에 부른다.
+- 받은 문서의 `identity`가 요청한 기록과 다르면 `RepositoryError.integrityMismatch`.
+- 형식과 시간축은 [데이터 계약](cqb-core-models.md#음향-후보)을 따른다. 최종 판정은 교관 앱이 한다.
 
 ### VideoChunkRepository
 

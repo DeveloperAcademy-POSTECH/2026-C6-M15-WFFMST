@@ -13,7 +13,7 @@ Firebase는 두 기기 사이의 전달 통로로만 사용한다. 한 기기 �
 1. 다른 기기로 전달해야 하는 데이터만 `CQBCore/Models`에 둔다.
 2. 도면은 `FloorPlanReference`, 기록은 `TrackIdentity`로 연결한다.
 3. Firestore에는 실시간 상태와 파일 참조 정보만 저장한다.
-4. Storage에는 실제 도면, 보정 결과, 영상 파일만 저장한다.
+4. Storage에는 실제 도면, 보정 결과, 음향 후보, 영상 파일만 저장한다.
 5. 원본 동선은 대원 기기 안에서 보정에 사용하며 Firebase에 업로드하지 않는다.
 6. Firebase 인증 UID, 입장 검증용 PIN, 저장 경로는 Core 모델에 포함하지 않는다.
 7. 등록한 도면은 수정하거나 덮어쓰지 않는다. 내용이 달라지면 새로운 `floorPlanID`를 생성한다.
@@ -30,6 +30,7 @@ Firebase는 두 기기 사이의 전달 통로로만 사용한다. 한 기기 �
 | 도면 파일 3개 | iPad → iPhone | Storage | 도면 표시와 로컬 동선 보정 |
 | 훈련장 스캔 파일 2개 | iPad → iPhone | Storage | 대원 위치 자동 맞추기 (선택) |
 | 보정 결과 파일 | iPhone → iPad | Storage | AAR 동선 표시 |
+| 음향 후보 파일 | iPhone → iPad | Storage | AAR 큰 소리(총성) 표시 |
 | 영상 조각 | iPhone → iPad | Storage | AAR 영상 재생 |
 
 도면 목록을 저장하는 별도의 `floorPlans/{floorPlanID}` Firestore 문서는 만들지 않는다. 도면 목록은 교관 기기에 로컬로 보관하며, 세션은 `FloorPlanReference`로 Storage의 도면 묶음을 참조한다.
@@ -149,6 +150,7 @@ worldMaps/{worldMapID}/world-map.arexperience
 worldMaps/{worldMapID}/setup.json
 
 sessions/{sessionID}/recordings/{recordingID}/result.json
+sessions/{sessionID}/recordings/{recordingID}/sound-candidates.json
 
 sessions/{sessionID}/recordings/{recordingID}/video/chunk_0000.mp4
 sessions/{sessionID}/recordings/{recordingID}/video/chunk_0001.mp4
@@ -232,6 +234,63 @@ public struct TrackIdentity: Codable, Hashable, Sendable {
 - `TrackResultDocument.identity`와 Storage 경로의 식별자가 일치해야 한다.
 - `sourceRawSHA256`은 대원 기기에서 보정에 사용한 원본 동선의 해시다. 원본 동선 자체를 Firebase에 업로드한다는 의미가 아니다.
 
+### 음향 후보
+
+대원 앱이 녹음하면서 압축 전 소리(PCM)로 큰 소리 후보를 뽑아 기록별로 올린다. 교관 앱은 대원별 후보를 받아 임계값 적용과 기기 간 합의를 거쳐 AAR 타임라인에 표시한다.
+
+영상 조각의 소리(AAC)는 압축으로 총성의 날카로운 시작이 무뎌져(최고점까지 PCM 1ms, AAC 15~47ms) 판정 정확도가 떨어지고, PCM 원본은 올리기에 너무 크다(13분·대원 1명 약 75MB). 그래서 판정 근거 값만 올린다.
+
+```swift
+public struct SoundCandidateDocument: Codable, Equatable, Sendable {
+    public let schemaVersion: Int
+    public let identity: TrackIdentity
+    public let detector: SoundDetectorIdentity
+    public let analyzedRanges: [SoundTimeRange]
+    public let candidates: [SoundCandidate]
+}
+
+public struct SoundDetectorIdentity: Codable, Equatable, Sendable {
+    public let name: String
+    public let version: String
+    public let settingsID: String
+}
+
+public struct SoundTimeRange: Codable, Equatable, Sendable {
+    public let start: Double
+    public let end: Double
+}
+
+public struct SoundCandidate: Codable, Equatable, Sendable {
+    public let time: Double
+    public let peakLevelDBFS: Double
+    public let decaySeconds: Double?
+    public let classifierScores: [String: Double]
+}
+```
+
+| 필드 | 의미 |
+| --- | --- |
+| `schemaVersion` | `1` |
+| `identity` | Storage 경로의 식별자와 일치해야 한다 |
+| `detector` | 후보를 뽑은 감지 방식. `name`·`version`은 감지 패키지의 방식 이름과 버전, `settingsID`는 후보 기준값 묶음의 이름이다. `TrackAlgorithmIdentity`와 같은 역할이다 |
+| `analyzedRanges` | 실제로 소리를 분석한 구간(초). 시작 순으로 정렬하고 겹치지 않는다 |
+| `candidates[].time` | 소리가 급격히 커진 시각(초) |
+| `candidates[].peakLevelDBFS` | 후보 구간의 최고 음량(dBFS, 0 이하) |
+| `candidates[].decaySeconds` | 최고점 뒤 소리가 줄어드는 데 걸린 시간(초). 분석 구간 끝에서 잘려 잴 수 없으면 `nil` |
+| `candidates[].classifierScores` | 소리 분류기 점수(0~1). 키는 분류기 라벨 그대로다 (예: `gunshot_gunfire`, `artillery_fire`) |
+
+- 경로는 `sessions/{sessionID}/recordings/{recordingID}/sound-candidates.json`이고 기록당 하나만 저장한다.
+- 모든 시각은 기록 내부 시간(초)이다. 0초는 그 기록 영상 조각의 0초와 같다. 세션 시간축으로 바꿀 때는 `Recording.startedAt - Session.startedAt`을 더한다.
+- `candidates`는 `time` 오름차순이고, 모든 `time`은 `analyzedRanges` 안에 있다.
+- 마이크 권한이 없거나 전화 등으로 녹음이 끊긴 구간은 `analyzedRanges`에서 뺀다. 읽는 쪽은 분석 구간 밖을 "소리 없음"이 아니라 "분석 안 됨"으로 본다.
+- 대원 앱은 최종 판정보다 낮은 기준으로 후보를 넉넉히 남긴다. 임계값 적용, 기기 간 합의, 표시는 교관 앱이 맡는다. 기준이 바뀌어도 교관 앱만 고치면 지난 기록도 다시 판정할 수 있다.
+- `classifierScores`에서 모르는 키는 무시한다.
+- 근거 값을 더할 때는 선택 필드로 추가하고 `schemaVersion`을 유지한다. 기존 필드의 의미가 바뀌면 `schemaVersion`을 올린다. 읽는 쪽은 모르는 `schemaVersion`이면 후보가 없는 것으로 처리한다.
+- 대원 앱은 `finishing` 동안 보정 결과·영상 조각과 함께 올리고 `done` 전에 끝낸다. 재시도해도 올리지 못하면 파일 없이 `done`으로 바꾼다. 후보 파일 때문에 기록이 `failed`가 되지 않는다.
+- 파일이 없는 기록도 유효하다. 이 기능 이전 기록, 마이크 권한 없음, 분석·업로드 실패가 여기에 해당한다. 교관 앱은 "분석 안 됨"으로 처리하고 동선·영상 재생은 그대로 연다.
+- 같은 기록에 다시 올리면 덮어쓴다. 파일 크기는 기록 파일 제한(20MB) 안이다. 후보가 수천 개여도 수백 KB 수준이다.
+- Firestore 문서·필드와 Storage 보안 규칙은 바꾸지 않는다. `recordings/{recordingID}/**`는 기록 주인이 올리고 그 세션의 교관이 읽는다.
+
 ### 영상 조각
 
 - 파일명은 0 기반 index를 사용한 `chunk_NNNN.mp4` 형식이다.
@@ -241,7 +300,7 @@ public struct TrackIdentity: Codable, Hashable, Sendable {
 
 #### 소리 트랙
 
-조각 하나에는 영상 트랙 1개와 소리 트랙 0~1개가 들어 있다. 소리는 교관 앱이 총성을 판정하는 데 사용한다.
+조각 하나에는 영상 트랙 1개와 소리 트랙 0~1개가 들어 있다. 소리는 AAR 영상 재생에 사용하며, 교관이 영상마다 소리를 켜고 끌 수 있다(#131). 큰 소리(총성) 판정은 [음향 후보](#음향-후보)로 한다.
 
 | 항목 | 값 |
 | --- | --- |
@@ -253,7 +312,7 @@ public struct TrackIdentity: Codable, Hashable, Sendable {
 - 소리 트랙의 0초는 같은 조각 영상 트랙의 0초와 같다. 두 트랙은 기록 내부 시간축을 함께 쓴다.
 - 소리 트랙이 없는 조각을 허용한다. 마이크 권한이 없거나 녹음이 시작되지 않은 경우다.
 - 조각 중간의 소리 공백을 허용한다. 전화 등으로 녹음이 끊긴 경우다.
-- 읽는 쪽은 소리 트랙 유무와 공백을 확인하고, 소리가 없는 구간은 판정하지 않는다.
+- 읽는 쪽은 소리 트랙 유무와 공백을 확인한다.
 - 소리 트랙이 없는 기존 기록도 유효하다.
 - 20MB 조각 크기 제한은 소리를 포함한 크기다.
 - 소리 유무를 나타내는 Firestore 필드는 두지 않는다.
@@ -333,3 +392,10 @@ public struct TrackIdentity: Codable, Hashable, Sendable {
 - AR → 도면 좌표 변환은 교관 앱이 계산해 `setup.json`에 저장하고 대원 앱은 그대로 쓴다.
 - 스캔 경로에는 계약한 두 파일만 받는다. 스캔 파일 50MB, `setup.json` 1MB까지 허용한다.
 - `WorldMapReference`에 스캔을 만든 도면(`floorPlan`)을 포함하고, 세션 도면과 같아야 한다 (PR #101 리뷰).
+
+2026년 11월 3일 (#169):
+
+- 대원 앱이 녹음 중 PCM으로 뽑은 큰 소리 후보를 `sessions/{sessionID}/recordings/{recordingID}/sound-candidates.json`(`SoundCandidateDocument`)으로 올린다. 최종 판정과 기기 간 합의는 교관 앱이 한다.
+- 영상 조각의 AAC 소리 트랙(#98)은 AAR 재생용으로 남긴다. 교관은 영상마다 소리를 켜고 끌 수 있다(#131). 총성 판정에는 쓰지 않는다. AAC는 총성의 시작을 무디게 해 판정 정확도가 떨어지고(gunshot-lab), PCM 원본은 올리기에 너무 크다.
+- 후보 파일은 선택 파일이다. 없으면 "분석 안 됨"으로 보고, 올리지 못해도 기록을 `failed`로 만들지 않는다.
+- Firestore 문서·필드와 Storage 보안 규칙은 바꾸지 않는다.
