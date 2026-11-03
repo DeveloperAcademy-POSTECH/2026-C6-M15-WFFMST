@@ -1,0 +1,206 @@
+@preconcurrency import AVFoundation
+import CQBCore
+import Foundation
+@preconcurrency import SoundAnalysis
+
+/// 녹화 중 마이크의 압축 전 소리(PCM)로 큰 소리 후보를 모은다(#172).
+/// 영상 작성과 분리된 자기 직렬 큐에서만 상태를 바꾸므로 분석이 늦어도 녹화를 막지 않는다.
+/// 후보는 거르지 않고 근거 값과 함께 남긴다. 최종 판정은 교관 앱이 한다.
+nonisolated final class MemberSoundCandidateRecorder: @unchecked Sendable {
+    struct Result: Sendable, Equatable {
+        let analyzedRanges: [SoundTimeRange]
+        let candidates: [SoundCandidate]
+    }
+
+    static let detector = SoundDetectorIdentity(name: "gunshot-combined", version: "713e743", settingsID: "onset-standard")
+    /// 다음 버퍼가 이보다 늦게 오면 녹음이 끊긴 것으로 보고 새 구간을 연다.
+    static let gapTolerance = 0.1
+
+    private let queue = DispatchQueue(label: "com.cqb.member.sound-candidates", qos: .utility)
+    private let config = FusionConfig.standard
+    private var recordingStart: Double?
+    private var segment: Segment?
+    private var ranges: [SoundTimeRange] = []
+    private var candidates: [SoundCandidate] = []
+    private var failed = false
+
+    /// 첫 녹화 프레임 시각(호스트 시계)이 정해진 뒤 부른다. 그 전에 온 버퍼는 분석하지 않는다.
+    func begin(recordingStart: Double) {
+        queue.async { [self] in
+            reset()
+            self.recordingStart = recordingStart
+        }
+    }
+
+    /// 호스트 시계로 바꾼 마이크 버퍼. `ARFrameVideoWriter.append(audioSampleBuffer:)`와 같은 입력이다.
+    func append(_ sampleBuffer: CMSampleBuffer) {
+        nonisolated(unsafe) let captured = sampleBuffer
+        queue.async { [self] in
+            guard let recordingStart, !failed else { return }
+            let start = CMSampleBufferGetPresentationTimeStamp(captured).seconds
+            let end = RecordingAudioSamples.endTime(of: captured)
+            guard start.isFinite, end > recordingStart else { return }
+            guard let buffer = Self.floatMonoBuffer(from: captured) else { return }
+            do {
+                if let current = segment,
+                   current.sampleRate != buffer.format.sampleRate || start - current.hostEnd > Self.gapTolerance {
+                    closeSegment()
+                }
+                if segment == nil { segment = try Segment(hostStart: start, format: buffer.format, config: config) }
+                segment?.append(buffer, hostEnd: end)
+            } catch {
+                failed = true
+                segment = nil
+            }
+        }
+    }
+
+    /// 전화 등으로 녹음이 끊겼다. 지금 구간을 닫고 다음 버퍼에서 새 구간을 연다.
+    func interrupt() {
+        queue.async { [self] in closeSegment() }
+    }
+
+    /// 녹화를 마쳤다. 분석을 시작하지 못했으면 빈 결과, 분석 중 실패했으면 nil이다.
+    func finish() async -> Result? {
+        await withCheckedContinuation { continuation in
+            queue.async { [self] in
+                closeSegment()
+                let result = failed ? nil : Result(analyzedRanges: ranges, candidates: candidates.sorted { $0.time < $1.time })
+                reset()
+                continuation.resume(returning: result)
+            }
+        }
+    }
+
+    func cancel() {
+        queue.async { [self] in reset() }
+    }
+
+    private func reset() {
+        recordingStart = nil
+        segment = nil
+        ranges = []
+        candidates = []
+        failed = false
+    }
+
+    private func closeSegment() {
+        guard let current = segment, let recordingStart else { segment = nil; return }
+        segment = nil
+        let closed = current.close()
+        let rangeStart = max(0, current.hostStart - recordingStart)
+        let rangeEnd = current.hostEnd - recordingStart
+        guard rangeEnd > rangeStart else { return }
+        ranges.append(SoundTimeRange(start: rangeStart, end: rangeEnd))
+        for onset in closed.onsets {
+            let time = current.hostStart + onset.audioSeconds - recordingStart
+            guard time >= rangeStart, time <= rangeEnd else { continue }
+            let probe = onset.audioSeconds + config.probeDelaySeconds
+            candidates.append(SoundCandidate(
+                time: time,
+                peakLevelDBFS: onset.levelDB,
+                decaySeconds: onset.decaySeconds,
+                classifierScores: Self.scores(at: probe, windows: closed.windows, labels: config.labels)
+            ))
+        }
+    }
+
+    /// 후보 직후 시점을 담은 분류기 창들에서 라벨별 최고 점수. `FusionJudge`와 같은 시점 규칙이다.
+    static func scores(at probe: Double, windows: [LabeledWindow], labels: [String]) -> [String: Double] {
+        let covering = windows.filter { $0.start <= probe && $0.end >= probe }
+        var result: [String: Double] = [:]
+        for label in labels {
+            result[label] = covering.compactMap { $0.confidences[label] }.max() ?? 0
+        }
+        return result
+    }
+
+    /// 마이크 버퍼를 감지기와 분류기가 받는 32비트 실수 모노 버퍼로 바꾼다.
+    static func floatMonoBuffer(from sampleBuffer: CMSampleBuffer) -> AVAudioPCMBuffer? {
+        guard let description = CMSampleBufferGetFormatDescription(sampleBuffer) else { return nil }
+        let sourceFormat = AVAudioFormat(cmAudioFormatDescription: description)
+        let frameCount = AVAudioFrameCount(CMSampleBufferGetNumSamples(sampleBuffer))
+        guard frameCount > 0,
+              let source = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: frameCount) else { return nil }
+        source.frameLength = frameCount
+        guard CMSampleBufferCopyPCMDataIntoAudioBufferList(
+            sampleBuffer, at: 0, frameCount: Int32(frameCount), into: source.mutableAudioBufferList) == noErr else { return nil }
+        guard let targetFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32, sampleRate: sourceFormat.sampleRate, channels: 1, interleaved: false) else { return nil }
+        if sourceFormat == targetFormat { return source }
+        guard let converter = AVAudioConverter(from: sourceFormat, to: targetFormat),
+              let target = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: frameCount) else { return nil }
+        do { try converter.convert(to: target, from: source) } catch { return nil }
+        return target.frameLength > 0 ? target : nil
+    }
+}
+
+/// 분류기 창 하나의 라벨별 신뢰도. 시각은 구간 시작부터의 오디오 초다.
+nonisolated struct LabeledWindow: Sendable, Equatable {
+    let start: Double
+    let end: Double
+    let confidences: [String: Double]
+}
+
+/// 끊기지 않은 녹음 한 구간. 구간마다 감지기와 분류기를 새로 만든다.
+nonisolated private final class Segment {
+    let hostStart: Double
+    let sampleRate: Double
+    private(set) var hostEnd: Double
+    private var frameCursor: AVAudioFramePosition = 0
+    private var onsets: [OnsetDetector.Candidate] = []
+    private let detector: OnsetDetector
+    private let analyzer: SNAudioStreamAnalyzer
+    private let observer: WindowCollector
+
+    init(hostStart: Double, format: AVAudioFormat, config: FusionConfig) throws {
+        self.hostStart = hostStart
+        hostEnd = hostStart
+        sampleRate = format.sampleRate
+        detector = OnsetDetector(sampleRate: format.sampleRate)
+        analyzer = SNAudioStreamAnalyzer(format: format)
+        observer = WindowCollector(labels: config.labels)
+        let request = try SNClassifySoundRequest(classifierIdentifier: .version1)
+        request.windowDuration = CMTime(seconds: config.windowSeconds, preferredTimescale: 48_000)
+        request.overlapFactor = config.overlapFactor
+        try analyzer.add(request, withObserver: observer)
+    }
+
+    func append(_ buffer: AVAudioPCMBuffer, hostEnd: Double) {
+        onsets += detector.process(buffer, startFrame: frameCursor)
+        analyzer.analyze(buffer, atAudioFramePosition: frameCursor)
+        frameCursor += AVAudioFramePosition(buffer.frameLength)
+        self.hostEnd = max(self.hostEnd, hostEnd)
+    }
+
+    /// 분류기에 남은 창을 마저 받는다. 잔향을 재는 중인 마지막 후보(끝 0.5초 이내)는 나오지 않는다.
+    func close() -> (onsets: [OnsetDetector.Candidate], windows: [LabeledWindow]) {
+        analyzer.completeAnalysis()
+        return (onsets, observer.windows)
+    }
+}
+
+nonisolated private final class WindowCollector: NSObject, SNResultsObserving, @unchecked Sendable {
+    private let labels: [String]
+    private let lock = NSLock()
+    private var collected: [LabeledWindow] = []
+
+    init(labels: [String]) {
+        self.labels = labels
+    }
+
+    var windows: [LabeledWindow] { lock.withLock { collected } }
+
+    func request(_ request: SNRequest, didProduce result: SNResult) {
+        guard let result = result as? SNClassificationResult else { return }
+        var confidences: [String: Double] = [:]
+        for label in labels {
+            if let classification = result.classification(forIdentifier: label) {
+                confidences[label] = classification.confidence
+            }
+        }
+        let start = result.timeRange.start.seconds
+        let window = LabeledWindow(start: start, end: start + result.timeRange.duration.seconds, confidences: confidences)
+        lock.withLock { collected.append(window) }
+    }
+}
