@@ -1,5 +1,6 @@
 import ARKit
 import AVFoundation
+import CQBCore
 import Observation
 import UIKit
 
@@ -25,6 +26,12 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
     private(set) var samples: [RawTrackSample] = []
     private(set) var videoChunkURLs: [URL] = []
     private(set) var rotationDegrees = 0.0
+    @ObservationIgnored var onSessionRunningChange: ((Bool) -> Void)?
+    @ObservationIgnored var onTrackingUpdate: ((ARPose?, Bool, Bool) -> Void)?
+    private(set) var recordingPosition: WorldMapPosition?
+    private(set) var recordingPixelsPerMeter: Double?
+    @ObservationIgnored private var initialWorldMap: LoadedMemberWorldMap?
+    @ObservationIgnored private var positioningMap: TrainingMap?
     @ObservationIgnored private let writer = ARFrameVideoWriter()
     @ObservationIgnored private let audioCapture = MemberAudioCaptureService()
     @ObservationIgnored private var audioStatusTask: Task<Void, Never>?
@@ -47,6 +54,15 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
         session.delegateQueue = .main
     }
 
+    /// 모드 변경은 실행 중인 좌표계를 먼저 종료한 뒤 수행한다.
+    func configureWorldMap(_ worldMap: LoadedMemberWorldMap?, map: TrainingMap? = nil) {
+        stop()
+        initialWorldMap = worldMap
+        positioningMap = map
+        recordingPosition = nil
+        recordingPixelsPerMeter = nil
+    }
+
     func start() async {
         wantsRunning = true
         guard !running, !startingSession else { return }
@@ -54,6 +70,7 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
         defer { startingSession = false }
         guard ARWorldTrackingConfiguration.isSupported else {
             statusMessage = "이 기기는 AR 동선 추적을 지원하지 않습니다."
+            fatalError = statusMessage
             return
         }
         let allowed: Bool
@@ -65,6 +82,7 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
         guard wantsRunning else { return }
         guard allowed else {
             statusMessage = "설정에서 카메라 접근을 허용해주세요."
+            fatalError = statusMessage
             return
         }
         fatalError = nil
@@ -74,9 +92,11 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
         isReady = false
         let configuration = ARWorldTrackingConfiguration()
         configuration.worldAlignment = .gravity
+        configuration.initialWorldMap = initialWorldMap?.worldMap
         // 영상과 추적 모두 이 세션만 사용한다. 재시작 시 이전 좌표계를 재사용하지 않는다.
         session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
         running = true
+        onSessionRunningChange?(true)
     }
 
     func stop() {
@@ -85,6 +105,7 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
         stopAudioStatusUpdates()
         session.pause()
         running = false
+        onSessionRunningChange?(false)
         trackingWarning = nil
         isReady = false
         normalSince = nil
@@ -130,11 +151,22 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
         guard wantsRunning, shouldStart(), !Task.isCancelled, isReady, let frame = session.currentFrame,
               case .normal = frame.camera.trackingState,
               let heading = RouteHeading.stableCameraDirection(headings.map(\.1)),
-              let rotation = RouteHeading.rotation(start: start, toward: direction, referenceRadians: heading) else {
+              let manualRotation = RouteHeading.rotation(start: start, toward: direction, referenceRadians: heading) else {
             stopAudioStatusUpdates()
             await audioCapture.stop()
             throw CaptureError.notReady
         }
+        // 권한 요청 중 이동할 수 있으므로 실제 첫 녹화 프레임으로 자동 좌표를 확정한다.
+        let automaticPosition: WorldMapPosition?
+        if let initialWorldMap, let positioningMap {
+            automaticPosition = WorldMapPositionCalculator.position(
+                pose: Self.pose(frame), alignment: initialWorldMap.setup.alignment, map: positioningMap)
+            guard automaticPosition != nil else {
+                stopAudioStatusUpdates()
+                await audioCapture.stop()
+                throw CaptureError.notReady
+            }
+        } else { automaticPosition = nil }
         let orientation = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first(where: { $0.activationState == .foregroundActive })?.interfaceOrientation ?? .landscapeRight
         do {
@@ -160,7 +192,9 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
         segment = 0
         wasNormal = true
         samples = []
-        rotationDegrees = rotation
+        recordingPosition = automaticPosition
+        recordingPixelsPerMeter = initialWorldMap?.setup.alignment.pixelsPerMeter
+        rotationDegrees = initialWorldMap?.setup.alignment.rotationDegrees ?? manualRotation
         isRecording = true
         isReady = false
         trackingWarning = nil
@@ -236,6 +270,7 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
     }
 
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
+        guard running else { return }
         let normal: Bool
         switch frame.camera.trackingState {
         case .normal:
@@ -269,6 +304,7 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
             headings = []
             isReady = false
         }
+        onTrackingUpdate?(normal ? Self.pose(frame) : nil, normal, isReady)
         guard isRecording else { return }
         if let failure = writer.failureDescription {
             fatalError = failure
@@ -277,6 +313,12 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
         writer.append(pixelBuffer: frame.capturedImage, timestamp: frame.timestamp)
         // 상태 변화는 10Hz 제한과 무관하게 남겨 짧은 단절도 보존한다.
         recordSample(frame, force: normal != wasNormal)
+    }
+
+    private static func pose(_ frame: ARFrame) -> ARPose {
+        let t = frame.camera.transform
+        return ARPose(x: Double(t.columns.3.x), y: Double(t.columns.3.y), z: Double(t.columns.3.z),
+                      forwardX: -Double(t.columns.2.x), forwardZ: -Double(t.columns.2.z))
     }
 
     private func recordSample(_ frame: ARFrame, force: Bool = false) {

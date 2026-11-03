@@ -70,7 +70,7 @@ struct StartPositionSetupView: View {
 
     private func settingsPanel(height: CGFloat, bottomInset: CGFloat) -> some View {
         let topPadding = isLandscape ? DSSpacing.s40 : DSSpacing.s20
-        let bottomPadding = max(0, DSSpacing.s60 - bottomInset)
+        let bottomPadding = max(0, DSSpacing.s40 - bottomInset)
         return ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: DSSpacing.s20) {

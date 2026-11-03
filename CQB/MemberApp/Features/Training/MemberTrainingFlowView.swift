@@ -13,20 +13,25 @@ struct MemberTrainingFlowView: View {
             startedAt: store.recordingStartedAt,
             onFinish: { Task { await store.finishRecording() } },
             onReset: { store.resetPosition() },
-            allowsPositionReset: store.canResetPosition,
+            allowsPositionReset: store.canSetPositionManually,
             allowsManualStop: demoControl == nil,
             canRetryRecordingStart: store.canRetryRecordingStart,
             isStartingRecording: store.isStarting,
             uploadStatusMessage: store.uploadStatusMessage,
             onRetryRecordingStart: { Task { await store.retryStartingRecording() } },
             onCameraReadinessChange: { store.updateTrackingReadiness($0) },
+            onCameraVisibilityChange: { store.cameraScreenVisibilityChanged($0) },
+            isSimulatingDemoScan: store.isSimulatingDemoScan,
+            positioningReady: store.isReady,
+            positioningState: store.positioningState,
+            isDemoMode: store.isDemoMode,
             cameraService: store.cameraService,
             onStopRecording: { await store.finishRecording() }
         )
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if demoControl != nil {
                 switch store.phase {
-                case .waiting:
+                case .waiting where store.positioningState == .manualReady:
                     Button(demoStartTitle ?? "데모 훈련 시작", action: startDemoTraining)
                         .buttonStyle(.dsPrimary)
                         .disabled(!store.isReady || isDemoStartDisabled)
