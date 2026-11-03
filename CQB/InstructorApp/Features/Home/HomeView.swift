@@ -1,30 +1,35 @@
+import CQBCore
 import CQBDesignSystem
 import SwiftUI
 
 /// 홈 화면이 표시하는 훈련 기록의 UI 전용 요약입니다.
-/// 조회·정렬·노출 개수 정책은 이전 훈련 기록 기능에서 결정합니다.
+/// 모든 기록을 최신순으로 보여주고, 직전 기록만 썸네일이 있는 큰 카드로 그립니다.
 struct HomeTrainingRecordSummary: Identifiable {
     let id: UUID
     let title: String
     let floorPlanName: String
     let dateText: String
     let participantText: String
-    let thumbnailAssetName: String?
+    let thumbnail: UIImage?
+    let isOpening: Bool
 }
 
 struct HomeView: View {
     @Environment(InstructorStore.self) private var store
     @Environment(InstructorDemoMode.self) private var demoMode
 
-    private let trainingRecords: [HomeTrainingRecordSummary]
-    private let onSelectTrainingRecord: ((UUID) -> Void)?
-
-    init(
-        trainingRecords: [HomeTrainingRecordSummary] = [],
-        onSelectTrainingRecord: ((UUID) -> Void)? = nil
-    ) {
-        self.trainingRecords = trainingRecords
-        self.onSelectTrainingRecord = onSelectTrainingRecord
+    private var trainingRecords: [HomeTrainingRecordSummary] {
+        store.trainingHistory.enumerated().map { index, record in
+            HomeTrainingRecordSummary(
+                id: record.sessionID,
+                title: record.trainingName,
+                floorPlanName: record.floorPlanName,
+                dateText: record.startedAtText,
+                participantText: record.participantSummary,
+                thumbnail: index == 0 ? store.trainingHistoryThumbnail(for: record) : nil,
+                isOpening: store.openingTrainingHistorySessionID == record.sessionID
+            )
+        }
     }
 
     var body: some View {
@@ -44,11 +49,7 @@ struct HomeView: View {
                 let floorPlanHeight = sideContentHeight - sessionHeight
 
                 HStack(alignment: .top, spacing: DSSpacing.s24) {
-                    TrainingHistoryCard(
-                        records: trainingRecords,
-                        onShowAll: store.openTrainingHistory,
-                        onSelectRecord: onSelectTrainingRecord
-                    )
+                    trainingHistoryCard
                     .frame(width: historyWidth, height: contentHeight)
 
                     VStack(spacing: DSSpacing.s24) {
@@ -73,11 +74,7 @@ struct HomeView: View {
             } else {
                 ScrollView {
                     VStack(spacing: DSSpacing.s24) {
-                        TrainingHistoryCard(
-                            records: trainingRecords,
-                            onShowAll: store.openTrainingHistory,
-                            onSelectRecord: onSelectTrainingRecord
-                        )
+                        trainingHistoryCard
                         .frame(height: 832)
 
                         SessionStartCard(
@@ -104,13 +101,38 @@ struct HomeView: View {
         .background(DSColor.backgroundPrimary.ignoresSafeArea())
         .ignoresSafeArea()
         .toolbar(.hidden, for: .navigationBar)
+        .alert(
+            "기록을 열지 못했습니다",
+            isPresented: Binding(
+                get: { store.phase == .home && store.trainingHistoryOpenError != nil },
+                set: { if !$0 { store.dismissTrainingHistoryOpenError() } }
+            )
+        ) {
+            Button("확인", role: .cancel) {}
+        } message: {
+            Text(store.trainingHistoryOpenError ?? "")
+        }
+    }
+
+    private var trainingHistoryCard: some View {
+        TrainingHistoryCard(
+            records: trainingRecords,
+            errorMessage: store.trainingHistoryError,
+            isSelectionEnabled: store.canSelectTrainingHistoryRecord,
+            onShowAll: store.openTrainingHistory,
+            onRetry: store.retryTrainingHistoryLoad,
+            onSelectRecord: store.openTrainingHistoryRecord
+        )
     }
 }
 
 private struct TrainingHistoryCard: View {
     let records: [HomeTrainingRecordSummary]
+    let errorMessage: String?
+    let isSelectionEnabled: Bool
     let onShowAll: () -> Void
-    let onSelectRecord: ((UUID) -> Void)?
+    let onRetry: () -> Void
+    let onSelectRecord: (UUID) -> Void
 
     var body: some View {
         HomeCardSurface {
@@ -133,7 +155,10 @@ private struct TrainingHistoryCard: View {
                 .padding(.top, DSSpacing.s24)
                 .frame(height: 102, alignment: .top)
 
-                if records.isEmpty {
+                if let errorMessage {
+                    HomeTrainingHistoryErrorState(message: errorMessage, onRetry: onRetry)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if records.isEmpty {
                     HomeTrainingHistoryEmptyState()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -157,6 +182,7 @@ private struct TrainingHistoryCard: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .scrollIndicators(.hidden)
+                    .disabled(!isSelectionEnabled)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -187,6 +213,30 @@ private struct HomeTrainingHistoryEmptyState: View {
     }
 }
 
+private struct HomeTrainingHistoryErrorState: View {
+    let message: String
+    let onRetry: () -> Void
+
+    var body: some View {
+        VStack(spacing: DSSpacing.s12) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 42, weight: .regular))
+                .foregroundStyle(DSColor.contentTertiary)
+
+            Text(message)
+                .dsTextStyle(DSTypography.bodyRegular16)
+                .foregroundStyle(DSColor.contentPrimary)
+                .multilineTextAlignment(.center)
+
+            Button("다시 불러오기", action: onRetry)
+                .buttonStyle(.dsSecondary)
+                .accessibilityIdentifier("home.trainingHistory.retry")
+        }
+        .padding(DSSpacing.s24)
+        .accessibilityIdentifier("home.trainingHistory.error")
+    }
+}
+
 private struct TrainingRecordButton: View {
     enum Prominence {
         case featured, compact
@@ -194,20 +244,26 @@ private struct TrainingRecordButton: View {
 
     let record: HomeTrainingRecordSummary
     let prominence: Prominence
-    let action: ((UUID) -> Void)?
+    let action: (UUID) -> Void
 
     var body: some View {
-        Group {
-            if let action {
-                Button { action(record.id) } label: { content }
-                    .buttonStyle(HomeCardButtonStyle())
-            } else {
-                content
-            }
+        Button { action(record.id) } label: {
+            content
+                .overlay {
+                    if record.isOpening {
+                        ProgressView()
+                            .controlSize(.large)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(.black.opacity(0.4))
+                            .clipShape(.rect(cornerRadius: DSRadius.large))
+                            .accessibilityLabel("AAR 불러오는 중")
+                    }
+                }
         }
+        .buttonStyle(HomeCardButtonStyle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(record.title), \(record.floorPlanName), \(record.dateText), \(record.participantText)")
-        .accessibilityHint(action == nil ? "이전 훈련 기록 기능에서 연결될 예정입니다." : "AAR 화면으로 이동합니다.")
+        .accessibilityHint("AAR 화면으로 이동합니다.")
         .accessibilityIdentifier("home.trainingHistory.record.\(record.id.uuidString)")
     }
 
@@ -284,8 +340,8 @@ private struct TrainingRecordButton: View {
 
     @ViewBuilder
     private var thumbnail: some View {
-        if let thumbnailAssetName = record.thumbnailAssetName {
-            Image(thumbnailAssetName)
+        if let thumbnail = record.thumbnail {
+            Image(uiImage: thumbnail)
                 .resizable()
                 .scaledToFill()
                 .frame(maxWidth: .infinity)
@@ -465,46 +521,32 @@ private struct HomeTrainingStartButtonStyle: ButtonStyle {
     }
 }
 
-private extension Array where Element == HomeTrainingRecordSummary {
-    static let preview: [HomeTrainingRecordSummary] = [
-        HomeTrainingRecordSummary(
-            id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
-            title: "A-3거점 진입 절차 동계 훈련",
-            floorPlanName: "훈련장 A",
-            dateText: "2026.10.20_13:30",
-            participantText: "강유키 등 16명",
-            thumbnailAssetName: "HomeTrainingRecordPreview"
-        ),
-        HomeTrainingRecordSummary(
-            id: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
-            title: "A-3거점 진입 절차 동계 훈련",
-            floorPlanName: "훈련장 A",
-            dateText: "2026.10.20_11:30",
-            participantText: "강유키 등 16명",
-            thumbnailAssetName: nil
-        ),
-        HomeTrainingRecordSummary(
-            id: UUID(uuidString: "33333333-3333-3333-3333-333333333333")!,
-            title: "A-3거점 진입 절차 동계 훈련",
-            floorPlanName: "훈련장 A",
-            dateText: "2026.10.20_09:30",
-            participantText: "강유키 등 16명",
-            thumbnailAssetName: nil
-        )
-    ]
-}
-
 #Preview("Figma · 최근 기록 있음") {
-    NavigationStack {
-        HomeView(trainingRecords: .preview, onSelectTrainingRecord: { _ in })
-            .environment(InstructorStore(floorPlans: [
-                InstructorFloorPlan(
-                    id: "preview-plan",
-                    name: "훈련장 A",
-                    fileName: "훈련장 A 도면.png",
-                    referenceDistance: 15
-                )
-            ]))
+    let floorPlan = FloorPlanReference(floorPlanID: UUID(), navigationSHA256: "preview")
+    let records = (0..<3).map { index in
+        TrainingHistoryRecord(
+            sessionID: UUID(),
+            trainingName: "A-3거점 진입 절차 동계 훈련",
+            floorPlan: floorPlan,
+            floorPlanName: "훈련장 A",
+            participantNames: ["강유키"] + (1..<16).map { "대원 \($0)" },
+            startedAt: Date(timeIntervalSince1970: 1_760_934_600 - Double(index) * 7_200),
+            endedAt: Date(timeIntervalSince1970: 1_760_934_600 - Double(index) * 7_200 + 804)
+        )
+    }
+    return NavigationStack {
+        HomeView()
+            .environment(InstructorStore(
+                floorPlans: [
+                    InstructorFloorPlan(
+                        id: "preview-plan",
+                        name: "훈련장 A",
+                        fileName: "훈련장 A 도면.png",
+                        referenceDistance: 15
+                    )
+                ],
+                trainingHistory: records
+            ))
             .environment(InstructorDemoMode())
     }
     .frame(width: 1_366, height: 1_024)

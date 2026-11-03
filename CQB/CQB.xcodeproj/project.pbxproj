@@ -55,6 +55,7 @@
 				"docs/issue-95-ai-wall-segmentation.md",
 				"docs/issue-97-binary-wall-coreml.md",
 				"docs/issue-102-blocked-region-autofill.md",
+				"docs/issue-126-training-history.md",
 				"docs/issue-142-hifi-spec.md",
 				docs/README.md,
 			);

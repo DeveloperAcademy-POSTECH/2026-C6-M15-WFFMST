@@ -14,6 +14,7 @@ struct InstructorStoreChecks {
         await checkReadinessStartGuards()
         await checkEndingGuardsAndFailureRecovery()
         await TrainingLifecycleChecks.run()
+        await TrainingHistoryChecks.run()
         checkTrainingAndAARFlow()
         checkFloorPlanCatalogRestoration()
         checkFloorPlanFlow()

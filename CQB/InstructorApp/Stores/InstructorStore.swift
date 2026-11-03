@@ -28,12 +28,21 @@ final class InstructorStore {
         case failed(String)
     }
 
+    enum TrainingHistoryState: Equatable {
+        case idle, loading, loaded
+        case failed(String)
+    }
+
     private enum FloorPlanRegistrationError: Error, Equatable {
         case localSave
     }
 
     private enum SessionCreationError: Error {
         case worldMapMismatch
+    }
+
+    private enum TrainingHistoryOpenError: Error {
+        case sessionNotFound
     }
 
     private static let logger = Logger(subsystem: "com.wffmst.cqb", category: "InstructorStore")
@@ -46,6 +55,8 @@ final class InstructorStore {
     @ObservationIgnored private let floorPlanCatalogRepository: any FloorPlanCatalogRepository
     @ObservationIgnored private let sessionRepository: any SessionRepository
     @ObservationIgnored private let memberRepository: any MemberRepository
+    @ObservationIgnored private let trainingHistoryRepository: any TrainingHistoryRepository
+    @ObservationIgnored private var trainingHistoryOpenTask: Task<Void, Never>?
     @ObservationIgnored private let pinGenerator: () -> String
     @ObservationIgnored private var floorPlanUploadTask: Task<Void, Never>?
     @ObservationIgnored private var floorPlanDetailTask: Task<Void, Never>?
@@ -64,6 +75,8 @@ final class InstructorStore {
     private(set) var floorPlanDetailImage: UIImage?
     private(set) var floorPlanDetailMaskImage: UIImage?
     private(set) var floorPlanListPreviewImage: UIImage?
+    /// 도면 ID별 기록 썸네일. 화면을 그릴 때마다 도면 PNG를 다시 풀지 않도록 둔다.
+    @ObservationIgnored private var trainingHistoryThumbnails: [UUID: UIImage] = [:]
 #endif
     private(set) var phase: InstructorPhase = .home
     private(set) var floorPlans: [InstructorFloorPlan]
@@ -103,6 +116,15 @@ final class InstructorStore {
     private(set) var sessionConnectionState: MemberConnectionState = .idle
     private(set) var sessionObservationError: String?
     private(set) var trainingParticipants: [InstructorParticipant] = []
+    /// 시작 시각 최신순
+    private(set) var trainingHistory: [TrainingHistoryRecord] = []
+    private(set) var trainingHistoryState: TrainingHistoryState = .idle
+    /// AAR을 열려고 서버 기록을 받는 중인 기록
+    private(set) var openingTrainingHistorySessionID: UUID?
+    private(set) var trainingHistoryOpenError: String?
+    private(set) var trainingHistoryDeletionError: String?
+    /// 이전 훈련 기록에서 연 AAR이다. 닫으면 `AAR 종료` 화면 없이 홈으로 간다.
+    private(set) var isReviewingTrainingHistory = false
     private var failedFloorPlanRegistration: LocalRegisteredFloorPlan?
     private var failedWorldMapDraft: LocalWorldMapScanDraft?
     private var failedReplacementFloorPlanID: String?
@@ -122,6 +144,8 @@ final class InstructorStore {
         sessionRepository: any SessionRepository = DemoSessionRepository(),
         memberRepository: any MemberRepository = DemoMemberRepository(),
         recordingRepository: any RecordingRepository = DemoRecordingRepository(),
+        trainingHistoryRepository: (any TrainingHistoryRepository)? = nil,
+        trainingHistory: [TrainingHistoryRecord] = [],
         pinGenerator: @escaping () -> String = InstructorStore.makePIN,
         previewSession: Session? = nil,
         previewParticipants: [InstructorParticipant] = [],
@@ -135,6 +159,10 @@ final class InstructorStore {
         self.floorPlanCatalogRepository = floorPlanCatalogRepository ?? DemoFloorPlanCatalogRepository()
         self.sessionRepository = sessionRepository
         self.memberRepository = memberRepository
+        self.trainingHistoryRepository = trainingHistoryRepository
+            ?? InMemoryTrainingHistoryRepository(records: trainingHistory)
+        self.trainingHistory = trainingHistory.sorted { $0.startedAt > $1.startedAt }
+        self.trainingHistoryState = trainingHistory.isEmpty ? .idle : .loaded
         self.trainingRecords = TrainingRecordStore(repository: recordingRepository)
         self.pinGenerator = pinGenerator
         self.floorPlans = floorPlans
@@ -211,6 +239,15 @@ final class InstructorStore {
             : "대원 " + selectedParticipants.map { String($0.number) }.joined(separator: ", ")
     }
     var canOpenAARVideoScreen: Bool { phase == .aar && !selectedParticipantIDs.isEmpty }
+    var isLoadingTrainingHistory: Bool { trainingHistoryState == .loading }
+    var trainingHistoryError: String? {
+        guard case .failed(let message) = trainingHistoryState else { return nil }
+        return message
+    }
+    /// AAR을 여는 중에는 다른 기록을 누를 수 없다.
+    var canSelectTrainingHistoryRecord: Bool {
+        (phase == .home || phase == .trainingHistory) && openingTrainingHistorySessionID == nil
+    }
 
     func formattedTrainingElapsed(at date: Date) -> String {
         guard let trainingStartedAt else { return Self.formatTrainingElapsed(0) }
@@ -224,8 +261,110 @@ final class InstructorStore {
         return String(format: "%02d:%02d", minutes, seconds)
     }
 
-    func openTrainingHistory() { phase = .trainingHistory }
+    func openTrainingHistory() {
+        guard phase == .home else { return }
+        trainingHistoryOpenError = nil
+        trainingHistoryDeletionError = nil
+        phase = .trainingHistory
+    }
 
+    func loadTrainingHistory() {
+        guard trainingHistoryState == .idle || trainingHistoryError != nil else { return }
+        trainingHistoryState = .loading
+        do {
+            trainingHistory = try trainingHistoryRepository.fetchAll()
+            trainingHistoryState = .loaded
+        } catch {
+            Self.logger.error("이전 훈련 기록 복원 실패: \(error.localizedDescription, privacy: .private)")
+            trainingHistoryState = .failed("이전 훈련 기록을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.")
+        }
+    }
+
+    func retryTrainingHistoryLoad() {
+        guard trainingHistoryError != nil else { return }
+        loadTrainingHistory()
+    }
+
+    /// 기록의 세션과 대원을 서버에서 받아 AAR을 연다. 영상과 동선은 AAR 화면이 받는다.
+    func openTrainingHistoryRecord(_ sessionID: UUID) {
+        guard canSelectTrainingHistoryRecord,
+              trainingHistory.contains(where: { $0.sessionID == sessionID }) else { return }
+        trainingHistoryOpenTask?.cancel()
+        openingTrainingHistorySessionID = sessionID
+        trainingHistoryOpenError = nil
+        trainingHistoryDeletionError = nil
+        let origin = phase
+        let sessions = sessionRepository
+        let members = memberRepository
+        trainingHistoryOpenTask = Task { [weak self] in
+            do {
+                async let fetchedSession = sessions.observeSession(id: sessionID).firstValue()
+                async let fetchedMembers = members.observeMembers(sessionID: sessionID).firstValue()
+                guard let session = try await fetchedSession else { throw TrainingHistoryOpenError.sessionNotFound }
+                let memberList = try await fetchedMembers ?? []
+                try Task.checkCancellation()
+                // 응답을 받으면 이 요청의 로딩 상태를 먼저 비운다. 그 사이 다른 화면으로 갔으면 AAR로 넘어가지 않는다.
+                guard let self, self.openingTrainingHistorySessionID == sessionID else { return }
+                self.finishTrainingHistoryOpen()
+                guard self.phase == origin else { return }
+                self.enterAAR(reviewing: session, members: memberList, fromHistory: true)
+            } catch {
+                guard let self, !(error is CancellationError),
+                      self.openingTrainingHistorySessionID == sessionID else { return }
+                let failure = error as NSError
+                Self.logger.error("이전 훈련 AAR 열기 실패: domain=\(failure.domain, privacy: .public) code=\(failure.code) description=\(failure.localizedDescription, privacy: .private)")
+                self.finishTrainingHistoryOpen()
+                guard self.phase == origin else { return }
+                self.trainingHistoryOpenError = error is TrainingHistoryOpenError
+                    ? "서버에서 훈련 기록을 찾지 못했습니다."
+                    : "훈련 기록을 불러오지 못했습니다. 연결을 확인한 뒤 다시 시도해주세요."
+            }
+        }
+    }
+
+    private func finishTrainingHistoryOpen() {
+        trainingHistoryOpenTask = nil
+        openingTrainingHistorySessionID = nil
+    }
+
+    func dismissTrainingHistoryOpenError() {
+        trainingHistoryOpenError = nil
+    }
+
+    /// 기기 목록에서만 지운다. 서버 영상·기록은 남긴다(#126 임시 가정).
+    func deleteTrainingHistoryRecord(_ sessionID: UUID) {
+        guard phase == .trainingHistory, canSelectTrainingHistoryRecord,
+              trainingHistory.contains(where: { $0.sessionID == sessionID }) else { return }
+        trainingHistoryDeletionError = nil
+        trainingHistoryOpenError = nil
+        do {
+            try trainingHistoryRepository.delete(sessionID: sessionID)
+            trainingHistory.removeAll { $0.sessionID == sessionID }
+        } catch {
+            Self.logger.error("이전 훈련 기록 삭제 실패: \(error.localizedDescription, privacy: .private)")
+            trainingHistoryDeletionError = "기록을 삭제하지 못했습니다. 잠시 후 다시 시도해주세요."
+        }
+    }
+
+    func dismissTrainingHistoryDeletionError() {
+        trainingHistoryDeletionError = nil
+    }
+
+#if canImport(UIKit)
+    /// 기록한 훈련의 도면 이미지를 썸네일로 쓴다. 이 기기에 도면이 없으면 nil이다.
+    func trainingHistoryThumbnail(for record: TrainingHistoryRecord) -> UIImage? {
+        let floorPlanID = record.floorPlan.floorPlanID
+        if let cached = trainingHistoryThumbnails[floorPlanID] { return cached }
+        guard let plan = floorPlans.first(where: { $0.reference.floorPlanID == floorPlanID }),
+              let registeredPlan = plan.registeredPlan,
+              let image = UIImage(data: registeredPlan.image.pngData) else { return nil }
+        let width: CGFloat = 640
+        let height = width * image.size.height / max(image.size.width, 1)
+        let thumbnail = image.preparingThumbnail(of: CGSize(width: width, height: height)) ?? image
+        trainingHistoryThumbnails[floorPlanID] = thumbnail
+        return thumbnail
+    }
+#endif
     func openFloorPlanList() {
         phase = .floorPlanList
         selectDefaultFloorPlanPreviewIfNeeded()
@@ -571,11 +710,16 @@ final class InstructorStore {
     }
     func finishAAR() {
         guard phase == .aar else { return }
+        if isReviewingTrainingHistory {
+            returnHome()
+            return
+        }
         resetAARPresentationState()
         phase = .aarCompleted
     }
     func returnHome() {
         cancelSessionWork()
+        cancelTrainingHistoryOpen()
         trainingName = ""
         selectFloorPlan(floorPlans.first?.id)
         participants = []
@@ -583,6 +727,7 @@ final class InstructorStore {
         currentSession = nil
         trainingStartedAt = nil
         playbackPosition = 331
+        isReviewingTrainingHistory = false
         phase = .home
     }
 
@@ -599,6 +744,8 @@ final class InstructorStore {
         guard !isUploadingFloorPlan, !isCreatingSession, !isEndingSession, !isStartingTraining else { return }
         switch phase {
         case .trainingHistory:
+            cancelTrainingHistoryOpen()
+            trainingHistoryDeletionError = nil
             phase = .home
         case .floorPlanList:
             clearFloorPlanListPreview()
@@ -834,6 +981,7 @@ final class InstructorStore {
     private func enterResultsPreparation(for sessionID: UUID) {
         guard phase == .trainingInProgress, let session = currentSession, session.id == sessionID else { return }
         currentSession = Self.session(session, with: .ended)
+        saveTrainingHistory(for: session, endedAt: .now)
         stopObservingSession()
         trainingActionError = nil
         phase = .resultsPreparation
@@ -884,19 +1032,55 @@ final class InstructorStore {
             }
     }
 
-#if DEBUG
-    /// 에뮬레이터 시험 데이터(`scripts/seed-aar-emulator.py`)의 세션으로 AAR을 바로 연다.
-    /// 훈련 시작·종료 흐름 없이 AAR 화면을 확인하기 위한 디버그 전용 진입점이다.
-    func openAARForDebug(session: Session, members: [Member]) {
+    /// 훈련이 끝나 결과 준비로 넘어갈 때 목록용 기록을 남긴다. 저장에 실패해도 훈련 흐름은 막지 않는다.
+    private func saveTrainingHistory(for session: Session, endedAt: Date) {
+        let record = TrainingHistoryRecord(
+            sessionID: session.id,
+            trainingName: session.name,
+            floorPlan: session.floorPlan,
+            floorPlanName: floorPlans.first { $0.reference == session.floorPlan }?.name ?? "",
+            participantNames: trainingParticipants.map(\.name),
+            startedAt: trainingStartedAt ?? session.startedAt ?? endedAt,
+            endedAt: endedAt
+        )
+        do {
+            try trainingHistoryRepository.save(record)
+        } catch {
+            Self.logger.error("이전 훈련 기록 저장 실패: \(error.localizedDescription, privacy: .private)")
+            return
+        }
+        trainingHistory.removeAll { $0.sessionID == record.sessionID }
+        let index = trainingHistory.firstIndex { $0.startedAt < record.startedAt } ?? trainingHistory.endIndex
+        trainingHistory.insert(record, at: index)
+    }
+
+    private func cancelTrainingHistoryOpen() {
+        trainingHistoryOpenTask?.cancel()
+        trainingHistoryOpenTask = nil
+        openingTrainingHistorySessionID = nil
+        trainingHistoryOpenError = nil
+    }
+
+    /// 훈련 흐름 없이 지난 세션으로 AAR을 연다. 기록에 있는 모든 대원을 재생 대상으로 둔다.
+    private func enterAAR(reviewing session: Session, members: [Member], fromHistory: Bool) {
         cancelSessionWork()
         currentSession = session
+        trainingStartedAt = session.startedAt
         participants = Self.displayParticipants(from: members)
         if let plan = floorPlans.first(where: { $0.reference == session.floorPlan }) {
             selectFloorPlan(plan.id)
         }
         resetAARPresentationState()
         aarParticipantIDs = Set(participants.map(\.id))
+        isReviewingTrainingHistory = fromHistory
         phase = .aar
+    }
+
+#if DEBUG
+    /// 에뮬레이터 시험 데이터(`scripts/seed-aar-emulator.py`)의 세션으로 AAR을 바로 연다.
+    /// 훈련 시작·종료 흐름 없이 AAR 화면을 확인하기 위한 디버그 전용 진입점이다.
+    func openAARForDebug(session: Session, members: [Member]) {
+        enterAAR(reviewing: session, members: members, fromHistory: false)
     }
 #endif
 
