@@ -80,6 +80,7 @@ final class FloorPlanDraftStore {
     private(set) var completedScanCheckpointIndices: Set<Int> = []
     private(set) var worldMapDraft: LocalWorldMapScanDraft?
     private(set) var isSavingWorldMap = false
+    private(set) var worldMapSaveErrorMessage: String?
 #if canImport(UIKit)
     private(set) var previewImage: UIImage?
     private(set) var maskImage: UIImage?
@@ -654,7 +655,11 @@ final class FloorPlanDraftStore {
                 imageWidth: image.width,
                 imageHeight: image.height
             )
-            let archiveTask = Task { try await worldMapScanner.makeWorldMapArchive() }
+            let archiveTask = Task {
+                let archive = try await worldMapScanner.makeWorldMapArchive()
+                try Task.checkCancellation()
+                return try await LocalWorldMapArchiveCompressor.compress(archive)
+            }
             worldMapSaveTask = archiveTask
             let archive = try await withTaskCancellationHandler {
                 try await archiveTask.value
@@ -673,7 +678,7 @@ final class FloorPlanDraftStore {
                 start: worldMapStart,
                 correspondences: correspondences,
                 alignment: result.alignment,
-                compression: .none
+                compression: .lzfse
             )
             worldMapSaveTask = nil
             isSavingWorldMap = false
@@ -687,8 +692,12 @@ final class FloorPlanDraftStore {
             guard worldMapSaveGeneration == token else { return }
             worldMapSaveTask = nil
             isSavingWorldMap = false
-            if !(error is CancellationError) { errorMessage = error.localizedDescription }
+            if !(error is CancellationError) { worldMapSaveErrorMessage = error.localizedDescription }
         }
+    }
+
+    func dismissWorldMapSaveError() {
+        worldMapSaveErrorMessage = nil
     }
 
     func returnToEditing() {
@@ -895,6 +904,7 @@ final class FloorPlanDraftStore {
         worldMapSaveTask?.cancel()
         worldMapSaveTask = nil
         isSavingWorldMap = false
+        worldMapSaveErrorMessage = nil
     }
 
     private func invalidateCompletedWorldMap() {

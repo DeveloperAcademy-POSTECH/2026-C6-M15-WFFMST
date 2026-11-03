@@ -103,6 +103,14 @@ struct FloorPlanCreateView: View {
         } message: {
             Text("지금 나가면 입력한 도면 설정 정보가 저장되지 않습니다.")
         }
+        .alert("공간 스캔을 저장하지 못했습니다", isPresented: Binding(
+            get: { store.worldMapSaveErrorMessage != nil },
+            set: { if !$0 { store.dismissWorldMapSaveError() } }
+        )) {
+            Button("확인", role: .cancel, action: store.dismissWorldMapSaveError)
+        } message: {
+            Text(store.worldMapSaveErrorMessage ?? "")
+        }
         .overlay {
             if app.isUploadingFloorPlan {
                 floorPlanSavingOverlay
@@ -1397,7 +1405,7 @@ struct FloorPlanCreateView: View {
                     Button(action: {
                         Task { await store.saveWorldMap() }
                     }) {
-                        Text("다음")
+                        Text(store.isSavingWorldMap ? "공간 스캔 저장 중" : "다음")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.dsPrimary)
