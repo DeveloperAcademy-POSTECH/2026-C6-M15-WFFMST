@@ -8,7 +8,7 @@ struct AARCompletedView: View {
         ZStack {
             Text("AAR 종료")
                 .font(completionFont)
-                .foregroundStyle(InstructorColor.textPrimary)
+                .foregroundStyle(InstructorColor.aarContentPrimary)
                 .frame(minWidth: 270, minHeight: 80)
                 .accessibilityAddTraits(.isHeader)
 
@@ -32,7 +32,7 @@ struct AARCompletedView: View {
             .padding(.bottom, 18)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(InstructorColor.canvas.ignoresSafeArea())
+        .background(InstructorColor.aarCanvas.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
     }
 

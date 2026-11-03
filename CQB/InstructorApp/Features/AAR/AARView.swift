@@ -1,44 +1,46 @@
 import CQBCore
+import CQBDesignSystem
 import SwiftUI
 
-private enum AARLayout {
-    static let outerHorizontalPadding: CGFloat = 24
-    static let topPadding: CGFloat = 20
-    static let bottomPadding: CGFloat = 32
-    static let sectionSpacing: CGFloat = 16
-    static let headerHeight: CGFloat = 52
-    static let timelineHeight: CGFloat = 48
+enum AARLayout {
+    static let outerHorizontalPadding = DSSpacing.s8
+    static let contentGap = DSSpacing.s8
+    static let videoGridGap = DSSpacing.s4
+    static let headerHorizontalPadding = DSSpacing.s40
+    static let headerHeight: CGFloat = 81
+    static let contentHeaderHeight: CGFloat = 48
+    static let timelineHeight: CGFloat = 147
+    static let timelineHorizontalPadding = DSSpacing.s40
 }
 
 struct AARView: View {
     @Environment(InstructorStore.self) private var store
     @Environment(AARStore.self) private var aarStore
+    @State private var showsFinishConfirmation = false
 
     var body: some View {
-        VStack(spacing: AARLayout.sectionSpacing) {
+        VStack(spacing: 0) {
             header
                 .frame(height: AARLayout.headerHeight)
 
-            if store.trainingRecords.failedCount > 0 {
-                Text("\(store.trainingRecords.failedCount)명의 기록 처리가 실패했습니다. 해당 기록의 재생 자료가 없을 수 있습니다.")
-                    .font(.callout)
-                    .foregroundStyle(InstructorColor.textSecondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityIdentifier("aar.recordingFailures")
-            }
-
             AARContentView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .topLeading) {
+                    recordingFailureNotice
+                }
 
             AARTimelineView()
                 .frame(height: AARLayout.timelineHeight)
         }
-        .padding(.top, AARLayout.topPadding)
-        .padding(.horizontal, AARLayout.outerHorizontalPadding)
-        .padding(.bottom, AARLayout.bottomPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(InstructorColor.canvas.ignoresSafeArea())
+        .background(InstructorColor.aarCanvas.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+        .alert("AAR을 종료하시겠습니까?", isPresented: $showsFinishConfirmation) {
+            Button("확인", action: store.finishAAR)
+            Button("취소", role: .cancel) {}
+        } message: {
+            Text("이전 훈련 기록에서 현재 AAR을 다시 사용가능합니다.")
+        }
         .task(id: store.currentSession?.id) { await loadTracks() }
         .onChange(of: store.selectedParticipantIDs, initial: true) { _, participantIDs in
             aarStore.showVideos(for: participantIDs)
@@ -49,29 +51,62 @@ struct AARView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: DSSpacing.s16) {
+            VStack(alignment: .leading, spacing: 0) {
                 Text(store.currentSession?.name ?? "AAR")
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(InstructorColor.textPrimary)
+                    .dsTextStyle(DSTypography.headingSemiBold24)
+                    .foregroundStyle(InstructorColor.aarContentPrimary)
 
-                Text(store.aarScreen == .floorPlan ? "도면·영상 복기" : "영상 비교")
-                    .font(.caption)
-                    .foregroundStyle(InstructorColor.textSecondary)
+                Text(sessionDateText)
+                    .dsTextStyle(DSTypography.bodyRegular16)
+                    .foregroundStyle(InstructorColor.aarContentPrimary)
             }
 
             Spacer()
 
-            Button(action: store.finishAAR) {
-                Label("AAR 종료", systemImage: "rectangle.portrait.and.arrow.right")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(InstructorColor.actionPrimary)
-                    .padding(.horizontal, 16)
-                    .frame(minHeight: 44)
+            Button {
+                showsFinishConfirmation = true
+            } label: {
+                VStack(spacing: 0) {
+                    Image(systemName: "rectangle.portrait.and.arrow.right.fill")
+                        .font(.system(size: 29, weight: .regular))
+
+                    Text("AAR 종료")
+                        .font(.caption)
+                }
+                    .foregroundStyle(InstructorColor.aarActionPrimary)
+                    .frame(width: 56, height: 60)
+                    .contentShape(.rect)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("aar.finish")
         }
+        .padding(.horizontal, AARLayout.headerHorizontalPadding)
+        .background(InstructorColor.aarCanvas)
+    }
+
+    @ViewBuilder
+    private var recordingFailureNotice: some View {
+        if store.trainingRecords.failedCount > 0 {
+            Text("\(store.trainingRecords.failedCount)명의 기록 처리가 실패했습니다. 해당 기록의 재생 자료가 없을 수 있습니다.")
+                .dsTextStyle(DSTypography.captionRegular14)
+                .foregroundStyle(InstructorColor.aarContentSecondary)
+                .padding(DSSpacing.s12)
+                .background(InstructorColor.aarSurfaceRaised.opacity(0.94))
+                .clipShape(.rect(cornerRadius: DSRadius.small))
+                .padding(DSSpacing.s12)
+                .accessibilityIdentifier("aar.recordingFailures")
+        }
+    }
+
+    private var sessionDateText: String {
+        guard let date = store.currentSession?.startedAt else { return "" }
+        let components = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        guard let year = components.year,
+              let month = components.month,
+              let day = components.day
+        else { return "" }
+        return String(format: "%04d.%02d.%02d", year, month, day)
     }
 
     private func loadTracks() async {

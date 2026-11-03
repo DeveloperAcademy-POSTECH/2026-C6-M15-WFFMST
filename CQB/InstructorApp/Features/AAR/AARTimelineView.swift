@@ -5,50 +5,51 @@ struct AARTimelineView: View {
     @Environment(AARStore.self) private var aarStore
 
     var body: some View {
-        HStack(spacing: 12) {
-            skipButton(
-                seconds: -10,
-                systemImage: "gobackward.10",
-                accessibilityLabel: "10초 전"
-            )
-
-            Button(action: aarStore.togglePlayback) {
-                Text(aarStore.isPlaying ? "❚❚" : "▶")
-                    .font(playbackFont)
-                    .foregroundStyle(InstructorColor.playerPlay)
-                    .frame(width: 44, height: 44)
-                    .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .disabled(!aarStore.canPlay)
-            .accessibilityLabel(aarStore.isPlaying ? "일시정지" : "재생")
-
-            skipButton(
-                seconds: 10,
-                systemImage: "goforward.10",
-                accessibilityLabel: "10초 후"
-            )
-
-            Text(timeLabel(aarStore.playbackPosition))
-                .frame(minWidth: 53)
-
+        VStack(alignment: .leading, spacing: 0) {
             AARPlaybackTrack(
                 value: aarStore.playbackPosition,
                 range: 0...aarStore.playbackDuration,
                 onChange: aarStore.setPlaybackPosition
             )
+            .frame(height: 44)
+            .padding(.top, 21)
+            .padding(.horizontal, AARLayout.timelineHorizontalPadding)
             .accessibilityIdentifier("aar.timeline")
 
-            Text(timeLabel(aarStore.playbackDuration))
-                .frame(width: 54)
+            HStack(spacing: 32) {
+                skipButton(
+                    seconds: -10,
+                    systemImage: "10.arrow.trianglehead.counterclockwise",
+                    accessibilityLabel: "10초 전"
+                )
+
+                Button(action: aarStore.togglePlayback) {
+                    Image(systemName: aarStore.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(InstructorColor.playerPlay)
+                        .frame(width: 44, height: 44)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .disabled(!aarStore.canPlay)
+                .accessibilityLabel(aarStore.isPlaying ? "일시정지" : "재생")
+
+                skipButton(
+                    seconds: 10,
+                    systemImage: "10.arrow.trianglehead.clockwise",
+                    accessibilityLabel: "10초 후"
+                )
+
+                Text("\(timeLabel(aarStore.playbackPosition)) / \(timeLabel(aarStore.playbackDuration))")
+                    .dsTextStyle(DSTypography.bodyRegular24)
+                    .foregroundStyle(InstructorColor.aarContentPrimary)
+                    .monospacedDigit()
+            }
+            .padding(.top, 12)
+            .padding(.leading, AARLayout.timelineHorizontalPadding)
         }
-        .font(playbackFont)
-        .foregroundStyle(InstructorColor.textPrimary)
-        .monospacedDigit()
-        .padding(.horizontal, 24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(InstructorColor.playerSurface)
-        .clipShape(.rect(cornerRadius: 4))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(InstructorColor.aarPlayerSurface)
     }
 
     private func skipButton(
@@ -60,8 +61,8 @@ struct AARTimelineView: View {
             aarStore.skipPlayback(by: seconds)
         } label: {
             Image(systemName: systemImage)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(InstructorColor.textPrimary)
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(InstructorColor.aarContentPrimary)
                 .frame(width: 44, height: 44)
                 .contentShape(.rect)
         }
@@ -71,13 +72,8 @@ struct AARTimelineView: View {
         .accessibilityIdentifier(seconds < 0 ? "aar.skipBackward10" : "aar.skipForward10")
     }
 
-    private var playbackFont: Font {
-        DSFonts.register()
-        return .custom("NotoSansKR-Bold", size: 16, relativeTo: .body)
-    }
-
     private func timeLabel(_ seconds: Double) -> String {
-        let value = Int(seconds)
+        let value = max(0, Int(seconds))
         return String(format: "%02d:%02d", value / 60, value % 60)
     }
 }
@@ -90,15 +86,20 @@ private struct AARPlaybackTrack: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(InstructorColor.borderDefault)
-                    .frame(height: 3)
+                Rectangle()
+                    .fill(InstructorColor.aarTimelineTrack)
+                    .frame(height: 4)
 
-                Capsule()
-                    .fill(InstructorColor.actionPrimary)
-                    .frame(width: geometry.size.width * progress, height: 3)
+                Rectangle()
+                    .fill(InstructorColor.aarTimelineProgress)
+                    .frame(width: geometry.size.width * progress, height: 4)
+
+                Circle()
+                    .fill(InstructorColor.aarTimelineProgress)
+                    .frame(width: 16, height: 16)
+                    .offset(x: thumbOffset(for: geometry.size.width))
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .contentShape(.rect)
             .gesture(
                 DragGesture(minimumDistance: 0)
@@ -107,7 +108,6 @@ private struct AARPlaybackTrack: View {
                     }
             )
         }
-        .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44)
         .accessibilityElement()
         .accessibilityLabel("복기 시간 위치")
         .accessibilityValue(timeLabel(value))
@@ -125,6 +125,10 @@ private struct AARPlaybackTrack: View {
         return min(max((value - range.lowerBound) / (range.upperBound - range.lowerBound), 0), 1)
     }
 
+    private func thumbOffset(for width: CGFloat) -> CGFloat {
+        max(0, width - 16) * progress
+    }
+
     private func updateValue(at x: CGFloat, width: CGFloat) {
         guard width > 0 else { return }
         let fraction = min(max(Double(x / width), 0), 1)
@@ -132,7 +136,7 @@ private struct AARPlaybackTrack: View {
     }
 
     private func timeLabel(_ seconds: Double) -> String {
-        let value = Int(seconds)
+        let value = max(0, Int(seconds))
         return String(format: "%02d:%02d", value / 60, value % 60)
     }
 }
@@ -140,6 +144,6 @@ private struct AARPlaybackTrack: View {
 #Preview("AAR 재생바") {
     AARTimelineView()
         .environment(AARStore())
-        .frame(width: 1_318, height: 48)
+        .frame(width: 1_366, height: AARLayout.timelineHeight)
         .preferredColorScheme(.dark)
 }

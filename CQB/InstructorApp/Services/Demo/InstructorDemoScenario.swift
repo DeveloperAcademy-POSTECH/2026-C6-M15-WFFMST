@@ -403,8 +403,8 @@ private final class InstructorDemoRecordingRepository: RecordingRepository, @unc
                 identity: TrackIdentity(
                     sessionID: sessionID,
                     memberID: memberID,
-                    // 30초 영상으로 교체하기 전의 12초 데모 캐시와 구분한다.
-                    recordingID: UUID(uuidString: "30000000-0000-0000-0000-00000000019\(index + 1)")!
+                    // 앱을 덮어 설치해도 이전 번들 영상 캐시를 재사용하지 않도록 세대를 구분한다.
+                    recordingID: UUID(uuidString: "30000000-0000-0000-0000-00000000029\(index + 1)")!
                 ),
                 state: state,
                 startedAt: startedAt,
@@ -514,14 +514,7 @@ private struct InstructorDemoVideoChunkRepository: VideoChunkRepository {
     func downloadVideo(_ identity: TrackIdentity, chunkCount: Int, to directory: URL) async throws -> [URL] {
         guard chunkCount == 1,
               let memberIndex = memberIDs.firstIndex(of: identity.memberID),
-              let source = [Bundle.main, Bundle(for: InstructorDemoBundleToken.self)]
-                .compactMap({ bundle in
-                    bundle.url(
-                        forResource: "DEBRIEF-Demo-AAR-\(memberIndex + 1)",
-                        withExtension: "mp4"
-                    )
-                })
-                .first else {
+              let source = demoVideoURL(memberIndex: memberIndex) else {
             throw RepositoryError.notFound
         }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -531,4 +524,19 @@ private struct InstructorDemoVideoChunkRepository: VideoChunkRepository {
     }
 
     func deleteVideo(_ identity: TrackIdentity, chunkCount: Int) async throws {}
+
+    private func demoVideoURL(memberIndex: Int) -> URL? {
+        let suffix = memberIndex + 1
+        let resourceNames = [
+            "CQB-Private-Demo-AAR-\(suffix)",
+            "DEBRIEF-Demo-AAR-\(suffix)"
+        ]
+        let bundles = [Bundle.main, Bundle(for: InstructorDemoBundleToken.self)]
+
+        return resourceNames.lazy.compactMap { resourceName in
+            bundles.lazy.compactMap { bundle in
+                bundle.url(forResource: resourceName, withExtension: "mp4")
+            }.first
+        }.first
+    }
 }

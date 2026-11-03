@@ -23,6 +23,7 @@ struct FloorPlanCreateView: View {
     @State private var scanFeedbackMessage: String?
     @State private var scanFeedbackID = UUID()
     @State private var registrationBrushMode: LocalEditMode = .block
+    @State private var editingCanvasDisplayScale: CGFloat = 1
     @FocusState private var focusedField: InputField?
 
     private enum InputField: Hashable { case name, distance }
@@ -67,7 +68,7 @@ struct FloorPlanCreateView: View {
                     alignmentStep(sidebarWidth: sidebarWidth)
                 } else if store.step == .scanning, !app.isEditingFloorPlan {
                     scanningStep(sidebarWidth: sidebarWidth)
-                } else if store.step == .editing, !app.isEditingFloorPlan {
+                } else if store.step == .editing {
                     editingStep(sidebarWidth: sidebarWidth)
                 } else {
                     creationWorkspace
@@ -209,7 +210,8 @@ struct FloorPlanCreateView: View {
                         store.applyBrushStroke(stroke, as: registrationBrushMode)
                     },
                     onPoint: store.placePoint,
-                    onEditingChanged: store.setDrawing
+                    onEditingChanged: store.setDrawing,
+                    onDisplayScaleChanged: { editingCanvasDisplayScale = $0 }
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .allowsHitTesting(!store.isImporting && store.processingStage != .preparingPreview
@@ -824,8 +826,10 @@ struct FloorPlanCreateView: View {
 
                 Spacer(minLength: 0)
 
-                DSStepIndicator(current: 4, total: 4)
-                    .fixedSize()
+                if !app.isEditingFloorPlan {
+                    DSStepIndicator(current: 4, total: 4)
+                        .fixedSize()
+                }
             }
             .padding(.top, 40)
 
@@ -859,27 +863,44 @@ struct FloorPlanCreateView: View {
             Spacer(minLength: 24)
 
             HStack(spacing: 12) {
-                Button(action: app.goBackFloorPlanCreationStep) {
+                Button(action: editingPreviousAction) {
                     Text("이전")
                         .frame(width: 92)
                 }
                 .buttonStyle(.dsSecondary)
                 .accessibilityIdentifier("floorPlan.editing.previous")
 
-                Button(action: app.registerFloorPlan) {
-                    Text(app.isUploadingFloorPlan ? "저장 중" : "저장")
+                Button(action: editingSaveAction) {
+                    Text(app.isUploadingFloorPlan ? "저장 중" : "도면 저장")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.dsPrimary)
                 .frame(maxWidth: .infinity, minHeight: DSSize.controlHeight)
-                .disabled(!store.canRegister)
-                .accessibilityIdentifier("floorPlan.save")
+                .disabled(app.isEditingFloorPlan ? !store.canSaveMaskEdit : !store.canRegister)
+                .accessibilityIdentifier(app.isEditingFloorPlan
+                    ? "floorPlan.edit.save" : "floorPlan.save")
             }
             .padding(.bottom, 40)
         }
         .padding(.horizontal, 20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(DSColor.surfacePrimary)
+    }
+
+    private func editingPreviousAction() {
+        if app.isEditingFloorPlan {
+            app.goBack()
+        } else {
+            app.goBackFloorPlanCreationStep()
+        }
+    }
+
+    private func editingSaveAction() {
+        if app.isEditingFloorPlan {
+            app.saveFloorPlanMaskEdit()
+        } else {
+            app.registerFloorPlan()
+        }
     }
 
     private var registrationPenControls: some View {
@@ -980,7 +1001,8 @@ struct FloorPlanCreateView: View {
 
     private var brushSizePreview: some View {
         Canvas { context, size in
-            let lineWidth = brushPreviewLineWidth
+            let maximumVisibleLineWidth = max(1, min(size.width, size.height) - 4)
+            let lineWidth = min(brushPreviewLineWidth, maximumVisibleLineWidth)
             let inset = lineWidth / 2 + 2
             let drawingRect = CGRect(origin: .zero, size: size)
                 .insetBy(dx: inset, dy: inset)
@@ -1015,9 +1037,10 @@ struct FloorPlanCreateView: View {
     }
 
     private var brushPreviewLineWidth: CGFloat {
-        guard let image = store.image else { return 12 }
-        let points = store.normalizedDiameter * Double(min(image.width, image.height))
-        return min(32, max(4, CGFloat(points) * 0.55))
+        guard let image = store.image else { return 1 }
+        let imageSpaceDiameter = CGFloat(store.normalizedDiameter)
+            * CGFloat(min(image.width, image.height))
+        return max(1, imageSpaceDiameter * editingCanvasDisplayScale)
     }
 
     private var editingGuideMessage: String {
