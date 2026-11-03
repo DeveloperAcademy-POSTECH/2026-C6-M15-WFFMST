@@ -1676,3 +1676,38 @@ private struct FloorPlanSavingGlassStyle: ViewModifier {
         .frame(width: 1_366, height: 1_024)
         .preferredColorScheme(.dark)
 }
+
+#if DEBUG
+#Preview("AR 체크포인트 · 선택 및 기록 가능", traits: .landscapeLeft) {
+    let draft = FloorPlanDraftStore.makeScanningPreview(selectedIndex: 1)
+    let app = InstructorStore(floorPlanDraft: draft)
+    return FloorPlanCreateView()
+        .environment(app)
+        .environment(draft)
+        .frame(width: 1_366, height: 1_024)
+        .preferredColorScheme(.dark)
+}
+
+#Preview("AR 체크포인트 · 추적 불안정", traits: .landscapeLeft) {
+    let draft = FloorPlanDraftStore.makeScanningPreview(
+        tracking: .insufficientFeatures,
+        selectedIndex: 1
+    )
+    let app = InstructorStore(floorPlanDraft: draft)
+    return FloorPlanCreateView()
+        .environment(app)
+        .environment(draft)
+        .frame(width: 1_366, height: 1_024)
+        .preferredColorScheme(.dark)
+}
+
+#Preview("AR 체크포인트 · 기록 완료", traits: .landscapeLeft) {
+    let draft = FloorPlanDraftStore.makeScanningPreview(completedIndices: [0, 1, 2])
+    let app = InstructorStore(floorPlanDraft: draft)
+    return FloorPlanCreateView()
+        .environment(app)
+        .environment(draft)
+        .frame(width: 1_366, height: 1_024)
+        .preferredColorScheme(.dark)
+}
+#endif

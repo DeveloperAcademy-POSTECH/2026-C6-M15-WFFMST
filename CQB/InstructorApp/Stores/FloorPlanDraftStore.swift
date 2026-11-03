@@ -167,6 +167,7 @@ final class FloorPlanDraftStore {
         return scanCheckpoints.indices.contains(selectedScanCheckpointIndex)
             && !completedScanCheckpointIndices.contains(selectedScanCheckpointIndex)
             && frameState.tracking.canCapture
+            && worldMapScanner != nil
     }
     var canSaveWorldMap: Bool {
         step == .scanning && worldMapStart != nil && worldMapCorrespondences.count >= 2
@@ -986,3 +987,101 @@ final class FloorPlanDraftStore {
         LocalPlanPoint(x: 0, y: 1),
     ]
 }
+
+#if DEBUG && canImport(UIKit)
+@MainActor
+private final class PreviewWorldMapScanner: NSObject, WorldMapScanning {
+    var previewSession: AnyObject { self }
+    var onFrameUpdate: ((LocalWorldMapFrameState) -> Void)?
+
+    func start() async throws {}
+    func captureCurrentPose() -> LocalWorldMapPoseCaptureResult {
+        .captured(ARPose(x: 1, y: 1.4, z: 1, forwardX: 0, forwardZ: -1))
+    }
+    func makeWorldMapArchive() async throws -> Data { Data() }
+    func stop() {}
+}
+
+extension FloorPlanDraftStore {
+    static func makeScanningPreview(
+        tracking: LocalWorldMapTrackingState = .normal,
+        selectedIndex: Int? = nil,
+        completedIndices: Set<Int> = []
+    ) -> FloorPlanDraftStore {
+        let store = FloorPlanDraftStore(worldMapScanner: PreviewWorldMapScanner())
+        let image = makeScanningPreviewImage()
+        let startPoint = LocalPlanPoint(x: 0.18, y: 0.78)
+        let directionPoint = LocalPlanPoint(x: 0.35, y: 0.78)
+        let pose = ARPose(x: 0, y: 1.4, z: 0, forwardX: 1, forwardZ: 0)
+
+        store.step = .scanning
+        store.name = "프리뷰 훈련장"
+        store.image = LocalImportedImage(
+            pngData: image.pngData() ?? Data(),
+            width: Int(image.size.width),
+            height: Int(image.size.height),
+            fileName: "scanning-preview.png"
+        )
+        store.previewImage = image
+        store.startPlanPoint = startPoint
+        store.directionPlanPoint = directionPoint
+        store.scanCheckpoints = [
+            LocalPlanPoint(x: 0.24, y: 0.28),
+            LocalPlanPoint(x: 0.58, y: 0.30),
+            LocalPlanPoint(x: 0.76, y: 0.62),
+        ]
+        store.worldMapStart = WorldMapStart(
+            pose: pose,
+            planPoint: NormalizedPoint(x: startPoint.x, y: startPoint.y),
+            directionPoint: NormalizedPoint(x: directionPoint.x, y: directionPoint.y)
+        )
+        store.completedScanCheckpointIndices = completedIndices
+        store.selectedScanCheckpointIndex = selectedIndex
+        store.frameState = LocalWorldMapFrameState(
+            mapping: completedIndices.count == store.scanCheckpoints.count ? .mapped : .extending,
+            tracking: tracking
+        )
+        store.worldMapCorrespondences = [WorldMapCorrespondence(
+            label: "start",
+            planPoint: NormalizedPoint(x: startPoint.x, y: startPoint.y),
+            arPose: pose,
+            capturedAt: .now
+        )] + completedIndices.sorted().map { index in
+            let point = store.scanCheckpoints[index]
+            return WorldMapCorrespondence(
+                label: "checkpoint-\(index + 1)",
+                planPoint: NormalizedPoint(x: point.x, y: point.y),
+                arPose: pose,
+                capturedAt: .now
+            )
+        }
+        return store
+    }
+
+    private static func makeScanningPreviewImage() -> UIImage {
+        let size = CGSize(width: 900, height: 720)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: size, format: format).image { context in
+            let bounds = CGRect(origin: .zero, size: size)
+            UIColor(red: 0.94, green: 0.93, blue: 0.89, alpha: 1).setFill()
+            context.fill(bounds)
+
+            let wall = UIBezierPath()
+            wall.lineWidth = 16
+            UIColor(red: 0.12, green: 0.17, blue: 0.16, alpha: 1).setStroke()
+            wall.append(UIBezierPath(rect: bounds.insetBy(dx: 28, dy: 28)))
+            wall.move(to: CGPoint(x: 300, y: 28))
+            wall.addLine(to: CGPoint(x: 300, y: 260))
+            wall.move(to: CGPoint(x: 300, y: 350))
+            wall.addLine(to: CGPoint(x: 300, y: 692))
+            wall.move(to: CGPoint(x: 300, y: 360))
+            wall.addLine(to: CGPoint(x: 610, y: 360))
+            wall.move(to: CGPoint(x: 700, y: 360))
+            wall.addLine(to: CGPoint(x: 872, y: 360))
+            wall.stroke()
+        }
+    }
+}
+#endif
