@@ -213,6 +213,24 @@ final class MemberPositioningTests: XCTestCase {
         }
     }
 
+    func testOversizedWorldMapDownloadExplainsLimitAndAllowsRetry() async throws {
+        let map = try BundledTrainingMapLoader.load()
+        let reference = WorldMapReference(worldMapID: UUID(), setupSHA256: "test", floorPlan: map.reference)
+        let repository = PositioningRepository(map: map, worldMap: reference,
+                                              worldMapDownloadError: RepositoryError.fileTooLarge)
+        let store = makeStore(repository)
+        defer { store.shutdown() }
+        for _ in 0..<2 {
+            store.join(pin: "012345", memberName: "대원")
+            await waitForJoin(store)
+            XCTAssertEqual(store.phase, .join)
+            XCTAssertTrue(store.errorMessage?.contains("허용 용량을 초과") == true)
+            XCTAssertFalse(store.errorMessage?.contains("네트워크") == true)
+            XCTAssertFalse(store.canSetPositionManually)
+            XCTAssertEqual(repository.joinCount, 0)
+        }
+    }
+
     func testCancelledWorldMapLoadDoesNotShowFailureOrRegisterMember() async throws {
         let map = try BundledTrainingMapLoader.load()
         let reference = WorldMapReference(worldMapID: UUID(), setupSHA256: "test", floorPlan: map.reference)
