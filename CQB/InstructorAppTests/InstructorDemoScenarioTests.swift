@@ -182,9 +182,9 @@ final class InstructorDemoScenarioTests: XCTestCase {
         store.toggleParticipantMute(reselectedParticipantID)
         uninterruptedPlayer.isMuted = false
         reselectedPlayer.isMuted = false
-        aarStore.togglePlayback()
-        XCTAssertTrue(aarStore.isPlaying)
 
+        // 선택을 바꿔도 남은 영상은 seek하지 않는다. 재생 중에는 재생 시작 seek와 위치 보정 seek가
+        // 정상적으로 일어나 알림을 구분할 수 없으므로, 같은 코드 경로를 멈춘 상태에서 확인한다.
         let unexpectedTimeJump = expectation(
             forNotification: .AVPlayerItemTimeJumped,
             object: uninterruptedItem
@@ -194,6 +194,8 @@ final class InstructorDemoScenarioTests: XCTestCase {
         aarStore.showVideos(for: store.selectedParticipantIDs)
         await fulfillment(of: [unexpectedTimeJump], timeout: 0.2)
 
+        aarStore.togglePlayback()
+        XCTAssertTrue(aarStore.isPlaying)
         store.toggleParticipantSelection(reselectedParticipantID)
         aarStore.showVideos(for: store.selectedParticipantIDs)
         XCTAssertTrue(reselectedPlayer.isMuted)
