@@ -14,6 +14,7 @@ nonisolated enum LocalWorldMapFileBuilder {
         guard !draft.archive.isEmpty else {
             throw LocalFloorPlanError.invalid("저장할 WorldMap 데이터가 없습니다.")
         }
+        try LocalUploadSizeValidator.validateWorldMapArchive(draft.archive, compression: draft.compression)
         let setup = WorldMapSetup(
             schemaVersion: 1,
             worldMapID: draft.id,
@@ -34,8 +35,10 @@ nonisolated enum LocalWorldMapFileBuilder {
             setupSHA256: LocalFloorPlanFileBuilder.sha256(setupJSON),
             floorPlan: floorPlan
         )
+        let files = WorldMapFiles(worldMapArchive: draft.archive, setupJSON: setupJSON)
+        try LocalUploadSizeValidator.validate(files, compression: draft.compression)
         return LocalWorldMapUpload(
-            files: WorldMapFiles(worldMapArchive: draft.archive, setupJSON: setupJSON),
+            files: files,
             reference: reference
         )
     }
