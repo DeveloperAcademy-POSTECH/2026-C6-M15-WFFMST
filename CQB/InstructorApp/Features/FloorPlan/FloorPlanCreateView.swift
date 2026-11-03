@@ -1211,6 +1211,19 @@ struct FloorPlanCreateView: View {
 
             Spacer(minLength: 24)
 
+#if DEBUG && targetEnvironment(simulator)
+            if store.canPreviewExtractedMask {
+                Button(action: store.previewExtractedMask) {
+                    Text("마스크만 확인")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.dsSecondary)
+                .accessibilityHint("AR 공간 스캔 없이 자동 추출 마스크를 확인합니다.")
+                .accessibilityIdentifier("floorPlan.simulator.maskPreview")
+                .padding(.bottom, 12)
+            }
+#endif
+
             HStack(spacing: 12) {
                 Button(action: app.goBackFloorPlanCreationStep) {
                     Text("이전")

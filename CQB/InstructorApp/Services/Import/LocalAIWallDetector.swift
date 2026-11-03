@@ -2,9 +2,15 @@ import CoreGraphics
 import CoreML
 import CoreVideo
 import Foundation
+import OSLog
 
 /// 전처리된 전역·타일 입력으로 512px 이진 U-Net을 실행하고 장애물 확률을 격자로 변환합니다.
 enum LocalAIWallDetector {
+    nonisolated private static let logger = Logger(
+        subsystem: "com.wffmst.cqb",
+        category: "AIWallDetector"
+    )
+
     nonisolated enum LineProcessing: Sendable {
         case original
         case highContrast
@@ -173,8 +179,18 @@ enum LocalAIWallDetector {
             throw LocalFloorPlanError.invalid("AI 벽 추출 모델을 앱에서 찾지 못했습니다.")
         }
         let configuration = MLModelConfiguration()
-        configuration.computeUnits = .all
+        configuration.computeUnits = modelComputeUnits
         return try MLModel(contentsOf: modelURL, configuration: configuration)
+    }
+
+    /// iOS Simulator의 MPSGraph 경로는 일부 런타임에서 오류 없이 빈 출력을 반환한다.
+    /// 실기기에서는 Neural Engine/GPU 가속을 계속 사용한다.
+    nonisolated static var modelComputeUnits: MLComputeUnits {
+#if targetEnvironment(simulator)
+        .cpuOnly
+#else
+        .all
+#endif
     }
 
     nonisolated private static func preprocess(
@@ -376,14 +392,25 @@ enum LocalAIWallDetector {
         guard let probabilities = output.featureValue(for: "blockedProbability")?.multiArrayValue else {
             throw LocalFloorPlanError.invalid("AI 벽 추출 모델의 blockedProbability 출력이 없습니다.")
         }
+        let blockedProbabilities = try LocalAIWallMaskGridBuilder.blockedProbabilities(
+            from: probabilities,
+            width: inputSize,
+            height: inputSize
+        )
+        try validateInference(blockedProbabilities)
         return Prediction(
-            blockedProbabilities: try LocalAIWallMaskGridBuilder.blockedProbabilities(
-                from: probabilities,
-                width: inputSize,
-                height: inputSize
-            ),
+            blockedProbabilities: blockedProbabilities,
             letterbox: letterbox
         )
+    }
+
+    nonisolated static func validateInference(_ blockedProbabilities: [Float]) throws {
+        guard blockedProbabilities.contains(where: { $0 > 0 }) else {
+            logger.error("Core ML returned an empty blockedProbability output; rejecting inference")
+            throw LocalFloorPlanError.invalid(
+                "AI 벽 추출 모델이 비정상적인 빈 결과를 반환했습니다. 기본 추출 방식으로 다시 시도합니다."
+            )
+        }
     }
 
     nonisolated private static func letterboxSize(

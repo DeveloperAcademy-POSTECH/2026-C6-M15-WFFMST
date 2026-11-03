@@ -72,9 +72,30 @@ struct LocalAIWallMaskGridBuilderTests {
     }
 
     @Test
-    func runsBundledBinaryModelEndToEnd() throws {
-        let width = 512
-        let height = 512
+    func usesCPUOnlyForSimulatorInference() {
+#if targetEnvironment(simulator)
+        #expect(LocalAIWallDetector.modelComputeUnits == .cpuOnly)
+#else
+        #expect(LocalAIWallDetector.modelComputeUnits == .all)
+#endif
+    }
+
+    @Test
+    func rejectsAnEmptyInferenceResult() {
+        #expect(throws: LocalFloorPlanError.self) {
+            try LocalAIWallDetector.validateInference([0, 0, 0, 0])
+        }
+    }
+
+    @Test
+    func acceptsAnInferenceResultContainingWallProbability() throws {
+        try LocalAIWallDetector.validateInference([0, 0.25, 0, 0])
+    }
+
+    @Test
+    func compactFloorPlanProducesInternalWallCells() throws {
+        let width = 768
+        let height = 768
         guard let context = CGContext(
             data: nil,
             width: width,
@@ -89,6 +110,18 @@ struct LocalAIWallMaskGridBuilderTests {
         }
         context.setFillColor(CGColor(gray: 1, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.setStrokeColor(CGColor(gray: 0.08, alpha: 1))
+        context.setLineWidth(12)
+        context.stroke(CGRect(x: 72, y: 72, width: 624, height: 624))
+        context.move(to: CGPoint(x: 384, y: 72))
+        context.addLine(to: CGPoint(x: 384, y: 300))
+        context.move(to: CGPoint(x: 384, y: 360))
+        context.addLine(to: CGPoint(x: 384, y: 696))
+        context.move(to: CGPoint(x: 72, y: 384))
+        context.addLine(to: CGPoint(x: 300, y: 384))
+        context.move(to: CGPoint(x: 360, y: 384))
+        context.addLine(to: CGPoint(x: 696, y: 384))
+        context.strokePath()
         guard let image = context.makeImage() else {
             Issue.record("테스트 입력 CGImage를 만들지 못했습니다.")
             return
@@ -98,13 +131,72 @@ struct LocalAIWallMaskGridBuilderTests {
             image: image,
             sourceWidth: width,
             sourceHeight: height,
-            configuration: .baseline
+            configuration: .cropContrastTiles
         )
 
-        #expect(grid.columns == 256)
-        #expect(grid.rows == 256)
-        #expect(grid.blocked.count == 256 * 256)
+        #expect(grid.columns == 384)
+        #expect(grid.rows == 384)
+        #expect(grid.blocked.count == 384 * 384)
         #expect(grid.blocked.allSatisfy { $0 <= 1 })
+        let wallCellCount = grid.blocked.reduce(0) { $0 + Int($1) }
+        #expect((1_000...36_864).contains(wallCellCount))
+    }
+
+    @Test
+    func highResolutionCameraStyleFloorPlanProducesWallsAndOutline() throws {
+        let width = 2_048
+        let height = 1_536
+        var pixels = [UInt8](repeating: 255, count: width * height * 4)
+        let image = pixels.withUnsafeMutableBytes { bytes -> CGImage? in
+            guard let context = CGContext(
+                data: bytes.baseAddress,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                    | CGBitmapInfo.byteOrder32Big.rawValue
+            ) else { return nil }
+            context.setFillColor(CGColor(red: 0.94, green: 0.93, blue: 0.89, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+            context.setFillColor(CGColor(gray: 0.99, alpha: 1))
+            context.fill(CGRect(x: 180, y: 140, width: 1_688, height: 1_256))
+            context.setStrokeColor(CGColor(gray: 0.08, alpha: 1))
+            context.setLineWidth(20)
+            context.stroke(CGRect(x: 220, y: 180, width: 1_608, height: 1_176))
+            for x in stride(from: 488, through: 1_560, by: 268) {
+                context.move(to: CGPoint(x: x, y: 180))
+                context.addLine(to: CGPoint(x: x, y: 720))
+                context.move(to: CGPoint(x: x, y: 810))
+                context.addLine(to: CGPoint(x: x, y: 1_356))
+            }
+            context.move(to: CGPoint(x: 220, y: 768))
+            context.addLine(to: CGPoint(x: 900, y: 768))
+            context.move(to: CGPoint(x: 990, y: 768))
+            context.addLine(to: CGPoint(x: 1_828, y: 768))
+            context.strokePath()
+            return context.makeImage()
+        }
+        guard let image else {
+            Issue.record("고해상도 카메라형 테스트 이미지를 만들지 못했습니다.")
+            return
+        }
+
+        let grid = try LocalAIWallDetector.grid(
+            image: image,
+            sourceWidth: width,
+            sourceHeight: height
+        )
+        let suggestion = try LocalBlockedRegionAutoFill.suggest(
+            base: grid,
+            rgba: pixels,
+            width: width,
+            height: height
+        )
+
+        #expect(grid.blocked.contains(1))
+        #expect(suggestion?.outline.count ?? 0 >= 3)
     }
 
     @Test
