@@ -305,6 +305,7 @@ struct FloorPlanCreateView: View {
                     scaleA: store.startPlanPoint,
                     scaleB: store.directionPlanPoint,
                     scaleMarkerAppearance: .scanHeading,
+                    isScanStartCaptured: false,
                     usesTransparentBackground: true,
                     maximumInitialDisplaySize: CGSize(
                         width: maximumPreviewWidth,
@@ -357,6 +358,7 @@ struct FloorPlanCreateView: View {
                     scaleA: store.startPlanPoint,
                     scaleB: store.directionPlanPoint,
                     scaleMarkerAppearance: .scanHeading,
+                    isScanStartCaptured: store.worldMapStart != nil,
                     usesTransparentBackground: true,
                     maximumInitialDisplaySize: CGSize(
                         width: maximumPreviewWidth,
@@ -1654,6 +1656,16 @@ private struct FloorPlanSavingGlassStyle: ViewModifier {
 }
 
 #if DEBUG
+#Preview("AR 출발점 · 기록 전", traits: .landscapeLeft) {
+    let draft = FloorPlanDraftStore.makeScanningPreview(hasCapturedStart: false)
+    let app = InstructorStore(floorPlanDraft: draft)
+    return FloorPlanCreateView()
+        .environment(app)
+        .environment(draft)
+        .frame(width: 1_366, height: 1_024)
+        .preferredColorScheme(.dark)
+}
+
 #Preview("AR 체크포인트 · 선택 및 기록 가능", traits: .landscapeLeft) {
     let draft = FloorPlanDraftStore.makeScanningPreview(selectedIndex: 1)
     let app = InstructorStore(floorPlanDraft: draft)

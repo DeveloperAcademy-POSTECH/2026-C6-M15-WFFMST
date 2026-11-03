@@ -1005,6 +1005,7 @@ private final class PreviewWorldMapScanner: NSObject, WorldMapScanning {
 extension FloorPlanDraftStore {
     static func makeScanningPreview(
         tracking: LocalWorldMapTrackingState = .normal,
+        hasCapturedStart: Bool = true,
         selectedIndex: Int? = nil,
         completedIndices: Set<Int> = []
     ) -> FloorPlanDraftStore {
@@ -1030,23 +1031,26 @@ extension FloorPlanDraftStore {
             LocalPlanPoint(x: 0.58, y: 0.30),
             LocalPlanPoint(x: 0.76, y: 0.62),
         ]
-        store.worldMapStart = WorldMapStart(
-            pose: pose,
-            planPoint: NormalizedPoint(x: startPoint.x, y: startPoint.y),
-            directionPoint: NormalizedPoint(x: directionPoint.x, y: directionPoint.y)
-        )
+        store.worldMapStart = hasCapturedStart
+            ? WorldMapStart(
+                pose: pose,
+                planPoint: NormalizedPoint(x: startPoint.x, y: startPoint.y),
+                directionPoint: NormalizedPoint(x: directionPoint.x, y: directionPoint.y)
+            )
+            : nil
         store.completedScanCheckpointIndices = completedIndices
-        store.selectedScanCheckpointIndex = selectedIndex
+        store.selectedScanCheckpointIndex = hasCapturedStart ? selectedIndex : nil
         store.frameState = LocalWorldMapFrameState(
             mapping: completedIndices.count == store.scanCheckpoints.count ? .mapped : .extending,
             tracking: tracking
         )
-        store.worldMapCorrespondences = [WorldMapCorrespondence(
+        let startCorrespondences = hasCapturedStart ? [WorldMapCorrespondence(
             label: "start",
             planPoint: NormalizedPoint(x: startPoint.x, y: startPoint.y),
             arPose: pose,
             capturedAt: .now
-        )] + completedIndices.sorted().map { index in
+        )] : []
+        store.worldMapCorrespondences = startCorrespondences + completedIndices.sorted().map { index in
             let point = store.scanCheckpoints[index]
             return WorldMapCorrespondence(
                 label: "checkpoint-\(index + 1)",

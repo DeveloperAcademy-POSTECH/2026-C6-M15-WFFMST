@@ -24,6 +24,7 @@ struct LocalFloorPlanCanvas: UIViewRepresentable {
     var scaleALabel = "A"
     var scaleBLabel = "B"
     var scaleMarkerAppearance: LocalScaleMarkerAppearance = .standard
+    var isScanStartCaptured = true
     var usesTransparentBackground = false
     var keepsWhiteImageBackground = false
     var maximumInitialDisplaySize: CGSize? = nil
@@ -61,6 +62,7 @@ struct LocalFloorPlanCanvas: UIViewRepresentable {
                     scaleA: scaleA, scaleB: scaleB, scaleLabel: scaleLabel,
                     scaleALabel: scaleALabel, scaleBLabel: scaleBLabel,
                     scaleMarkerAppearance: scaleMarkerAppearance,
+                    isScanStartCaptured: isScanStartCaptured,
                     usesTransparentBackground: usesTransparentBackground,
                     keepsWhiteImageBackground: keepsWhiteImageBackground,
                     maximumInitialDisplaySize: maximumInitialDisplaySize,
@@ -153,6 +155,7 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
                 scaleA: LocalPlanPoint?, scaleB: LocalPlanPoint?, scaleLabel: String?,
                 scaleALabel: String, scaleBLabel: String,
                 scaleMarkerAppearance: LocalScaleMarkerAppearance,
+                isScanStartCaptured: Bool,
                 usesTransparentBackground: Bool,
                 keepsWhiteImageBackground: Bool,
                 maximumInitialDisplaySize: CGSize?,
@@ -203,6 +206,7 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
                            scaleA: scaleA, scaleB: scaleB,
                            scaleLabel: scaleLabel, scaleALabel: scaleALabel,
                            scaleBLabel: scaleBLabel, scaleMarkerAppearance: scaleMarkerAppearance,
+                           isScanStartCaptured: isScanStartCaptured,
                            checkpointMarkers: checkpointMarkers,
                            checkpointAppearance: checkpointAppearance)
         if toolChanged || imageChanged || tool == .move { updateInteraction() }
@@ -597,6 +601,7 @@ private final class LocalFloorPlanMarkersView: UIView {
     var scaleALabel = "A"
     var scaleBLabel = "B"
     var scaleMarkerAppearance: LocalScaleMarkerAppearance = .standard
+    var isScanStartCaptured = true
     var checkpointMarkers: [LocalScanCheckpointMarker] = []
     var checkpointAppearance: LocalScanCheckpointAppearance = .labeled
     var viewScale: CGFloat = 1 { didSet { if viewScale != oldValue { setNeedsDisplay() } } }
@@ -606,6 +611,7 @@ private final class LocalFloorPlanMarkersView: UIView {
                 scaleA: LocalPlanPoint?, scaleB: LocalPlanPoint?, scaleLabel: String?,
                 scaleALabel: String, scaleBLabel: String,
                 scaleMarkerAppearance: LocalScaleMarkerAppearance,
+                isScanStartCaptured: Bool,
                 checkpointMarkers: [LocalScanCheckpointMarker],
                 checkpointAppearance: LocalScanCheckpointAppearance) {
         guard self.selection != selection
@@ -613,6 +619,7 @@ private final class LocalFloorPlanMarkersView: UIView {
                 || self.scaleA != scaleA || self.scaleB != scaleB || self.scaleLabel != scaleLabel
                 || self.scaleALabel != scaleALabel || self.scaleBLabel != scaleBLabel
                 || self.scaleMarkerAppearance != scaleMarkerAppearance
+                || self.isScanStartCaptured != isScanStartCaptured
                 || self.checkpointMarkers != checkpointMarkers
                 || self.checkpointAppearance != checkpointAppearance else { return }
         self.selection = selection
@@ -623,6 +630,7 @@ private final class LocalFloorPlanMarkersView: UIView {
         self.scaleALabel = scaleALabel
         self.scaleBLabel = scaleBLabel
         self.scaleMarkerAppearance = scaleMarkerAppearance
+        self.isScanStartCaptured = isScanStartCaptured
         self.checkpointMarkers = checkpointMarkers
         self.checkpointAppearance = checkpointAppearance
         setNeedsDisplay()
@@ -793,8 +801,16 @@ private final class LocalFloorPlanMarkersView: UIView {
             width: diameter,
             height: diameter
         )
-        context.setFillColor(UIColor(DSPalette.Red.r400).cgColor)
+        context.saveGState()
+        context.setShadow(
+            offset: CGSize(width: 0, height: 2 * unit),
+            blur: 4 * unit,
+            color: UIColor.black.withAlphaComponent(0.32).cgColor
+        )
+        let color = isScanStartCaptured ? DSPalette.Red.r400 : DSPalette.Red.r100
+        context.setFillColor(UIColor(color).cgColor)
         context.fillEllipse(in: circle)
+        context.restoreGState()
     }
 
     private func checkpointMarker(_ checkpoint: LocalScanCheckpointMarker,
@@ -857,19 +873,7 @@ private final class LocalFloorPlanMarkersView: UIView {
             context.setLineWidth(3 * unit)
             context.strokeEllipse(in: circle.insetBy(dx: -4 * unit, dy: -4 * unit))
         case .completed:
-            context.saveGState()
-            context.setStrokeColor(UIColor.white.cgColor)
-            context.setLineWidth(3 * unit)
-            context.setLineCap(.round)
-            context.setLineJoin(.round)
-            context.move(to: CGPoint(x: circle.minX + circle.width * 0.28,
-                                     y: circle.minY + circle.height * 0.52))
-            context.addLine(to: CGPoint(x: circle.minX + circle.width * 0.44,
-                                        y: circle.minY + circle.height * 0.68))
-            context.addLine(to: CGPoint(x: circle.minX + circle.width * 0.74,
-                                        y: circle.minY + circle.height * 0.36))
-            context.strokePath()
-            context.restoreGState()
+            return
         }
     }
 }
