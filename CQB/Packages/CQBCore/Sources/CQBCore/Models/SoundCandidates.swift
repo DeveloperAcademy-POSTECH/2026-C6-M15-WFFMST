@@ -9,7 +9,7 @@ public struct SoundCandidateDocument: Codable, Equatable, Sendable {
     public let schemaVersion: Int
     public let identity: TrackIdentity
     public let detector: SoundDetectorIdentity
-    /// 실제로 소리를 분석한 구간(기록 내부 초). 시작 순이며 겹치지 않는다.
+    /// 실제로 소리를 분석한 구간(기록 내부 초). 시작 순이며 겹치거나 끝이 맞닿지 않는다.
     public let analyzedRanges: [SoundTimeRange]
     /// `time` 오름차순. 모든 후보는 `analyzedRanges` 안에 있다.
     public let candidates: [SoundCandidate]
@@ -45,7 +45,7 @@ public struct SoundDetectorIdentity: Codable, Equatable, Sendable {
     }
 }
 
-/// 기록 내부 시간(초) 구간. 0초는 그 기록 영상 조각의 0초와 같다.
+/// 기록 내부 시간(초)의 닫힌 구간. 0초는 그 기록 영상 조각의 0초와 같다.
 public struct SoundTimeRange: Codable, Equatable, Sendable {
     public let start: Double
     public let end: Double
@@ -95,10 +95,11 @@ extension SoundCandidateDocument {
             throw SoundCandidateValidationError.unsupportedSchema(schemaVersion)
         }
 
-        var previousEnd = 0.0
+        // 구간은 양 끝을 포함하므로 앞 구간의 끝과 같은 시각에서 시작하면 그 시각이 두 구간에 속한다.
+        var previousEnd: Double?
         for range in analyzedRanges {
-            guard range.start.isFinite, range.end.isFinite,
-                  range.start >= previousEnd, range.start < range.end else {
+            guard range.start.isFinite, range.end.isFinite, range.start < range.end,
+                  previousEnd.map({ range.start > $0 }) ?? (range.start >= 0) else {
                 throw SoundCandidateValidationError.invalidRanges
             }
             previousEnd = range.end

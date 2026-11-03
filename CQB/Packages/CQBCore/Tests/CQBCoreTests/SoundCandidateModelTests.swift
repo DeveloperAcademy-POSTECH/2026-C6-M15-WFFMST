@@ -112,9 +112,10 @@ func unsupportedSoundCandidateSchema() {
     }
 }
 
-@Test("역전·중첩되거나 음수인 분석 구간은 손상된 문서다", arguments: [
+@Test("역전·중첩되거나 끝이 맞닿거나 음수인 분석 구간은 손상된 문서다", arguments: [
     [SoundTimeRange(start: 5, end: 1)],
     [SoundTimeRange(start: 0, end: 10), SoundTimeRange(start: 9, end: 12)],
+    [SoundTimeRange(start: 0, end: 10), SoundTimeRange(start: 10, end: 20)],
     [SoundTimeRange(start: 20, end: 30), SoundTimeRange(start: 0, end: 10)],
     [SoundTimeRange(start: -1, end: 3)],
     [SoundTimeRange(start: 2, end: 2)],
