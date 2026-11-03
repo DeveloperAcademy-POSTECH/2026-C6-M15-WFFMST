@@ -78,3 +78,42 @@ public struct SoundCandidate: Codable, Equatable, Sendable {
         self.classifierScores = classifierScores
     }
 }
+
+/// 음향 후보 문서 검증 실패.
+/// - `unsupportedSchema`: 이 앱이 모르는 버전이다. 읽는 쪽은 "분석 안 됨"으로 처리한다.
+/// - 그 밖의 경우: 문서가 손상됐다. 오류로 알리고 다시 받는다.
+public enum SoundCandidateValidationError: Error, Equatable, Sendable {
+    case unsupportedSchema(Int)
+    case invalidRanges
+    case invalidCandidates
+}
+
+extension SoundCandidateDocument {
+    /// 계약의 불변식을 확인한다. 업로드 전과 다운로드 후에 부른다.
+    public func validate() throws {
+        guard schemaVersion == Self.currentSchemaVersion else {
+            throw SoundCandidateValidationError.unsupportedSchema(schemaVersion)
+        }
+
+        var previousEnd = 0.0
+        for range in analyzedRanges {
+            guard range.start.isFinite, range.end.isFinite,
+                  range.start >= previousEnd, range.start < range.end else {
+                throw SoundCandidateValidationError.invalidRanges
+            }
+            previousEnd = range.end
+        }
+
+        var previousTime = -Double.infinity
+        for candidate in candidates {
+            guard candidate.time.isFinite, candidate.time >= previousTime,
+                  analyzedRanges.contains(where: { $0.contains(candidate.time) }),
+                  candidate.peakLevelDBFS.isFinite, candidate.peakLevelDBFS <= 0,
+                  candidate.decaySeconds.map({ $0.isFinite && $0 >= 0 }) ?? true,
+                  candidate.classifierScores.values.allSatisfy({ $0.isFinite && (0...1).contains($0) }) else {
+                throw SoundCandidateValidationError.invalidCandidates
+            }
+            previousTime = candidate.time
+        }
+    }
+}

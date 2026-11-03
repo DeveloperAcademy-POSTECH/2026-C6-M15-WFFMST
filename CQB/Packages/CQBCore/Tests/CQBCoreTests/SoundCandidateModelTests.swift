@@ -77,3 +77,66 @@ func soundTimeRangeContains() {
     #expect(range.contains(20))
     #expect(!range.contains(20.01))
 }
+
+private func document(
+    schemaVersion: Int = SoundCandidateDocument.currentSchemaVersion,
+    ranges: [SoundTimeRange] = [SoundTimeRange(start: 0, end: 10), SoundTimeRange(start: 20, end: 30)],
+    candidates: [SoundCandidate]
+) -> SoundCandidateDocument {
+    SoundCandidateDocument(
+        schemaVersion: schemaVersion,
+        identity: identity,
+        detector: SoundDetectorIdentity(name: "gunshot-combined", version: "0.3.0", settingsID: "candidate-low-v1"),
+        analyzedRanges: ranges,
+        candidates: candidates
+    )
+}
+
+private func candidate(
+    _ time: Double, peak: Double = -3, decay: Double? = 0.1, scores: [String: Double] = ["gunshot_gunfire": 0.5]
+) -> SoundCandidate {
+    SoundCandidate(time: time, peakLevelDBFS: peak, decaySeconds: decay, classifierScores: scores)
+}
+
+@Test("계약을 지키는 음향 후보 문서는 검증을 통과한다")
+func validSoundCandidateDocument() throws {
+    try makeDocument().validate()
+    try document(candidates: [candidate(0), candidate(10), candidate(20, decay: nil)]).validate()
+    try document(ranges: [], candidates: []).validate()
+}
+
+@Test("모르는 schemaVersion은 손상과 구분해 unsupportedSchema로 알린다")
+func unsupportedSoundCandidateSchema() {
+    #expect(throws: SoundCandidateValidationError.unsupportedSchema(2)) {
+        try document(schemaVersion: 2, candidates: []).validate()
+    }
+}
+
+@Test("역전·중첩되거나 음수인 분석 구간은 손상된 문서다", arguments: [
+    [SoundTimeRange(start: 5, end: 1)],
+    [SoundTimeRange(start: 0, end: 10), SoundTimeRange(start: 9, end: 12)],
+    [SoundTimeRange(start: 20, end: 30), SoundTimeRange(start: 0, end: 10)],
+    [SoundTimeRange(start: -1, end: 3)],
+    [SoundTimeRange(start: 2, end: 2)],
+    [SoundTimeRange(start: 0, end: .infinity)],
+])
+func invalidSoundRanges(ranges: [SoundTimeRange]) {
+    #expect(throws: SoundCandidateValidationError.invalidRanges) {
+        try document(ranges: ranges, candidates: []).validate()
+    }
+}
+
+@Test("정렬되지 않았거나 분석 구간 밖이거나 값 범위를 벗어난 후보는 손상된 문서다", arguments: [
+    [candidate(5), candidate(3)],
+    [candidate(15)],
+    [candidate(5, peak: 0.5)],
+    [candidate(5, decay: -0.1)],
+    [candidate(5, scores: ["gunshot_gunfire": 1.2])],
+    [candidate(5, scores: ["gunshot_gunfire": -0.1])],
+    [candidate(.nan)],
+])
+func invalidSoundCandidates(candidates: [SoundCandidate]) {
+    #expect(throws: SoundCandidateValidationError.invalidCandidates) {
+        try document(candidates: candidates).validate()
+    }
+}
