@@ -35,7 +35,6 @@ struct LocalFloorPlanCanvas: UIViewRepresentable {
     var layers = FloorPlanLayerDisplay()
     var onStroke: (LocalEditStroke) -> Void
     var onPoint: (LocalPlanPoint) -> Void
-    var onScanStartTap: (() -> Void)? = nil
     var onCheckpointTap: ((Int) -> Void)? = nil
     var onScaleMarkerMoved: (LocalScaleMarker, LocalPlanPoint) -> Void = { _, _ in }
     var onEditingChanged: (Bool) -> Void = { _ in }
@@ -51,7 +50,6 @@ struct LocalFloorPlanCanvas: UIViewRepresentable {
         importPresentation?.canvas = view
         view.onStroke = onStroke
         view.onPoint = onPoint
-        view.onScanStartTap = onScanStartTap
         view.onCheckpointTap = onCheckpointTap
         view.onScaleMarkerMoved = onScaleMarkerMoved
         view.onEditingChanged = onEditingChanged
@@ -80,7 +78,6 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
                                       UIGestureRecognizerDelegate {
     var onStroke: ((LocalEditStroke) -> Void)?
     var onPoint: ((LocalPlanPoint) -> Void)?
-    var onScanStartTap: (() -> Void)?
     var onCheckpointTap: ((Int) -> Void)?
     var onScaleMarkerMoved: ((LocalScaleMarker, LocalPlanPoint) -> Void)?
     var onEditingChanged: ((Bool) -> Void)?
@@ -217,7 +214,6 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
     func tearDown() {
         onStroke = nil
         onPoint = nil
-        onScanStartTap = nil
         onCheckpointTap = nil
         onScaleMarkerMoved = nil
         onEditingChanged = nil
@@ -298,7 +294,7 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
         canvasView.isUserInteractionEnabled = isDrawing && !inputSuspended
         placementTap.isEnabled = !inputSuspended
             && (tool == .pen || tool == .scaleA || tool == .scaleB || tool == .alignmentPoint
-                || (tool == .move && (onScanStartTap != nil || onCheckpointTap != nil)))
+                || (tool == .move && onCheckpointTap != nil))
         scaleDrag.isEnabled = !inputSuspended && (tool == .scaleA || tool == .scaleB)
         scrollView.isUserInteractionEnabled = !inputSuspended
         scrollView.panGestureRecognizer.minimumNumberOfTouches = tool == .move ? 1 : 2
@@ -388,13 +384,6 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
               position.y <= imageSize.height, imageSize.width > 0, imageSize.height > 0 else { return }
         if tool == .move {
             let threshold = 28 / max(0.001, scrollView.zoomScale)
-            if let onScanStartTap, let start = markersView.scaleA {
-                let startPosition = CGPoint(x: start.x * imageSize.width, y: start.y * imageSize.height)
-                if hypot(startPosition.x - position.x, startPosition.y - position.y) <= threshold {
-                    onScanStartTap()
-                    return
-                }
-            }
             let nearest = markersView.checkpointMarkers.enumerated().compactMap { index, marker -> (Int, CGFloat)? in
                 let markerPosition = CGPoint(x: marker.point.x * imageSize.width, y: marker.point.y * imageSize.height)
                 let distance = hypot(markerPosition.x - position.x, markerPosition.y - position.y)

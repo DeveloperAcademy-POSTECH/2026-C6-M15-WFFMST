@@ -157,6 +157,7 @@ final class FloorPlanDraftStore {
     var canRedoWorldMapPoint: Bool { step == .alignment && !undoneWorldMapPoints.isEmpty }
     var canCaptureStartAlignment: Bool {
         step == .scanning && worldMapStart == nil && frameState.tracking.canCapture
+            && worldMapScanner != nil
     }
     var completedScanCheckpointCount: Int {
         completedScanCheckpointIndices.count

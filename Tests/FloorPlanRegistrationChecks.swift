@@ -667,7 +667,17 @@ enum FloorPlanRegistrationChecks {
         draft.placePoint(LocalPlanPoint(x: 0.2, y: 0.1))
         draft.placePoint(LocalPlanPoint(x: 0.4, y: 0.4))
         await draft.startWorldMapScan()
+
+        scanner.setCaptureTracking(.excessiveMotion)
         draft.captureWorldMapStart()
+        precondition(draft.worldMapStart == nil)
+        precondition(draft.frameState.tracking == .excessiveMotion,
+                     "출발 위치도 버튼 탭 순간 최신 추적 상태를 다시 확인해야 한다")
+
+        scanner.setCaptureTracking(.normal)
+        scanner.emitFrame(tracking: .normal)
+        draft.captureWorldMapStart()
+        precondition(draft.worldMapStart != nil)
         precondition(draft.selectScanCheckpoint(at: 0) == .selected)
         precondition(draft.canCaptureSelectedCheckpoint)
 

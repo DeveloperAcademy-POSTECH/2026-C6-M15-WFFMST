@@ -20,8 +20,6 @@ struct FloorPlanCreateView: View {
     )
     @State private var showsNameValidation = false
     @State private var showsExitConfirmation = false
-    @State private var scanFeedbackMessage: String?
-    @State private var scanFeedbackID = UUID()
     @State private var registrationBrushMode: LocalEditMode = .block
     @State private var editingCanvasDisplayScale: CGFloat = 1
     @FocusState private var focusedField: InputField?
@@ -370,7 +368,6 @@ struct FloorPlanCreateView: View {
                     layers: FloorPlanLayerDisplay(planOpacity: 1, maskOpacity: 0),
                     onStroke: { _ in },
                     onPoint: { _ in },
-                    onScanStartTap: handleScanStartTap,
                     onCheckpointTap: handleScanMarkerTap
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -387,14 +384,6 @@ struct FloorPlanCreateView: View {
                 .padding(.leading, 175)
                 .padding(.trailing, DSSpacing.s40)
                 .padding(.top, DSSpacing.s40)
-
-            if let scanFeedbackMessage {
-                DSGuideToast(scanFeedbackMessage, type: .compact)
-                    .accessibilityIdentifier("floorPlan.scan.feedback")
-                    .padding(.leading, 175)
-                    .padding(.top, 152)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
 
             statusOverlay
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -1401,7 +1390,15 @@ struct FloorPlanCreateView: View {
                     .buttonStyle(.dsSecondary)
                     .accessibilityIdentifier("floorPlan.scan.previous")
 
-                    if store.completedScanCheckpointCount == store.scanCheckpoints.count {
+                    if store.worldMapStart == nil {
+                        Button(action: store.captureWorldMapStart) {
+                            Text("출발 위치 기록")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.dsPrimary)
+                        .disabled(!store.canCaptureStartAlignment)
+                        .accessibilityIdentifier("floorPlan.scan.captureStartLocation")
+                    } else if store.completedScanCheckpointCount == store.scanCheckpoints.count {
                         Button(action: {
                             Task { await store.saveWorldMap() }
                         }) {
@@ -1444,7 +1441,7 @@ struct FloorPlanCreateView: View {
             return store.frameState.tracking.message
         }
         if store.worldMapStart == nil {
-            return "출발점으로 이동해 방향 표시가 가리키는 곳을 바라본 후,\n도면의 출발점을 클릭해 스캔 정보를 저장합니다."
+            return "출발점으로 이동해 방향 표시가 가리키는 곳을 바라본 후,\n출발 위치 기록 버튼을 눌러주세요."
         }
         if store.selectedScanCheckpointIndex != nil {
             return "선택한 체크포인트의 실제 위치에서\n현재 위치 기록 버튼을 눌러주세요."
@@ -1464,42 +1461,12 @@ struct FloorPlanCreateView: View {
         }
     }
 
-    private func handleScanStartTap() {
-        guard store.worldMapStart == nil else {
-            showScanFeedback("출발 위치의 스캔 정보가 이미 저장되었습니다.")
-            return
-        }
-        guard store.frameState.tracking.canCapture else {
-            showScanFeedback(store.frameState.tracking.message)
-            return
-        }
-        store.captureWorldMapStart()
-        if store.worldMapStart != nil {
-            showScanFeedback("출발 위치와 방향을 저장했습니다. 이제 체크포인트로 이동해주세요.")
-        }
-    }
-
     private func handleScanMarkerTap(_ markerIndex: Int) {
         store.selectScanCheckpoint(at: markerIndex)
     }
 
     private func handleCheckpointCapture() {
         store.captureSelectedScanCheckpoint()
-    }
-
-    private func showScanFeedback(_ message: String) {
-        let feedbackID = UUID()
-        scanFeedbackID = feedbackID
-        withAnimation(.easeOut(duration: 0.2)) {
-            scanFeedbackMessage = message
-        }
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(2))
-            guard scanFeedbackID == feedbackID else { return }
-            withAnimation(.easeIn(duration: 0.2)) {
-                scanFeedbackMessage = nil
-            }
-        }
     }
 
     private var alignmentInstruction: String {
