@@ -807,11 +807,19 @@ private final class LocalFloorPlanMarkersView: UIView {
             width: diameter,
             height: diameter
         )
+        context.saveGState()
+        context.setShadow(
+            offset: CGSize(width: 0, height: 2 * unit),
+            blur: 4 * unit,
+            color: UIColor.black.withAlphaComponent(0.32).cgColor
+        )
         if checkpointAppearance == .plain {
             let asset = checkpoint.state == .planned
                 ? "InstructorScanCheckpointPlanned"
                 : "InstructorScanCheckpoint"
             UIImage(named: asset)?.draw(in: circle)
+            context.restoreGState()
+            drawCheckpointState(checkpoint.state, in: circle, unit: unit, context: context)
             return
         }
         let fillColor: UIColor = checkpoint.state == .completed
@@ -819,6 +827,7 @@ private final class LocalFloorPlanMarkersView: UIView {
             : .systemBlue
         context.setFillColor(fillColor.cgColor)
         context.fillEllipse(in: circle)
+        context.restoreGState()
         context.setStrokeColor(UIColor.white.withAlphaComponent(0.9).cgColor)
         context.setLineWidth(2 * unit)
         context.strokeEllipse(in: circle.insetBy(dx: unit, dy: unit))
@@ -836,5 +845,31 @@ private final class LocalFloorPlanMarkersView: UIView {
                 .paragraphStyle: paragraph
             ]
         )
+    }
+
+    private func drawCheckpointState(_ state: LocalScanCheckpointState,
+                                     in circle: CGRect, unit: CGFloat, context: CGContext) {
+        switch state {
+        case .planned:
+            return
+        case .selected:
+            context.setStrokeColor(UIColor.white.cgColor)
+            context.setLineWidth(3 * unit)
+            context.strokeEllipse(in: circle.insetBy(dx: -4 * unit, dy: -4 * unit))
+        case .completed:
+            context.saveGState()
+            context.setStrokeColor(UIColor.white.cgColor)
+            context.setLineWidth(3 * unit)
+            context.setLineCap(.round)
+            context.setLineJoin(.round)
+            context.move(to: CGPoint(x: circle.minX + circle.width * 0.28,
+                                     y: circle.minY + circle.height * 0.52))
+            context.addLine(to: CGPoint(x: circle.minX + circle.width * 0.44,
+                                        y: circle.minY + circle.height * 0.68))
+            context.addLine(to: CGPoint(x: circle.minX + circle.width * 0.74,
+                                        y: circle.minY + circle.height * 0.36))
+            context.strokePath()
+            context.restoreGState()
+        }
     }
 }

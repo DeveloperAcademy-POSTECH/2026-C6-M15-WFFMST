@@ -1478,35 +1478,11 @@ struct FloorPlanCreateView: View {
     }
 
     private func handleScanMarkerTap(_ markerIndex: Int) {
-        switch store.selectScanCheckpoint(at: markerIndex) {
-        case .selected:
-            break
-        case .startRequired:
-            showScanFeedback("먼저 출발 위치로 이동해 도면의 출발점을 탭해주세요.")
-        case .alreadyCaptured:
-            showScanFeedback("이미 스캔 정보를 저장한 체크포인트입니다.")
-        case .invalidCheckpoint:
-            showScanFeedback("선택한 체크포인트를 확인할 수 없습니다.")
-        }
+        store.selectScanCheckpoint(at: markerIndex)
     }
 
     private func handleCheckpointCapture() {
-        switch store.captureSelectedScanCheckpoint() {
-        case .captured:
-            showScanFeedback("체크포인트의 현재 위치를 기록했습니다.")
-        case .startRequired:
-            showScanFeedback("먼저 출발 위치로 이동해 도면의 출발점을 탭해주세요.")
-        case .selectionRequired:
-            showScanFeedback("도면에서 기록할 체크포인트를 선택해주세요.")
-        case .trackingUnavailable(let tracking):
-            showScanFeedback(tracking.message)
-        case .alreadyCaptured:
-            showScanFeedback("이미 현재 위치를 기록한 체크포인트입니다.")
-        case .invalidCheckpoint:
-            showScanFeedback("선택한 체크포인트를 확인할 수 없습니다.")
-        case .failed(let message):
-            showScanFeedback(message)
-        }
+        store.captureSelectedScanCheckpoint()
     }
 
     private func showScanFeedback(_ message: String) {
