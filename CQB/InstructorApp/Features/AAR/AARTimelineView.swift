@@ -9,7 +9,9 @@ struct AARTimelineView: View {
             AARPlaybackTrack(
                 value: aarStore.playbackPosition,
                 range: 0...aarStore.playbackDuration,
-                onChange: aarStore.setPlaybackPosition
+                soundEvents: aarStore.soundEvents,
+                onChange: aarStore.setPlaybackPosition,
+                onSelectSoundEvent: aarStore.jumpToSoundEvent
             )
             .frame(height: 44)
             .padding(.top, 21)
@@ -81,7 +83,9 @@ struct AARTimelineView: View {
 private struct AARPlaybackTrack: View {
     let value: Double
     let range: ClosedRange<Double>
+    let soundEvents: [AARSoundEvent]
     let onChange: (Double) -> Void
+    let onSelectSoundEvent: (AARSoundEvent) -> Void
 
     var body: some View {
         GeometryReader { geometry in
@@ -107,17 +111,57 @@ private struct AARPlaybackTrack: View {
                         updateValue(at: gesture.location.x, width: geometry.size.width)
                     }
             )
-        }
-        .accessibilityElement()
-        .accessibilityLabel("복기 시간 위치")
-        .accessibilityValue(timeLabel(value))
-        .accessibilityAdjustableAction { direction in
-            switch direction {
-            case .increment: onChange(value + 10)
-            case .decrement: onChange(value - 10)
-            @unknown default: break
+            .accessibilityElement()
+            .accessibilityLabel("복기 시간 위치")
+            .accessibilityValue(timeLabel(value))
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: onChange(value + 10)
+                case .decrement: onChange(value - 10)
+                @unknown default: break
+                }
+            }
+            .overlay(alignment: .leading) {
+                soundEventMarkers(width: geometry.size.width)
             }
         }
+    }
+
+    /// 재생바 위의 큰 소리 표시(Figma `iPad 06 · AAR` 노란 핀). 누르면 그 시각으로 이동한다.
+    /// 핀 끝(높이 29 중 28)이 재생바 아래 끝에 닿도록 44pt 누름 영역 가운데에서 11.5 올린다.
+    private func soundEventMarkers(width: CGFloat) -> some View {
+        ZStack(alignment: .leading) {
+            ForEach(visibleSoundEvents) { event in
+                Button {
+                    onSelectSoundEvent(event)
+                } label: {
+                    Image("AARSoundEventMarker")
+                        .renderingMode(.original)
+                        .resizable()
+                        .frame(width: 10, height: 29)
+                        .offset(y: -11.5)
+                        .frame(width: 44, height: 44)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .offset(x: markerOffset(for: event.time, width: width) - 22)
+                .accessibilityLabel("큰 소리 \(timeLabel(event.time)), 대원 \(event.participantIDs.count)명")
+                .accessibilityHint("이 시각으로 이동합니다.")
+                .accessibilityIdentifier("aar.soundEvent.\(Int(event.time * 1_000))")
+            }
+        }
+        .frame(maxHeight: .infinity, alignment: .leading)
+    }
+
+    private var visibleSoundEvents: [AARSoundEvent] {
+        guard range.upperBound > range.lowerBound else { return [] }
+        return soundEvents.filter { range.contains($0.time) }
+    }
+
+    private func markerOffset(for time: Double, width: CGFloat) -> CGFloat {
+        guard range.upperBound > range.lowerBound else { return 0 }
+        let fraction = (time - range.lowerBound) / (range.upperBound - range.lowerBound)
+        return CGFloat(fraction) * width
     }
 
     private var progress: Double {
@@ -146,4 +190,41 @@ private struct AARPlaybackTrack: View {
         .environment(AARStore())
         .frame(width: 1_366, height: AARLayout.timelineHeight)
         .preferredColorScheme(.dark)
+}
+
+#Preview("AAR 재생바 · 큰 소리 표시", traits: .landscapeLeft) {
+    AARSoundEventTrackPreview()
+        .preferredColorScheme(.dark)
+}
+
+/// 데모 영상(30초)과 같은 큰 소리 이벤트로 재생바 표시를 확인한다. 마커를 누르면 그 시각으로 이동한다.
+private struct AARSoundEventTrackPreview: View {
+    @State private var position = 10.0
+    private let events = [
+        AARSoundEvent(time: 6.20, participantIDs: ["1", "2", "3", "4"], isCorroborated: true),
+        AARSoundEvent(time: 14.80, participantIDs: ["2", "5", "6"], isCorroborated: true),
+        AARSoundEvent(time: 26.00, participantIDs: ["1", "4"], isCorroborated: true),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            AARPlaybackTrack(
+                value: position,
+                range: 0...30,
+                soundEvents: events,
+                onChange: { position = min(max($0, 0), 30) },
+                onSelectSoundEvent: { position = $0.time }
+            )
+            .frame(height: 44)
+
+            Text(String(format: "재생 위치 %.1f초", position))
+                .dsTextStyle(DSTypography.bodyRegular24)
+                .foregroundStyle(InstructorColor.aarContentPrimary)
+                .monospacedDigit()
+        }
+        .padding(.horizontal, AARLayout.timelineHorizontalPadding)
+        .padding(.vertical, 21)
+        .frame(width: 1_366, alignment: .leading)
+        .background(InstructorColor.aarPlayerSurface)
+    }
 }
