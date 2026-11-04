@@ -273,7 +273,7 @@ public struct SoundCandidate: Codable, Equatable, Sendable {
 | `schemaVersion` | `1` |
 | `identity` | Storage 경로의 식별자와 일치해야 한다 |
 | `detector` | 후보를 뽑은 감지 방식. `name`·`version`은 감지 패키지의 방식 이름과 버전, `settingsID`는 후보 기준값 묶음의 이름이다. `TrackAlgorithmIdentity`와 같은 역할이다 |
-| `analyzedRanges` | 실제로 소리를 분석한 구간(초). 시작 순으로 정렬하고 겹치지 않는다 |
+| `analyzedRanges` | 실제로 소리를 분석한 구간(초). 양 끝을 포함하는 닫힌 구간이다. 시작 순으로 정렬하고 겹치거나 끝이 맞닿지 않는다 |
 | `candidates[].time` | 소리가 급격히 커진 시각(초) |
 | `candidates[].peakLevelDBFS` | 후보 구간의 최고 음량(dBFS, 0 이하) |
 | `candidates[].decaySeconds` | 최고점 뒤 소리가 줄어드는 데 걸린 시간(초). 분석 구간 끝에서 잘려 잴 수 없으면 `nil` |
@@ -285,7 +285,12 @@ public struct SoundCandidate: Codable, Equatable, Sendable {
 - 마이크 권한이 없거나 전화 등으로 녹음이 끊긴 구간은 `analyzedRanges`에서 뺀다. 읽는 쪽은 분석 구간 밖을 "소리 없음"이 아니라 "분석 안 됨"으로 본다.
 - 대원 앱은 최종 판정보다 낮은 기준으로 후보를 넉넉히 남긴다. 임계값 적용, 기기 간 합의, 표시는 교관 앱이 맡는다. 기준이 바뀌어도 교관 앱만 고치면 지난 기록도 다시 판정할 수 있다.
 - `classifierScores`에서 모르는 키는 무시한다.
-- 근거 값을 더할 때는 선택 필드로 추가하고 `schemaVersion`을 유지한다. 기존 필드의 의미가 바뀌면 `schemaVersion`을 올린다. 읽는 쪽은 모르는 `schemaVersion`이면 후보가 없는 것으로 처리한다.
+- 근거 값을 더할 때는 선택 필드로 추가하고 `schemaVersion`을 유지한다. 기존 필드의 의미가 바뀌면 `schemaVersion`을 올린다.
+- `SoundCandidateDocument.validate()`가 다음을 확인한다. 쓰는 쪽은 올리기 전에, 읽는 쪽은 받은 뒤에 부른다.
+  - `schemaVersion`이 이 앱이 아는 버전이다. 아니면 `SoundCandidateValidationError.unsupportedSchema`이고, 읽는 쪽은 "분석 안 됨"으로 처리한다.
+  - `analyzedRanges`: 모든 값이 유한하고, 0 이상이며, 각 구간은 `start < end`, 시작 순으로 정렬된다. 다음 구간의 `start`는 앞 구간의 `end`보다 커야 한다(같으면 그 시각이 두 구간에 속한다). 어기면 `invalidRanges`.
+  - `candidates`: `time`이 유한하고 오름차순이며 분석 구간 안에 있다. `peakLevelDBFS`는 0 이하, `decaySeconds`는 없거나 0 이상, 분류기 점수는 0~1이다. 어기면 `invalidCandidates`.
+  - 모르는 버전과 달리 손상된 문서(`invalidRanges`, `invalidCandidates`, JSON 디코딩 실패, 다른 기록의 문서)는 "분석 안 됨"으로 숨기지 않는다. 오류로 알리고 다시 받는다.
 - 대원 앱은 `finishing` 동안 보정 결과·영상 조각과 함께 올리고 `done` 전에 끝낸다. 재시도해도 올리지 못하면 파일 없이 `done`으로 바꾼다. 후보 파일 때문에 기록이 `failed`가 되지 않는다.
 - 파일이 없는 기록도 유효하다. 이 기능 이전 기록, 마이크 권한 없음, 분석·업로드 실패가 여기에 해당한다. 교관 앱은 "분석 안 됨"으로 처리하고 동선·영상 재생은 그대로 연다.
 - 같은 기록에 다시 올리면 덮어쓴다. 파일 크기는 기록 파일 제한(20MB) 안이다. 후보가 수천 개여도 수백 KB 수준이다.

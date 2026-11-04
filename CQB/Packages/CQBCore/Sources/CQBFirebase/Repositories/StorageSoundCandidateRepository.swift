@@ -11,6 +11,7 @@ public struct StorageSoundCandidateRepository: SoundCandidateRepository {
     public init() {}
 
     public func upload(_ document: SoundCandidateDocument) async throws {
+        try document.validate()
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         try await StorageTransfer.upload(
@@ -27,10 +28,12 @@ public struct StorageSoundCandidateRepository: SoundCandidateRepository {
 }
 
 enum SoundCandidateFileValidation {
-    /// 받은 문서가 요청한 기록의 것인지 확인한다.
+    /// 받은 문서가 요청한 기록의 것이고 계약을 지키는지 확인한다.
+    /// 모르는 버전은 `SoundCandidateValidationError.unsupportedSchema`, 손상된 문서는 그 밖의 검증 오류로 알린다.
     static func decode(_ data: Data, for identity: TrackIdentity) throws -> SoundCandidateDocument {
         let document = try JSONDecoder().decode(SoundCandidateDocument.self, from: data)
         guard document.identity == identity else { throw RepositoryError.integrityMismatch }
+        try document.validate()
         return document
     }
 }

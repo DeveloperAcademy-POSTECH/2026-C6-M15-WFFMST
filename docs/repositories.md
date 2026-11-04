@@ -253,8 +253,16 @@ try await recordingRepository.updateRecording(
 // 교관 앱
 let result = try await trackResultRepository.download(recording.identity)
 
-// 후보 파일이 없으면(.notFound) 분석 안 된 기록으로 보고 동선·영상은 그대로 연다.
-let candidates = try? await soundCandidateRepository.download(recording.identity)
+// 파일이 없거나(.notFound) 이 앱이 모르는 새 형식이면 분석 안 된 기록으로 보고 동선·영상은 그대로 연다.
+// 네트워크·권한 오류, 손상된 파일은 분석 안 됨이 아니다. 오류로 알리고 다시 받는다.
+let candidates: SoundCandidateDocument?
+do {
+    candidates = try await soundCandidateRepository.download(recording.identity)
+} catch RepositoryError.notFound {
+    candidates = nil
+} catch SoundCandidateValidationError.unsupportedSchema {
+    candidates = nil
+}
 
 let directory = FileManager.default.temporaryDirectory
     .appending(path: recording.identity.recordingID.uuidString)
@@ -314,9 +322,16 @@ do {
 
 ### SoundCandidateRepository
 
-- `upload`: 경로는 `document.identity`로 정한다. 같은 기록에 다시 올리면 덮어쓴다. 20MB를 넘으면 `RepositoryError.fileTooLarge`.
-- `download`: 파일이 없으면 `RepositoryError.notFound`. 이 기능 이전 기록, 마이크 권한 없음, 분석·업로드 실패일 수 있으므로 오류가 아니라 "분석 안 됨"으로 처리한다. 기록이 `done`이 된 뒤에 부른다.
-- 받은 문서의 `identity`가 요청한 기록과 다르면 `RepositoryError.integrityMismatch`.
+- `upload`: 경로는 `document.identity`로 정한다. 같은 기록에 다시 올리면 덮어쓴다. 20MB를 넘으면 `RepositoryError.fileTooLarge`. 올리기 전에 `validate()`로 계약을 확인하고, 어기면 올리지 않고 `SoundCandidateValidationError`를 던진다.
+- `download`: 기록이 `done`이 된 뒤에 부른다. 실패는 다음처럼 나눠 처리한다.
+
+| 실패 | 의미 | 교관 앱 처리 |
+| --- | --- | --- |
+| `RepositoryError.notFound` | 파일 없음. 이 기능 이전 기록, 분석·업로드 실패 | 분석 안 됨 |
+| `SoundCandidateValidationError.unsupportedSchema` | 이 앱이 모르는 새 형식 | 분석 안 됨 |
+| `RepositoryError.integrityMismatch` | 다른 기록의 문서 | 오류로 알리고 다시 받기 |
+| `SoundCandidateValidationError.invalidRanges`·`invalidCandidates`, `DecodingError` | 손상된 문서 | 오류로 알리고 다시 받기 |
+| Firebase 오류 | 네트워크·권한 | 오류로 알리고 다시 받기 |
 - 형식과 시간축은 [데이터 계약](cqb-core-models.md#음향-후보)을 따른다. 최종 판정은 교관 앱이 한다.
 
 ### VideoChunkRepository
