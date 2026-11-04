@@ -176,7 +176,7 @@ final class FloorPlanDraftStore {
         return scanCheckpoints.indices.contains(selectedScanCheckpointIndex)
             && !completedScanCheckpointIndices.contains(selectedScanCheckpointIndex)
             && frameState.tracking.canCapture
-            && frameState.mapping == .mapped
+            && frameState.mapping.canCaptureCheckpoint
             && worldMapScanner != nil
     }
     var canSaveWorldMap: Bool {
@@ -662,7 +662,7 @@ final class FloorPlanDraftStore {
         guard let index = selectedScanCheckpointIndex else { return .selectionRequired }
         guard scanCheckpoints.indices.contains(index) else { return .invalidCheckpoint }
         guard !completedScanCheckpointIndices.contains(index) else { return .alreadyCaptured }
-        guard frameState.mapping == .mapped else {
+        guard frameState.mapping.canCaptureCheckpoint else {
             return .mappingUnavailable(frameState.mapping)
         }
         guard let worldMapScanner else { return .failed("카메라 스캔을 사용할 수 없습니다.") }

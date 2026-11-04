@@ -40,6 +40,13 @@ nonisolated struct LocalScanCheckpointMarker: Equatable, Sendable {
 nonisolated enum LocalWorldMapMappingState: Equatable, Sendable {
     case unavailable, limited, extending, mapped
 
+    var canCaptureCheckpoint: Bool {
+        switch self {
+        case .extending, .mapped: true
+        case .unavailable, .limited: false
+        }
+    }
+
     var message: String {
         switch self {
         case .unavailable: "카메라 준비 중 · 잠시만 기다려 주세요"

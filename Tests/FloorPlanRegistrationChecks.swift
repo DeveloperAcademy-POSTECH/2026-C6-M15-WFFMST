@@ -748,13 +748,14 @@ enum FloorPlanRegistrationChecks {
                      "매핑 부족 후 선택을 유지해 다시 기록할 수 있어야 한다")
 
         scanner.emitFrame(tracking: .normal, mapping: .extending)
-        precondition(!draft.canCaptureSelectedCheckpoint)
-        precondition(draft.captureSelectedScanCheckpoint() == .mappingUnavailable(.extending))
-
-        scanner.emitFrame(tracking: .normal, mapping: .mapped)
         precondition(draft.canCaptureSelectedCheckpoint)
         precondition(draft.captureSelectedScanCheckpoint() == .captured)
         precondition(draft.completedScanCheckpointIndices == [0])
+
+        precondition(!LocalWorldMapMappingState.unavailable.canCaptureCheckpoint)
+        precondition(!LocalWorldMapMappingState.limited.canCaptureCheckpoint)
+        precondition(LocalWorldMapMappingState.extending.canCaptureCheckpoint)
+        precondition(LocalWorldMapMappingState.mapped.canCaptureCheckpoint)
 
         precondition(LocalWorldMapMappingState.unavailable.message ==
                      "카메라 준비 중 · 잠시만 기다려 주세요")
