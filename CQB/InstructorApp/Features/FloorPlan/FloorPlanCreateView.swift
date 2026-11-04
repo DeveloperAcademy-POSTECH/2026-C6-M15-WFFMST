@@ -20,6 +20,8 @@ struct FloorPlanCreateView: View {
     )
     @State private var showsNameValidation = false
     @State private var showsExitConfirmation = false
+    @State private var dismissedAlignmentGuides: Set<String> = []
+    @State private var dismissedScanningGuides: Set<String> = []
     @State private var registrationBrushMode: LocalEditMode = .block
     @State private var editingCanvasDisplayScale: CGFloat = 1
     @FocusState private var focusedField: InputField?
@@ -337,11 +339,11 @@ struct FloorPlanCreateView: View {
                 .padding(.top, DSSpacing.s40)
                 .padding(.leading, DSSpacing.s40)
 
-            DSGuideToast(alignmentGuideMessage)
-                .frame(maxWidth: 690, minHeight: 100)
-                .padding(.leading, 175)
-                .padding(.trailing, DSSpacing.s40)
-                .padding(.top, DSSpacing.s40)
+            dismissibleGuide(
+                alignmentGuideMessage,
+                dismissedMessages: $dismissedAlignmentGuides,
+                accessibilityIdentifier: "floorPlan.alignment.guide"
+            )
 
             alignmentHistoryControls
                 .padding(.leading, 40)
@@ -391,11 +393,11 @@ struct FloorPlanCreateView: View {
                 .padding(.top, DSSpacing.s40)
                 .padding(.leading, DSSpacing.s40)
 
-            DSGuideToast(scanningGuideMessage)
-                .frame(maxWidth: 690, minHeight: 100)
-                .padding(.leading, 175)
-                .padding(.trailing, DSSpacing.s40)
-                .padding(.top, DSSpacing.s40)
+            dismissibleGuide(
+                scanningGuideMessage,
+                dismissedMessages: $dismissedScanningGuides,
+                accessibilityIdentifier: "floorPlan.scanning.guide"
+            )
 
             statusOverlay
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -1461,6 +1463,23 @@ struct FloorPlanCreateView: View {
         return "방의 입구나 모서리, 복도의 연결부 등 공간의 특징점이 될만한 지점을 터치해 표시해주세요."
     }
 
+    @ViewBuilder
+    private func dismissibleGuide(
+        _ message: String,
+        dismissedMessages: Binding<Set<String>>,
+        accessibilityIdentifier: String
+    ) -> some View {
+        if !dismissedMessages.wrappedValue.contains(message) {
+            FloorPlanGuide(message: message, accessibilityIdentifier: accessibilityIdentifier) {
+                dismissedMessages.wrappedValue.insert(message)
+            }
+            .frame(maxWidth: 690, minHeight: 100)
+            .padding(.leading, 175)
+            .padding(.trailing, DSSpacing.s40)
+            .padding(.top, DSSpacing.s40)
+        }
+    }
+
     private var scanningGuideMessage: String {
         if !store.frameState.tracking.canCapture {
             return store.frameState.tracking.message
@@ -1579,6 +1598,47 @@ struct FloorPlanCreateView: View {
     }()
 }
 
+private struct FloorPlanGuide: View {
+    let message: String
+    let accessibilityIdentifier: String
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: DSSpacing.s20) {
+            Image(systemName: "info.circle")
+                .font(.system(size: 20, weight: .semibold))
+                .accessibilityHidden(true)
+
+            Text(message)
+                .dsTextStyle(DSTypography.headingSemiBold20)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 20, weight: .semibold))
+                    .frame(width: DSSize.compactControlHeight, height: DSSize.compactControlHeight)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("안내 메시지 닫기")
+            .accessibilityIdentifier("\(accessibilityIdentifier).dismiss")
+        }
+        .foregroundStyle(DSColor.contentPrimary)
+        .padding(.horizontal, DSSpacing.s32)
+        .padding(.vertical, DSSpacing.s16)
+        .frame(minHeight: 100)
+        .background(DSColor.surfaceSecondary)
+        .clipShape(Capsule())
+        .overlay {
+            Capsule().stroke(DSColor.surfaceSelected, lineWidth: 1)
+        }
+        .dsFloatingShadow()
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(accessibilityIdentifier)
+    }
+}
+
 private struct FloorPlanSavingOverlay: View {
     var body: some View {
         ZStack {
@@ -1648,6 +1708,29 @@ private struct FloorPlanSavingGlassStyle: ViewModifier {
 }
 
 #if DEBUG
+#Preview("출발점 선택 · 안내 닫기", traits: .landscapeLeft) {
+    let draft = FloorPlanDraftStore.makeScanningPreview()
+    let _ = draft.goBackCreationStep()
+    let _ = draft.resetWorldMapReference()
+    let app = InstructorStore(floorPlanDraft: draft)
+    return FloorPlanCreateView()
+        .environment(app)
+        .environment(draft)
+        .frame(width: 1_366, height: 1_024)
+        .preferredColorScheme(.dark)
+}
+
+#Preview("체크포인트 지정 · 안내 닫기", traits: .landscapeLeft) {
+    let draft = FloorPlanDraftStore.makeScanningPreview()
+    let _ = draft.goBackCreationStep()
+    let app = InstructorStore(floorPlanDraft: draft)
+    return FloorPlanCreateView()
+        .environment(app)
+        .environment(draft)
+        .frame(width: 1_366, height: 1_024)
+        .preferredColorScheme(.dark)
+}
+
 #Preview("AR 출발점 · 기록 전", traits: .landscapeLeft) {
     let draft = FloorPlanDraftStore.makeScanningPreview(hasCapturedStart: false)
     let app = InstructorStore(floorPlanDraft: draft)
