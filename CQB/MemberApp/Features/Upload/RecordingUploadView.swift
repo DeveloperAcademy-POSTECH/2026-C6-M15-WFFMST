@@ -79,7 +79,6 @@ struct RecordingUploadView: View {
             }
         }
         .foregroundStyle(DSColor.contentPrimary)
-        .ignoresSafeArea(.container, edges: .horizontal)
         .background(DSColor.backgroundPrimary.ignoresSafeArea())
         .alert("업로드를 종료할까요?", isPresented: $showsAbandonConfirmation) {
             Button("업로드 종료", role: .destructive) { Task { await onAbandon() } }
