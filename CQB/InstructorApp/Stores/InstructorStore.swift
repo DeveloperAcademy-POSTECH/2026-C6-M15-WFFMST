@@ -110,6 +110,8 @@ final class InstructorStore {
     private(set) var isEndingSession = false
     private(set) var sessionEndError: String?
     private(set) var trainingStartedAt: Date?
+    /// 서버 종료 성공을 앱이 확인한 시각. 결과 준비 중에는 이 시각으로 훈련 시간을 고정한다.
+    private(set) var trainingEndedAt: Date?
     private(set) var isStartingTraining = false
     private(set) var isFinishingTraining = false
     private(set) var trainingActionError: String?
@@ -224,7 +226,7 @@ final class InstructorStore {
     }
     func trainingElapsed(at now: Date) -> String? {
         guard trainingStartedAt != nil else { return nil }
-        return formattedTrainingElapsed(at: now)
+        return formattedTrainingElapsed(at: trainingEndedAt ?? now)
     }
     var aarParticipants: [InstructorParticipant] {
         participants.filter { aarParticipantIDs.contains($0.id) }
@@ -548,6 +550,7 @@ final class InstructorStore {
         sessionCreationError = nil
         sessionEndError = nil
         trainingStartedAt = nil
+        trainingEndedAt = nil
         participants = []
         currentSession = nil
 
@@ -726,6 +729,7 @@ final class InstructorStore {
         resetAARPresentationState()
         currentSession = nil
         trainingStartedAt = nil
+        trainingEndedAt = nil
         playbackPosition = 331
         isReviewingTrainingHistory = false
         phase = .home
@@ -932,6 +936,7 @@ final class InstructorStore {
                 self.participants = candidates
                 // 쓰기 성공은 확인했지만 시작 시각은 후속 서버 스냅샷으로만 채운다.
                 self.trainingStartedAt = nil
+                self.trainingEndedAt = nil
                 self.currentSession = Self.session(session, with: .running)
                 self.phase = .trainingInProgress
                 self.startObservingSession(id: session.id)
@@ -980,8 +985,10 @@ final class InstructorStore {
 
     private func enterResultsPreparation(for sessionID: UUID) {
         guard phase == .trainingInProgress, let session = currentSession, session.id == sessionID else { return }
+        let endedAt = Date.now
+        trainingEndedAt = endedAt
         currentSession = Self.session(session, with: .ended)
-        saveTrainingHistory(for: session, endedAt: .now)
+        saveTrainingHistory(for: session, endedAt: endedAt)
         stopObservingSession()
         trainingActionError = nil
         phase = .resultsPreparation

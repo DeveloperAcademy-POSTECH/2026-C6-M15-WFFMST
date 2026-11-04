@@ -84,7 +84,8 @@ struct RootView: View {
         case .floorPlanEditing: FloorPlanCreateView()
         case .sessionCreation: TrainingSessionCreateView()
         case .teamReadiness: TeamReadinessView()
-        case .trainingInProgress, .resultsPreparation: TrainingInProgressView()
+        case .trainingInProgress: TrainingInProgressView()
+        case .resultsPreparation: TrainingResultsPreparationView()
         case .aar: AARView()
         case .aarCompleted: AARCompletedView()
         }
