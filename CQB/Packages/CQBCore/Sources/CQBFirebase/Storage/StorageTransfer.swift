@@ -54,8 +54,16 @@ enum StorageTransfer {
         do {
             return try await ref.data(maxSize: maxBytes)
         } catch {
-            throw mapNotFound(error)
+            throw mapDownloadError(error)
         }
+    }
+
+    /// SDK가 데이터를 반환하기 전에 감지한 다운로드 크기 초과도 앱의 용량 오류로 전달한다.
+    static func mapDownloadError(_ error: Error) -> Error {
+        if let storageError = error as? StorageError, case .downloadSizeExceeded = storageError {
+            return RepositoryError.fileTooLarge
+        }
+        return mapNotFound(error)
     }
 
     /// 없는 파일 에러를 앱이 아는 `RepositoryError.notFound`로 바꾼다.

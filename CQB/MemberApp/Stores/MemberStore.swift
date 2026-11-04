@@ -235,7 +235,9 @@ final class MemberStore {
                         let files = try await worldMapFileRepository.download(reference)
                         loadedWorldMap = try await MemberWorldMapLoader.load(files: files, reference: reference)
                     } else { loadedWorldMap = nil }
-                } catch { throw SessionWorldMapLoadFailure() }
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch { throw SessionWorldMapLoadFailure(underlying: error) }
                 let member = Member(
                     id: memberID,
                     sessionID: session.id,
@@ -255,8 +257,10 @@ final class MemberStore {
                 phase = loadedWorldMap == nil ? .setup : .waiting
                 observeSession(id: session.id)
                 startReadinessHeartbeat()
-            } catch is SessionWorldMapLoadFailure {
-                errorMessage = "이 세션의 공간 정보를 불러오지 못했습니다. 네트워크 연결을 확인하고 다시 참가해주세요."
+            } catch is CancellationError {
+                // 취소된 복원 작업은 참가 실패 안내를 표시하지 않는다.
+            } catch let failure as SessionWorldMapLoadFailure {
+                errorMessage = Self.worldMapLoadMessage(for: failure.underlying)
             } catch is SessionFloorPlanLoadFailure {
                 errorMessage = "이 세션의 도면을 불러오지 못했습니다. 네트워크 연결을 확인하고 다시 시도해주세요."
             } catch let error as RepositoryError {
@@ -274,7 +278,23 @@ final class MemberStore {
         }
     }
 
-    private struct SessionWorldMapLoadFailure: Error {}
+    private struct SessionWorldMapLoadFailure: Error {
+        let underlying: Error
+    }
+
+    private static func worldMapLoadMessage(for error: Error) -> String {
+        if let loadError = error as? MemberWorldMapLoadError { return loadError.localizedDescription }
+        switch error as? RepositoryError {
+        case .integrityMismatch:
+            return "이 세션의 공간 정보가 손상되었거나 도면과 일치하지 않습니다. 교관에게 공간 스캔을 확인해 달라고 요청해주세요."
+        case .fileTooLarge:
+            return "이 세션의 공간 정보가 허용 용량을 초과했습니다. 교관에게 공간 스캔을 확인해 달라고 요청해주세요."
+        case .notFound:
+            return "이 세션의 공간 정보 파일을 찾을 수 없습니다. 교관에게 공간 스캔을 확인해 달라고 요청해주세요."
+        default:
+            return "이 세션의 공간 정보를 불러오지 못했습니다. 네트워크 연결을 확인하고 다시 참가해주세요."
+        }
+    }
 
     func configurePositioning(setup: WorldMapSetup?) {
         cancelRelocalizationTimer()
