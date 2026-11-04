@@ -202,7 +202,12 @@ struct AARMovementView: View {
                 .frame(width: slotNumber == nil ? 26 : 48, height: slotNumber == nil ? 26 : 48)
                 .overlay {
                     Circle()
-                        .strokeBorder(InstructorColor.aarContentPrimary, lineWidth: slotNumber == nil ? 2 : 0)
+                        .strokeBorder(
+                            slotNumber == nil
+                                ? InstructorColor.aarContentPrimary
+                                : InstructorColor.aarParticipantSelectedBorder,
+                            lineWidth: 1
+                        )
                 }
 
             if let slotNumber {

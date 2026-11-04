@@ -89,6 +89,7 @@ enum InstructorColor {
     static let aarPanelLabel = DSPalette.Gray.g200
     static let aarPlaceholderText = DSPalette.Gray.g400
     static let aarParticipantMarker = DSPalette.Gray.g600
+    static let aarParticipantSelectedBorder = DSPalette.Primary.p300
     static let aarFloorPlanOverlay = DSPalette.Gray.g700.opacity(0.2)
     static let aarTimelineTrack = Color(
         red: 77.0 / 255.0,
