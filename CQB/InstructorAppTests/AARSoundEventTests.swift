@@ -59,7 +59,8 @@ final class AARSoundEventStoreTests: XCTestCase {
         XCTAssertEqual(aarStore.soundEvents.map(\.participantIDs.count), [4, 3, 2])
 
         try await waitUntil { aarStore.playbackDuration > 0 }
-        aarStore.jumpToSoundEvent(aarStore.soundEvents[1])
+        let event = try XCTUnwrap(aarStore.soundEvents.dropFirst().first)
+        aarStore.jumpToSoundEvent(event)
         XCTAssertEqual(aarStore.playbackPosition, 14.80, accuracy: 0.001, "마커 시각으로 바로 이동")
 
         aarStore.reset()
@@ -94,14 +95,22 @@ final class AARSoundEventStoreTests: XCTestCase {
         XCTAssertTrue(didCancel, "reset하면 후보 다운로드를 취소한다")
     }
 
-    private func waitUntil(_ condition: () -> Bool) async throws {
+    /// 조건이 3초 안에 맞지 않으면 오류를 던져 테스트를 멈춘다. 이어서 배열을 읽다가 범위 초과로 죽지 않게 한다.
+    private func waitUntil(
+        _ condition: () -> Bool,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async throws {
         for _ in 0..<300 {
             if condition() { return }
             try await Task.sleep(for: .milliseconds(10))
         }
-        XCTFail("시간 내 상태 도달 실패")
+        XCTFail("시간 내 상태 도달 실패", file: file, line: line)
+        throw WaitTimeout()
     }
 }
+
+private struct WaitTimeout: Error {}
 
 /// 취소될 때까지 끝나지 않는 후보 다운로드.
 private actor HangingSoundCandidateLoader: AARSoundCandidateLoading {
