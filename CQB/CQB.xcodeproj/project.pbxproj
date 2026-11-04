@@ -57,6 +57,7 @@
 				"docs/issue-102-blocked-region-autofill.md",
 				"docs/issue-126-training-history.md",
 				"docs/issue-168-sound-events.md",
+				"docs/issue-192-real-sound-candidates.md",
 				"docs/issue-142-hifi-spec.md",
 				docs/README.md,
 			);
