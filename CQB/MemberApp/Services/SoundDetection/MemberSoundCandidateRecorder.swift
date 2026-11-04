@@ -91,7 +91,7 @@ nonisolated final class MemberSoundCandidateRecorder: @unchecked Sendable {
         let rangeStart = max(0, current.hostStart - recordingStart)
         let rangeEnd = current.hostEnd - recordingStart
         guard rangeEnd > rangeStart else { return }
-        ranges.append(SoundTimeRange(start: rangeStart, end: rangeEnd))
+        ranges = Self.appending(SoundTimeRange(start: rangeStart, end: rangeEnd), to: ranges)
         for onset in closed.onsets {
             let time = current.hostStart + onset.audioSeconds - recordingStart
             guard time >= rangeStart, time <= rangeEnd else { continue }
@@ -103,6 +103,14 @@ nonisolated final class MemberSoundCandidateRecorder: @unchecked Sendable {
                 classifierScores: Self.scores(at: probe, windows: closed.windows, labels: config.labels)
             ))
         }
+    }
+
+    /// 구간을 끝에 붙인다. 앞 구간과 끝이 맞닿거나 겹치면 하나로 합친다.
+    /// 포맷이 바뀌거나 끊김 알림만 오고 버퍼는 이어질 때 새 구간이 앞 구간 끝에서 시작한다.
+    /// 구간은 양 끝을 포함하므로 그대로 두면 같은 시각이 두 구간에 속해 계약 검증에 걸린다(#178).
+    static func appending(_ range: SoundTimeRange, to ranges: [SoundTimeRange]) -> [SoundTimeRange] {
+        guard let last = ranges.last, range.start <= last.end else { return ranges + [range] }
+        return ranges.dropLast() + [SoundTimeRange(start: last.start, end: max(last.end, range.end))]
     }
 
     /// 후보 직후 시점을 담은 분류기 창들에서 라벨별 최고 점수. `FusionJudge`와 같은 시점 규칙이다.

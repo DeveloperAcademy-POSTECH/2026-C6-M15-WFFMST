@@ -90,6 +90,50 @@ final class MemberSoundCandidateRecorderTests: XCTestCase {
         XCTAssertEqual(result.analyzedRanges.count, 2)
     }
 
+    func testInterruptionWithoutGapKeepsOneValidRange() async throws {
+        let recorder = MemberSoundCandidateRecorder()
+        recorder.begin(recordingStart: recordingStart)
+        append(makeSignal(seconds: 1, impulseAt: nil), startingAt: recordingStart, to: recorder)
+        // 끊김 알림만 오고 버퍼는 끊기지 않고 이어진다. 새 구간이 앞 구간 끝에서 시작한다.
+        recorder.interrupt()
+        append(makeSignal(seconds: 1, impulseAt: 0.5), startingAt: recordingStart + 1, to: recorder)
+
+        let finished = await recorder.finish()
+        let result = try XCTUnwrap(finished)
+
+        XCTAssertEqual(result.analyzedRanges.count, 1)
+        XCTAssertEqual(result.analyzedRanges[0].start, 0, accuracy: 0.001)
+        XCTAssertEqual(result.analyzedRanges[0].end, 2, accuracy: 0.01)
+        let document = SoundCandidateDocument(
+            identity: TrackIdentity(sessionID: UUID(), memberID: UUID(), recordingID: UUID()),
+            detector: MemberSoundCandidateRecorder.detector,
+            analyzedRanges: result.analyzedRanges,
+            candidates: result.candidates
+        )
+        XCTAssertNoThrow(try document.validate(), "맞닿는 구간은 합쳐 업로드 검증을 통과한다")
+    }
+
+    func testAppendingMergesTouchingOrOverlappingRanges() {
+        let ranges = [SoundTimeRange(start: 0, end: 10)]
+
+        XCTAssertEqual(
+            MemberSoundCandidateRecorder.appending(SoundTimeRange(start: 10, end: 20), to: ranges),
+            [SoundTimeRange(start: 0, end: 20)]
+        )
+        XCTAssertEqual(
+            MemberSoundCandidateRecorder.appending(SoundTimeRange(start: 9.98, end: 15), to: ranges),
+            [SoundTimeRange(start: 0, end: 15)]
+        )
+        XCTAssertEqual(
+            MemberSoundCandidateRecorder.appending(SoundTimeRange(start: 12, end: 15), to: ranges),
+            [SoundTimeRange(start: 0, end: 10), SoundTimeRange(start: 12, end: 15)]
+        )
+        XCTAssertEqual(
+            MemberSoundCandidateRecorder.appending(SoundTimeRange(start: 1, end: 2), to: []),
+            [SoundTimeRange(start: 1, end: 2)]
+        )
+    }
+
     func testNoMicrophoneGivesEmptyResult() async throws {
         let recorder = MemberSoundCandidateRecorder()
         recorder.begin(recordingStart: recordingStart)
