@@ -252,12 +252,18 @@ struct FloorPlanCreateView: View {
                 .padding(.top, DSSpacing.s40)
                 .padding(.leading, DSSpacing.s40)
 
-            dismissibleGuide(
-                editingGuideMessage,
-                dismissedMessages: $dismissedEditingGuides,
-                accessibilityIdentifier: "floorPlan.editing.guide",
-                maximumWidth: store.editorMode == .pen ? 734 : 690
-            )
+            if !dismissedEditingGuides.contains(editingGuideMessage) {
+                DSGuideToast(
+                    editingGuideMessage,
+                    onDismiss: { dismissedEditingGuides.insert(editingGuideMessage) },
+                    dismissAccessibilityIdentifier: "floorPlan.editing.guide.dismiss"
+                )
+                .accessibilityIdentifier("floorPlan.editing.guide")
+                .frame(maxWidth: store.editorMode == .pen ? 734 : 690, minHeight: 100)
+                .padding(.leading, 175)
+                .padding(.trailing, DSSpacing.s40)
+                .padding(.top, DSSpacing.s40)
+            }
 
             editingHistoryControls
                 .padding(.leading, 40)
@@ -349,11 +355,18 @@ struct FloorPlanCreateView: View {
                 .padding(.top, DSSpacing.s40)
                 .padding(.leading, DSSpacing.s40)
 
-            dismissibleGuide(
-                alignmentGuideMessage,
-                dismissedMessages: $dismissedAlignmentGuides,
-                accessibilityIdentifier: "floorPlan.alignment.guide"
-            )
+            if !dismissedAlignmentGuides.contains(alignmentGuideMessage) {
+                DSGuideToast(
+                    alignmentGuideMessage,
+                    onDismiss: { dismissedAlignmentGuides.insert(alignmentGuideMessage) },
+                    dismissAccessibilityIdentifier: "floorPlan.alignment.guide.dismiss"
+                )
+                .accessibilityIdentifier("floorPlan.alignment.guide")
+                .frame(maxWidth: 690, minHeight: 100)
+                .padding(.leading, 175)
+                .padding(.trailing, DSSpacing.s40)
+                .padding(.top, DSSpacing.s40)
+            }
 
             alignmentHistoryControls
                 .padding(.leading, 40)
@@ -403,11 +416,18 @@ struct FloorPlanCreateView: View {
                 .padding(.top, DSSpacing.s40)
                 .padding(.leading, DSSpacing.s40)
 
-            dismissibleGuide(
-                scanningGuideMessage,
-                dismissedMessages: $dismissedScanningGuides,
-                accessibilityIdentifier: "floorPlan.scanning.guide"
-            )
+            if !dismissedScanningGuides.contains(scanningGuideMessage) {
+                DSGuideToast(
+                    scanningGuideMessage,
+                    onDismiss: { dismissedScanningGuides.insert(scanningGuideMessage) },
+                    dismissAccessibilityIdentifier: "floorPlan.scanning.guide.dismiss"
+                )
+                .accessibilityIdentifier("floorPlan.scanning.guide")
+                .frame(maxWidth: 690, minHeight: 100)
+                .padding(.leading, 175)
+                .padding(.trailing, DSSpacing.s40)
+                .padding(.top, DSSpacing.s40)
+            }
 
             statusOverlay
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -1484,24 +1504,6 @@ struct FloorPlanCreateView: View {
         }
     }
 
-    @ViewBuilder
-    private func dismissibleGuide(
-        _ message: String,
-        dismissedMessages: Binding<Set<String>>,
-        accessibilityIdentifier: String,
-        maximumWidth: CGFloat = 690
-    ) -> some View {
-        if !dismissedMessages.wrappedValue.contains(message) {
-            FloorPlanGuide(message: message, accessibilityIdentifier: accessibilityIdentifier) {
-                dismissedMessages.wrappedValue.insert(message)
-            }
-            .frame(maxWidth: maximumWidth, minHeight: 100)
-            .padding(.leading, 175)
-            .padding(.trailing, DSSpacing.s40)
-            .padding(.top, DSSpacing.s40)
-        }
-    }
-
     private var scanningGuideMessage: String {
         if !store.frameState.tracking.canCapture {
             return store.frameState.tracking.message
@@ -1618,47 +1620,6 @@ struct FloorPlanCreateView: View {
         DSFonts.register()
         return .custom("NotoSansKR-Medium", size: 16, relativeTo: .body)
     }()
-}
-
-private struct FloorPlanGuide: View {
-    let message: String
-    let accessibilityIdentifier: String
-    let onDismiss: () -> Void
-
-    var body: some View {
-        HStack(spacing: DSSpacing.s20) {
-            Image(systemName: "info.circle")
-                .font(.system(size: 20, weight: .semibold))
-                .accessibilityHidden(true)
-
-            Text(message)
-                .dsTextStyle(DSTypography.headingSemiBold20)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            Button(action: onDismiss) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 20, weight: .semibold))
-                    .frame(width: DSSize.compactControlHeight, height: DSSize.compactControlHeight)
-                    .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("안내 메시지 닫기")
-            .accessibilityIdentifier("\(accessibilityIdentifier).dismiss")
-        }
-        .foregroundStyle(DSColor.contentPrimary)
-        .padding(.horizontal, DSSpacing.s32)
-        .padding(.vertical, DSSpacing.s16)
-        .frame(minHeight: 100)
-        .background(DSColor.surfaceSecondary)
-        .clipShape(Capsule())
-        .overlay {
-            Capsule().stroke(DSColor.surfaceSelected, lineWidth: 1)
-        }
-        .dsFloatingShadow()
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier(accessibilityIdentifier)
-    }
 }
 
 private struct FloorPlanSavingOverlay: View {
