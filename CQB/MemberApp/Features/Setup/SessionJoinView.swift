@@ -6,6 +6,7 @@ struct SessionJoinView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var pin: String
     @State private var memberName: String
+    @State private var showsNameLimitMessage = false
     @FocusState private var focusedField: Field?
     /// 참가 요청 및 서버 검증은 호출부에서 처리한다.
     var isJoining: Bool
@@ -15,7 +16,7 @@ struct SessionJoinView: View {
     init(pin: String = "", memberName: String = "", isJoining: Bool = false,
          onStartDemo: (() -> Void)? = nil, onJoin: @escaping (String, String) -> Void) {
         _pin = State(initialValue: pin)
-        _memberName = State(initialValue: memberName)
+        _memberName = State(initialValue: String(memberName.prefix(MemberNameInputObserver.maximumLength)))
         self.isJoining = isJoining
         self.onStartDemo = onStartDemo
         self.onJoin = onJoin
@@ -70,6 +71,12 @@ struct SessionJoinView: View {
                                         namePlaceholder, text: $memberName,
                                         prompt: Text(namePlaceholder).foregroundStyle(DSPalette.Gray.g500)
                                     )
+                                    .textContentType(.nickname)
+                                    .background {
+                                        MemberNameInputObserver(text: $memberName, showsLimitMessage: $showsNameLimitMessage)
+                                            .allowsHitTesting(false)
+                                            .accessibilityHidden(true)
+                                    }
                                     .textFieldStyle(.ds(isFocused: focusedField == .name, appearance: .filled))
                                     .textInputAutocapitalization(.never)
                                     .autocorrectionDisabled()
@@ -78,6 +85,14 @@ struct SessionJoinView: View {
                                     .onSubmit { focusedField = nil }
                                     .accessibilityLabel("대원명")
                                     .accessibilityIdentifier("join.name")
+
+                                    if showsNameLimitMessage {
+                                        Text("대원명은 20자를 초과할 수 없습니다.")
+                                            .dsTextStyle(DSTypography.captionRegular14)
+                                            .foregroundStyle(DSColor.contentSecondary)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                            .accessibilityIdentifier("join.name.limit")
+                                    }
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .id(Field.name)
