@@ -2,7 +2,25 @@ import CQBCore
 import CoreGraphics
 import Foundation
 import ImageIO
+import Observation
 import UniformTypeIdentifiers
+
+private final class ObservationChangeFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var changed = false
+
+    func markChanged() {
+        lock.lock()
+        changed = true
+        lock.unlock()
+    }
+
+    var hasChanged: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return changed
+    }
+}
 
 private actor ControlledImporter: FloorPlanImporting {
     private var pendingNormalization: [String: CheckedContinuation<LocalImportedImage, Error>] = [:]
@@ -165,6 +183,8 @@ enum FloorPlanRegistrationChecks {
         try await checkWorldMapPointUndoRedo()
         try await checkFreeOrderCheckpointCapture()
         try await checkCheckpointTrackingRevalidation()
+        checkDuplicateFrameUpdatesAreIgnored()
+        try await checkCheckpointMappingRequirement()
         try await checkWorldMapSaveCancellation()
         try await checkWorldMapDraftReuseAfterBackNavigation()
         try await checkMaskCancellationRecovery()
@@ -698,6 +718,82 @@ enum FloorPlanRegistrationChecks {
         precondition(LocalWorldMapTrackingState.excessiveMotion.message.contains("천천히"))
         precondition(LocalWorldMapTrackingState.insufficientFeatures.message.contains("벽 모서리"))
         precondition(LocalWorldMapTrackingState.limited.message.contains("기록할 수 없습니다"))
+    }
+
+    private static func checkCheckpointMappingRequirement() async throws {
+        let importer = ControlledImporter()
+        let scanner = ControlledWorldMapScanner()
+        let draft = FloorPlanDraftStore(importer: importer, worldMapScanner: scanner)
+        draft.setName("매핑 상태 검증")
+        draft.importImage(from: URL(fileURLWithPath: "/virtual/mapping-requirement.png"))
+        try await wait { await importer.has("mapping-requirement.png") }
+        await importer.succeedNormalization("mapping-requirement.png")
+        try await wait { await importer.hasExtraction("mapping-requirement.png") }
+        await importer.succeedExtraction("mapping-requirement.png")
+        try await wait { !draft.isProcessing }
+
+        draft.continueToWorldMapAlignment()
+        draft.placePoint(LocalPlanPoint(x: 0.1, y: 0.1))
+        draft.placePoint(LocalPlanPoint(x: 0.2, y: 0.1))
+        draft.placePoint(LocalPlanPoint(x: 0.4, y: 0.4))
+        await draft.startWorldMapScan()
+        draft.captureWorldMapStart()
+        precondition(draft.selectScanCheckpoint(at: 0) == .selected)
+
+        scanner.emitFrame(tracking: .normal, mapping: .limited)
+        precondition(!draft.canCaptureSelectedCheckpoint)
+        precondition(draft.captureSelectedScanCheckpoint() == .mappingUnavailable(.limited))
+        precondition(draft.completedScanCheckpointIndices.isEmpty)
+        precondition(draft.selectedScanCheckpointIndex == 0,
+                     "매핑 부족 후 선택을 유지해 다시 기록할 수 있어야 한다")
+
+        scanner.emitFrame(tracking: .normal, mapping: .extending)
+        precondition(draft.canCaptureSelectedCheckpoint)
+        precondition(draft.captureSelectedScanCheckpoint() == .captured)
+        precondition(draft.completedScanCheckpointIndices == [0])
+
+        precondition(!LocalWorldMapMappingState.unavailable.canCaptureCheckpoint)
+        precondition(!LocalWorldMapMappingState.limited.canCaptureCheckpoint)
+        precondition(LocalWorldMapMappingState.extending.canCaptureCheckpoint)
+        precondition(LocalWorldMapMappingState.mapped.canCaptureCheckpoint)
+
+        precondition(LocalWorldMapMappingState.unavailable.message ==
+                     "카메라 준비 중 · 잠시만 기다려 주세요")
+        precondition(LocalWorldMapMappingState.limited.message.contains("공간 정보 부족"))
+        precondition(LocalWorldMapMappingState.extending.message.contains("공간 인식 중"))
+        precondition(LocalWorldMapMappingState.mapped.message.contains("현재 지점 스캔 완료"))
+    }
+
+    private static func checkDuplicateFrameUpdatesAreIgnored() {
+        let scanner = ControlledWorldMapScanner()
+        let draft = FloorPlanDraftStore(worldMapScanner: scanner)
+        let initialState = draft.frameState
+        let firstChange = ObservationChangeFlag()
+
+        withObservationTracking {
+            _ = draft.frameState
+        } onChange: {
+            firstChange.markChanged()
+        }
+
+        scanner.emitFrame(tracking: initialState.tracking, mapping: initialState.mapping)
+        precondition(!firstChange.hasChanged,
+                     "같은 프레임 상태를 반복 수신해도 Observable 변경을 발행하면 안 된다")
+
+        scanner.emitFrame(tracking: .normal, mapping: initialState.mapping)
+        precondition(firstChange.hasChanged,
+                     "tracking 또는 mapping 상태가 실제로 바뀌면 Observable 변경을 발행해야 한다")
+
+        let duplicateChange = ObservationChangeFlag()
+        withObservationTracking {
+            _ = draft.frameState
+        } onChange: {
+            duplicateChange.markChanged()
+        }
+
+        scanner.emitFrame(tracking: .normal, mapping: initialState.mapping)
+        precondition(!duplicateChange.hasChanged,
+                     "변경된 상태가 다시 반복될 때도 중복 변경을 발행하면 안 된다")
     }
 
     private static func prepareDraft(_ draft: FloorPlanDraftStore, importer: ControlledImporter) async throws -> LocalEditStroke {

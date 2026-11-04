@@ -102,12 +102,19 @@ final class FloorPlanDraftStore {
     ) {
         self.importer = importer
         self.worldMapScanner = worldMapScanner
-        self.worldMapScanner?.onFrameUpdate = { [weak self] state in self?.frameState = state }
+        self.worldMapScanner?.onFrameUpdate = { [weak self] state in
+            self?.receiveFrameUpdate(state)
+        }
     }
 
     deinit {
         work?.cancel()
         worldMapSaveTask?.cancel()
+    }
+
+    private func receiveFrameUpdate(_ state: LocalWorldMapFrameState) {
+        guard frameState != state else { return }
+        frameState = state
     }
 
     var hasName: Bool { !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -169,6 +176,7 @@ final class FloorPlanDraftStore {
         return scanCheckpoints.indices.contains(selectedScanCheckpointIndex)
             && !completedScanCheckpointIndices.contains(selectedScanCheckpointIndex)
             && frameState.tracking.canCapture
+            && frameState.mapping.canCaptureCheckpoint
             && worldMapScanner != nil
     }
     var canSaveWorldMap: Bool {
@@ -654,6 +662,9 @@ final class FloorPlanDraftStore {
         guard let index = selectedScanCheckpointIndex else { return .selectionRequired }
         guard scanCheckpoints.indices.contains(index) else { return .invalidCheckpoint }
         guard !completedScanCheckpointIndices.contains(index) else { return .alreadyCaptured }
+        guard frameState.mapping.canCaptureCheckpoint else {
+            return .mappingUnavailable(frameState.mapping)
+        }
         guard let worldMapScanner else { return .failed("카메라 스캔을 사용할 수 없습니다.") }
 
         switch worldMapScanner.captureCurrentPose() {
@@ -1033,6 +1044,7 @@ private final class PreviewWorldMapScanner: NSObject, WorldMapScanning {
 extension FloorPlanDraftStore {
     static func makeScanningPreview(
         tracking: LocalWorldMapTrackingState = .normal,
+        mapping: LocalWorldMapMappingState = .mapped,
         hasCapturedStart: Bool = true,
         selectedIndex: Int? = nil,
         completedIndices: Set<Int> = []
@@ -1069,7 +1081,7 @@ extension FloorPlanDraftStore {
         store.completedScanCheckpointIndices = completedIndices
         store.selectedScanCheckpointIndex = hasCapturedStart ? selectedIndex : nil
         store.frameState = LocalWorldMapFrameState(
-            mapping: completedIndices.count == store.scanCheckpoints.count ? .mapped : .extending,
+            mapping: mapping,
             tracking: tracking
         )
         let startCorrespondences = hasCapturedStart ? [WorldMapCorrespondence(
