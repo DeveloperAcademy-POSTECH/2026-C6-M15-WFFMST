@@ -43,5 +43,6 @@ import Testing
     #expect(DSTypography.headingSemiBold20.lineHeight == 30)
     #expect(DSTypography.captionRegular14.size == 14)
     #expect(DSTypography.captionRegular14.lineHeight == 21)
-    #expect(DSTypography.headingExtraBold24.postScriptName == "AppleSDGothicNeo-ExtraBold")
+    #expect(DSTypography.headingExtraBold24.postScriptName == ".SFUI-Black")
+    #expect(DSTypography.headingExtraBold24.size == 24)
 }

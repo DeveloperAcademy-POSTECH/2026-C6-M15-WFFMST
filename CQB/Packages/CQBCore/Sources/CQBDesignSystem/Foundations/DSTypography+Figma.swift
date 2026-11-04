@@ -35,7 +35,13 @@ public extension DSTypography {
     static let headingBold32 = textStyle(.bold, size: 32, relativeTo: .title)
     static let headingSemiBold32 = textStyle(.semiBold, size: 32, relativeTo: .title)
     static let headingSemiBold28 = textStyle(.semiBold, size: 28, relativeTo: .title)
-    static let headingExtraBold24 = textStyle(.extraBold, size: 24, relativeTo: .title2)
+    /// iOS의 Apple SD Gothic Neo에는 ExtraBold face가 없으므로 시스템 Black을 사용해
+    /// 한국어의 최굵기 face를 선택하고 Regular fallback을 방지합니다.
+    static let headingExtraBold24 = DSTextStyle(
+        postScriptName: ".SFUI-Black",
+        font: .system(size: 24, weight: .black),
+        size: 24
+    )
     static let headingSemiBold24 = textStyle(.semiBold, size: 24, relativeTo: .title2)
     static let headingSemiBold20 = textStyle(.semiBold, size: 20, relativeTo: .title3, lineHeight: 30)
     static let headingBold20 = textStyle(.bold, size: 20, relativeTo: .title3, lineHeight: 30)
@@ -52,7 +58,6 @@ public extension DSTypography {
         case medium = "AppleSDGothicNeo-Medium"
         case semiBold = "AppleSDGothicNeo-SemiBold"
         case bold = "AppleSDGothicNeo-Bold"
-        case extraBold = "AppleSDGothicNeo-ExtraBold"
     }
 
     private static func textStyle(

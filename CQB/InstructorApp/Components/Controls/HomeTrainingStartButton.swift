@@ -7,14 +7,6 @@ struct HomeTrainingStartButton: View {
     let isEnabled: Bool
     let action: () -> Void
 
-    /// iOS의 Apple SD Gothic Neo는 Bold까지만 제공하므로 ExtraBold/Heavy 지정은
-    /// Regular로 fallback됩니다. 시스템 Black이 한국어의 가장 굵은 face를 선택하게 합니다.
-    fileprivate static let titleStyle = DSTextStyle(
-        postScriptName: ".SFUI-Black",
-        font: .system(size: 24, weight: .black),
-        size: 24
-    )
-
     var body: some View {
         Button("훈련 시작하기", action: action)
             .buttonStyle(HomeTrainingStartButtonStyle())
@@ -28,7 +20,7 @@ private struct HomeTrainingStartButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .dsTextStyle(HomeTrainingStartButton.titleStyle)
+            .dsTextStyle(DSTypography.headingExtraBold24)
             .foregroundStyle(isEnabled ? DSPalette.Primary.p800 : DSColor.contentDisabled)
             .padding(.horizontal, DSSpacing.s20)
             .padding(.vertical, DSSpacing.s12)

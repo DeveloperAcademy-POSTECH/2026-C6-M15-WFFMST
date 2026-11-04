@@ -71,7 +71,10 @@ Figma의 최신 Typography 영역에 보이는 12개 스타일과 현재 화면�
 | `Caption/Medium/14` | `DSTypography.captionMedium14` |
 | `Caption/Regular/14` | `DSTypography.captionRegular14` |
 
-PostScript 이름은 지원 OS의 `/System/Library/Fonts/AppleSDGothicNeo.ttc`에서 확인한 `AppleSDGothicNeo-*` 이름을 사용한다.
+PostScript 이름은 지원 OS의 `/System/Library/Fonts/AppleSDGothicNeo.ttc`에서 확인한
+`AppleSDGothicNeo-*` 이름을 사용한다. 단, iOS는 Apple SD Gothic Neo의 ExtraBold face를
+제공하지 않는다. `Heading/ExtraBold/24`는 존재하지 않는 custom face가 Regular로 fallback되지
+않도록 시스템 Black을 사용하며, iOS가 한국어에 지원하는 가장 굵은 face를 선택하게 한다.
 
 ```swift
 Text("훈련 시작하기")

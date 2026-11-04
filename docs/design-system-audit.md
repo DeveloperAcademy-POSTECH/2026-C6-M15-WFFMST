@@ -9,7 +9,7 @@ Issue #180에서 Figma 정의와 실구현의 차이, `CQBDesignSystem`의 활�
 | 영역 | 확인 결과 | 조치 |
 | --- | --- | --- |
 | Color | Palette와 semantic color는 실제 Figma fill과 일치한다. `Primary/0.5`, `Red/0.5`, `Blue/0.5`의 화면 표기 hex는 실제 fill과 1단계 차이가 있다. | 코드는 실제 fill을 기준으로 유지한다. Figma 표기 문자열은 디자인 문서 정리 대상으로 남긴다. |
-| Typography | 최신 Typography 영역에는 12개 스타일이 보인다. 코드의 17개 중 나머지 5개도 제품 화면에서 사용 중이다. | 공통 17개는 유지하고, 교관 앱에만 필요한 64 Bold·16 Medium·14 Bold는 앱 토큰으로 분리했다. |
+| Typography | 최신 Typography 영역에는 12개 스타일이 보이고 코드의 17개 중 나머지 5개도 제품 화면에서 사용 중이다. iOS 런타임에는 Figma가 지정한 Apple SD Gothic Neo ExtraBold face가 없어 custom font 지정 시 Regular로 fallback된다. | 공통 17개는 유지하고, `Heading/ExtraBold/24`는 시스템 Black으로 한국어 최굵기 face를 선택한다. 교관 앱에만 필요한 64 Bold·16 Medium·14 Bold는 앱 토큰으로 분리했다. |
 | Effects | Button shadow는 일치했으나 Floating shadow의 코드 blur가 10, Figma가 24였다. | `dsFloatingShadow()`의 blur를 24로 수정했다. |
 | Radius | 8, 12, 16, 999가 코드와 일치한다. InstructorApp에 토큰에 없는 4pt 컨테이너가 2곳 남아 있었다. | AAR 위치정보 없음 패널과 도면 처리 상태 패널을 가장 작은 컨테이너 토큰인 `DSRadius.small`(8pt)로 통일했다. |
 | Spacing | Figma의 80이 코드에 없었다. | `DSSpacing.s80`을 추가하고 테스트에 포함했다. |
