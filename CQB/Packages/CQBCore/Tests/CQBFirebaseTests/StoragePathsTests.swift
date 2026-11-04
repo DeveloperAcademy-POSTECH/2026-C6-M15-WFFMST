@@ -37,6 +37,12 @@ func trackResultPath() {
         == "sessions/00000000-0000-0000-0000-000000000702/recordings/00000000-0000-0000-0000-000000000704/result.json")
 }
 
+@Test("음향 후보는 기록당 하나의 sound-candidates.json이다")
+func soundCandidatesPath() {
+    #expect(StoragePaths.soundCandidates(identity)
+        == "sessions/00000000-0000-0000-0000-000000000702/recordings/00000000-0000-0000-0000-000000000704/sound-candidates.json")
+}
+
 @Test("영상 조각 파일명은 0 기반 네 자리 index다")
 func videoChunkPaths() {
     let base = "sessions/00000000-0000-0000-0000-000000000702/recordings/00000000-0000-0000-0000-000000000704/video"

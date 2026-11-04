@@ -32,6 +32,10 @@ enum StoragePaths {
         "\(recording(identity))/result.json"
     }
 
+    static func soundCandidates(_ identity: TrackIdentity) -> String {
+        "\(recording(identity))/sound-candidates.json"
+    }
+
     static func videoChunk(_ identity: TrackIdentity, index: Int) -> String {
         "\(recording(identity))/video/\(videoChunkFileName(index: index))"
     }
