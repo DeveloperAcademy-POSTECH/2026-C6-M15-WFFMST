@@ -30,7 +30,8 @@ struct AppContainer: View {
             recordingRepository: FirestoreRecordingRepository(),
             trackResultRepository: StorageTrackResultRepository(),
             floorPlanFileRepository: floorPlanFileRepository,
-            videoChunkRepository: StorageVideoChunkRepository()
+            videoChunkRepository: StorageVideoChunkRepository(),
+            soundCandidateLoader: RepositoryAARSoundCandidateLoader(repository: StorageSoundCandidateRepository())
         ))
     }
 

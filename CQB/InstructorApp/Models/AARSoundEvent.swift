@@ -1,7 +1,7 @@
 import Foundation
 
-/// 대원 기기가 뽑은 큰 소리 후보 하나. 시각은 그 대원 기록의 내부 시간(초)이다.
-/// 저장 형식은 데이터 계약(#169)에서 정한다. 지금은 교관 앱 안에서만 쓰는 값이다.
+/// 총성으로 판정한 큰 소리 하나. 시각은 그 대원 기록의 내부 시간(초)이다.
+/// 저장 형식은 `SoundCandidateDocument`(#169)이고, 판정은 `AARSoundCandidateJudge`(#192)가 한다.
 nonisolated struct AARSoundCandidate: Equatable, Sendable {
     let recordingTime: Double
 }
