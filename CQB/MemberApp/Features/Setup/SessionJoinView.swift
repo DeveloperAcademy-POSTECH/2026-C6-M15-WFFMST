@@ -104,7 +104,7 @@ struct SessionJoinView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, isLandscape ? 0 : DSSpacing.s20)
+                    .padding(.horizontal, isLandscape ? DSSpacing.s40 : DSSpacing.s20)
                     .padding(.top, max(0, DSSpacing.s40 - geometry.safeAreaInsets.top))
                     .padding(.bottom, DSSpacing.s20)
                 }
@@ -123,7 +123,7 @@ struct SessionJoinView: View {
                     .accessibilityIdentifier("join.submit")
                     .frame(maxWidth: isLandscape ? 381 : .infinity)
                     .frame(maxWidth: .infinity, alignment: .trailing)
-                    .padding(.horizontal, isLandscape ? 0 : DSSpacing.s20)
+                    .padding(.horizontal, isLandscape ? DSSpacing.s40 : DSSpacing.s20)
                     .padding(.top, DSSpacing.s12)
                     .padding(.bottom, max(0, DSSpacing.s60 - geometry.safeAreaInsets.bottom))
                     .background(DSColor.backgroundPrimary)
