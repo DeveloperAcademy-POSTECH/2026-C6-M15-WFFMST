@@ -60,7 +60,8 @@ enum InstructorDemoScenario {
                 floorPlan: plan.reference
             ),
             floorPlanFileRepository: DemoFloorPlanFileRepository(),
-            videoChunkRepository: videoChunkRepository
+            videoChunkRepository: videoChunkRepository,
+            soundCandidateLoader: InstructorDemoSoundCandidateLoader(memberIDs: memberIDs)
         )
         return Environment(store: store, aarStore: aarStore)
     }
@@ -408,6 +409,27 @@ private final class InstructorDemoRecordingRepository: RecordingRepository, @unc
                 videoChunkCount: state == .done ? 1 : nil
             )
         }
+    }
+}
+
+/// 데모 영상(30초)에 맞춘 큰 소리 후보. 21.5초는 한 명만 들은 후보라 타임라인에 표시되지 않는다.
+private struct InstructorDemoSoundCandidateLoader: AARSoundCandidateLoading {
+    let memberIDs: [UUID]
+
+    /// 대원 순서별 후보 시각(기록 내부 초). 같은 소리도 기기마다 조금씩 늦게 들린다.
+    private static let candidateTimes: [[Double]] = [
+        [6.20, 26.00],
+        [6.23, 14.80],
+        [6.21, 21.50],
+        [6.26, 26.04],
+        [14.83],
+        [14.86],
+    ]
+
+    func candidates(for identity: TrackIdentity) async throws -> [AARSoundCandidate] {
+        guard let index = memberIDs.firstIndex(of: identity.memberID),
+              Self.candidateTimes.indices.contains(index) else { return [] }
+        return Self.candidateTimes[index].map { AARSoundCandidate(recordingTime: $0) }
     }
 }
 
