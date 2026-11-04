@@ -22,6 +22,7 @@ struct FloorPlanCreateView: View {
     @State private var showsExitConfirmation = false
     @State private var dismissedAlignmentGuides: Set<String> = []
     @State private var dismissedScanningGuides: Set<String> = []
+    @State private var dismissedEditingGuides: Set<String> = []
     @State private var registrationBrushMode: LocalEditMode = .block
     @State private var editingCanvasDisplayScale: CGFloat = 1
     @FocusState private var focusedField: InputField?
@@ -251,11 +252,12 @@ struct FloorPlanCreateView: View {
                 .padding(.top, DSSpacing.s40)
                 .padding(.leading, DSSpacing.s40)
 
-            DSGuideToast(editingGuideMessage)
-                .frame(maxWidth: store.editorMode == .pen ? 734 : 690, minHeight: 100)
-                .padding(.leading, 175)
-                .padding(.trailing, DSSpacing.s40)
-                .padding(.top, DSSpacing.s40)
+            dismissibleGuide(
+                editingGuideMessage,
+                dismissedMessages: $dismissedEditingGuides,
+                accessibilityIdentifier: "floorPlan.editing.guide",
+                maximumWidth: store.editorMode == .pen ? 734 : 690
+            )
 
             editingHistoryControls
                 .padding(.leading, 40)
@@ -1486,13 +1488,14 @@ struct FloorPlanCreateView: View {
     private func dismissibleGuide(
         _ message: String,
         dismissedMessages: Binding<Set<String>>,
-        accessibilityIdentifier: String
+        accessibilityIdentifier: String,
+        maximumWidth: CGFloat = 690
     ) -> some View {
         if !dismissedMessages.wrappedValue.contains(message) {
             FloorPlanGuide(message: message, accessibilityIdentifier: accessibilityIdentifier) {
                 dismissedMessages.wrappedValue.insert(message)
             }
-            .frame(maxWidth: 690, minHeight: 100)
+            .frame(maxWidth: maximumWidth, minHeight: 100)
             .padding(.leading, 175)
             .padding(.trailing, DSSpacing.s40)
             .padding(.top, DSSpacing.s40)
