@@ -21,6 +21,7 @@ nonisolated enum LocalScanCheckpointCaptureResult: Equatable, Sendable {
     case startRequired
     case selectionRequired
     case trackingUnavailable(LocalWorldMapTrackingState)
+    case mappingUnavailable(LocalWorldMapMappingState)
     case alreadyCaptured
     case invalidCheckpoint
     case failed(String)
@@ -39,12 +40,12 @@ nonisolated struct LocalScanCheckpointMarker: Equatable, Sendable {
 nonisolated enum LocalWorldMapMappingState: Equatable, Sendable {
     case unavailable, limited, extending, mapped
 
-    var title: String {
+    var message: String {
         switch self {
-        case .unavailable: "준비 중"
-        case .limited: "공간 정보 수집 중"
-        case .extending: "스캔 범위 확장 중"
-        case .mapped: "저장 가능"
+        case .unavailable: "카메라 준비 중 · 잠시만 기다려 주세요"
+        case .limited: "공간 정보 부족 · 벽 모서리나 주변 사물이 보이게 움직여 주세요"
+        case .extending: "공간 인식 중 · 현재 지점 주변을 천천히 둘러봐 주세요"
+        case .mapped: "현재 지점 스캔 완료 · 위치를 기록할 수 있어요"
         }
     }
 }

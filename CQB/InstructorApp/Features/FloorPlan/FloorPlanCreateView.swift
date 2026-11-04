@@ -1352,6 +1352,23 @@ struct FloorPlanCreateView: View {
                         .dsTextStyle(DSTypography.bodyRegular16)
                         .fontWeight(.bold)
                         .foregroundStyle(DSColor.contentTertiary)
+
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Circle()
+                            .fill(worldMapMappingIndicatorColor)
+                            .frame(width: 10, height: 10)
+                            .accessibilityHidden(true)
+
+                        Text(store.frameState.mapping.message)
+                            .dsTextStyle(DSTypography.captionRegular14)
+                            .foregroundStyle(DSColor.contentSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.top, 12)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("현재 지점 스캔 상태")
+                    .accessibilityValue(store.frameState.mapping.message)
+                    .accessibilityIdentifier("floorPlan.scan.mappingStatus")
                 }
                 .padding(.top, 52)
 
@@ -1475,6 +1492,15 @@ struct FloorPlanCreateView: View {
             return "미완료 체크포인트 위치로 이동 후,\n도면에서 기록할 체크포인트를 선택해주세요."
         }
         return "이동 시에 카메라가 가려지지 않고, 주변을 많이 촬영할수록 정확도를 높일 수 있습니다."
+    }
+
+    private var worldMapMappingIndicatorColor: Color {
+        switch store.frameState.mapping {
+        case .unavailable: InstructorColor.worldMapUnavailableIndicator
+        case .limited: InstructorColor.worldMapLimitedIndicator
+        case .extending: InstructorColor.worldMapExtendingIndicator
+        case .mapped: InstructorColor.worldMapMappedIndicator
+        }
     }
 
     private func handleTopBack() {
