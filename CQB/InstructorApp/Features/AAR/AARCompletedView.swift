@@ -21,7 +21,7 @@ struct AARCompletedView: View {
                     ActionButton(
                         "처음으로",
                         tone: .secondary,
-                        fillsWidth: true,
+                        width: .fill,
                         action: store.returnHome
                     )
                     .frame(width: 300)

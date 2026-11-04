@@ -22,7 +22,7 @@ private struct InstructorComponentsPreview: View {
             ) {
                 previewSection("Navigation") {
                     HStack(spacing: DSSpacing.s24) {
-                        previewItem("공통 · 55") {
+                        previewItem("공통 뒤로가기 · 55×55") {
                             InstructorBackButton(action: {})
                         }
                     }
@@ -35,21 +35,21 @@ private struct InstructorComponentsPreview: View {
                     }
                 }
 
-                previewSection("Action button · tone") {
-                    VStack(spacing: DSSpacing.s12) {
-                        ActionButton("Primary", fillsWidth: true, action: {})
+                previewSection("Action button · 고정 180×55") {
+                    HStack(spacing: DSSpacing.s12) {
+                        ActionButton("Primary", width: .fixed180, action: {})
                         ActionButton(
                             "Secondary",
                             tone: .secondary,
-                            fillsWidth: true,
+                            width: .fixed180,
                             action: {}
                         )
-                        ActionButton("Disabled", fillsWidth: true, action: {})
+                        ActionButton("Disabled", width: .fixed180, action: {})
                             .disabled(true)
                     }
                 }
 
-                previewSection("Action button · intrinsic") {
+                previewSection("Action button · 기본 크기") {
                     VStack(alignment: .leading, spacing: DSSpacing.s12) {
                         ActionButton("Primary", action: {})
                         ActionButton(
@@ -58,6 +58,22 @@ private struct InstructorComponentsPreview: View {
                             tone: .secondary,
                             action: {}
                         )
+                    }
+                }
+
+                previewSection("Action button · 가로 채움") {
+                    VStack(spacing: DSSpacing.s12) {
+                        ActionButton("Primary", width: .fill, action: {})
+                        ActionButton("Secondary", tone: .secondary, width: .fill, action: {})
+                        ActionButton("Disabled", width: .fill, action: {})
+                            .disabled(true)
+                    }
+                }
+
+                previewSection("홈 전용 CTA · 311×56") {
+                    HStack(spacing: DSSpacing.s24) {
+                        HomeTrainingStartButton(isEnabled: true, action: {})
+                        HomeTrainingStartButton(isEnabled: false, action: {})
                     }
                 }
 
