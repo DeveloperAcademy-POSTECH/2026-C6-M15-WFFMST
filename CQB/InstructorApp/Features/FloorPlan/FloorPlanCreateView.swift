@@ -107,6 +107,14 @@ struct FloorPlanCreateView: View {
         .onChange(of: importer.isPresented) { _, presented in
             if !presented { importer.finish() }
         }
+        .onChange(of: alignmentGuideStep) { _, _ in
+            dismissedAlignmentGuides.removeAll()
+        }
+        .onChange(of: store.step) { _, step in
+            if step == .alignment {
+                dismissedAlignmentGuides.removeAll()
+            }
+        }
         .alert("도면 등록을 종료할까요?", isPresented: $showsExitConfirmation) {
             Button("나가기", role: .destructive, action: app.goBack)
             Button("계속 등록", role: .cancel) {}
@@ -1453,14 +1461,25 @@ struct FloorPlanCreateView: View {
         .background(DSColor.surfacePrimary)
     }
 
-    private var alignmentGuideMessage: String {
+    private var alignmentGuideStep: LocalWorldMapPointTarget {
         if store.startPlanPoint == nil {
-            return "공간 스캔을 시작할 출발점을 도면 위에서 터치해 표시해주세요."
+            return .start
         }
         if store.directionPlanPoint == nil {
-            return "출발점에서 처음 바라볼 방향점을 도면 위에서 터치해 표시해주세요."
+            return .direction
         }
-        return "방의 입구나 모서리, 복도의 연결부 등 공간의 특징점이 될만한 지점을 터치해 표시해주세요."
+        return .checkpoint
+    }
+
+    private var alignmentGuideMessage: String {
+        switch alignmentGuideStep {
+        case .start:
+            return "공간 스캔을 시작할 출발점을 도면 위에서 터치해 표시해주세요."
+        case .direction:
+            return "출발점에서 처음 바라볼 방향점을 도면 위에서 터치해 표시해주세요."
+        case .checkpoint:
+            return "방의 입구나 모서리, 복도의 연결부 등 공간의 특징점이 될만한 지점을 터치해 표시해주세요."
+        }
     }
 
     @ViewBuilder
