@@ -12,8 +12,10 @@ public extension View {
         )
     }
 
-    /// Figma `Shadow/Floating`: 0 4 24, #000000 25%.
+    /// Figma `Shadow/Floating`: blur 10, y 4, #000000 25%.
+    ///
+    /// Figma의 blur 10은 SwiftUI export에서 `radius: 5`로 변환됩니다.
     func dsFloatingShadow() -> some View {
-        shadow(color: Color.black.opacity(0.25), radius: 24, y: 4)
+        shadow(color: Color.black.opacity(0.25), radius: 5, y: 4)
     }
 }
