@@ -59,7 +59,7 @@ AAR을 열면 `AARStore.load`가 기록 목록을 받은 뒤 대원별 후보를
 | `Features/AAR/AARTimelineView.swift` | 재생바 마커, `AAR 재생바 · 큰 소리 표시` 미리보기 |
 | `Services/Demo/InstructorDemoScenario.swift` | 데모 후보 |
 
-#169가 정해지면 `UnavailableAARSoundCandidateLoader` 자리를 Storage에서 후보 파일을 받는 구현으로 바꾼다. 묶기와 화면은 그대로 쓴다.
+#169가 정해지면 `UnavailableAARSoundCandidateLoader` 자리를 Storage에서 후보 파일을 받는 구현으로 바꾼다. 묶기와 화면은 그대로 쓴다. → #192에서 `RepositoryAARSoundCandidateLoader`로 바꿨다([작업 문서](issue-192-real-sound-candidates.md)).
 
 ## 데모 후보
 
