@@ -44,7 +44,7 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
     @ObservationIgnored private var segment = 0
     @ObservationIgnored private var wasNormal = false
     @ObservationIgnored private var running = false
-    @ObservationIgnored private var startingSession = false
+    @ObservationIgnored private var sessionStartID: UUID?
     @ObservationIgnored private var wantsRunning = false
     @ObservationIgnored private var startingRecording = false
 
@@ -65,26 +65,36 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
 
     func start() async {
         wantsRunning = true
-        guard !running, !startingSession else { return }
-        startingSession = true
-        defer { startingSession = false }
+        guard !running, sessionStartID == nil else { return }
+        let attemptID = UUID()
+        sessionStartID = attemptID
+        defer {
+            if sessionStartID == attemptID { sessionStartID = nil }
+        }
         guard ARWorldTrackingConfiguration.isSupported else {
             statusMessage = "이 기기는 AR 동선 추적을 지원하지 않습니다."
             fatalError = statusMessage
             return
         }
+        isReady = false
+        statusMessage = "카메라·마이크 권한 확인 중"
         let allowed: Bool
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized: allowed = true
         case .notDetermined: allowed = await AVCaptureDevice.requestAccess(for: .video)
         default: allowed = false
         }
-        guard wantsRunning else { return }
+        guard wantsRunning, sessionStartID == attemptID, !Task.isCancelled else { return }
         guard allowed else {
             statusMessage = "설정에서 카메라 접근을 허용해주세요."
             fatalError = statusMessage
             return
         }
+        // 준비 완료를 보고하기 전에 권한 결정을 마친다. 실제 녹음은 훈련 시작 시 실행한다.
+        if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
+            _ = await Self.requestMicrophoneAccess()
+        }
+        guard wantsRunning, sessionStartID == attemptID, !Task.isCancelled else { return }
         fatalError = nil
         trackingWarning = nil
         normalSince = nil
@@ -101,6 +111,8 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
 
     func stop() {
         wantsRunning = false
+        // 이전 권한 응답이 복귀 후 새 카메라 준비 작업을 재개하지 못하도록 무효화한다.
+        sessionStartID = nil
         guard !isRecording else { return }
         stopAudioStatusUpdates()
         session.pause()
@@ -124,12 +136,7 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
         guard !Task.isCancelled, !isRecording, !startingRecording else { throw CaptureError.notReady }
         startingRecording = true
         defer { startingRecording = false }
-        let audioAllowed: Bool
-        switch AVCaptureDevice.authorizationStatus(for: .audio) {
-        case .authorized: audioAllowed = true
-        case .notDetermined: audioAllowed = await Self.requestMicrophoneAccess()
-        default: audioAllowed = false
-        }
+        let audioAllowed = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
         guard wantsRunning, shouldStart(), !Task.isCancelled else { throw CaptureError.notReady }
         let videoWriter = writer
         let audioStatus = startAudioStatusUpdates()
@@ -156,7 +163,7 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
             await audioCapture.stop()
             throw CaptureError.notReady
         }
-        // 권한 요청 중 이동할 수 있으므로 실제 첫 녹화 프레임으로 자동 좌표를 확정한다.
+        // 오디오 준비 중 이동할 수 있으므로 실제 첫 녹화 프레임으로 자동 좌표를 확정한다.
         let automaticPosition: WorldMapPosition?
         if let initialWorldMap, let positioningMap {
             automaticPosition = WorldMapPositionCalculator.position(
