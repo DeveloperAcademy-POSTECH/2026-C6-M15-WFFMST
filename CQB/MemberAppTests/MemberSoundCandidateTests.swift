@@ -1,4 +1,5 @@
 import AVFoundation
+import SoundAnalysis
 import CQBCore
 import XCTest
 @testable import MemberApp
@@ -113,6 +114,33 @@ final class MemberSoundCandidateRecorderTests: XCTestCase {
             candidates: result.candidates
         )
         XCTAssertNoThrow(try document.validate())
+    }
+
+    func testSegmentWithClassifierFailureIsLeftOutOfAnalyzedRanges() {
+        let onsets = [SegmentOnset(audioSeconds: 1.0, levelDB: -2, decaySeconds: 0.12)]
+        let windows = [LabeledWindow(start: 0.6, end: 1.1, confidences: ["gunshot_gunfire": 0.9])]
+        func output(failed: Bool) -> (range: SoundTimeRange, candidates: [SoundCandidate])? {
+            MemberSoundCandidateRecorder.segmentOutput(
+                hostStart: recordingStart + 2, hostEnd: recordingStart + 5, recordingStart: recordingStart,
+                closed: ClosedSegment(onsets: onsets, windows: windows, classifierFailed: failed),
+                config: .standard
+            )
+        }
+
+        let succeeded = try? XCTUnwrap(output(failed: false))
+        XCTAssertEqual(succeeded?.range, SoundTimeRange(start: 2, end: 5))
+        XCTAssertEqual(succeeded?.candidates.map(\.time), [3])
+        XCTAssertNil(output(failed: true), "분류기가 멈춘 구간은 점수 0 후보로 남기지 않고 분석 안 됨으로 뺀다")
+    }
+
+    func testWindowCollectorRecordsClassifierFailure() throws {
+        let collector = WindowCollector(labels: ["gunshot_gunfire"])
+        let request = try SNClassifySoundRequest(classifierIdentifier: .version1)
+        XCTAssertFalse(collector.didFail)
+
+        collector.request(request, didFailWithError: URLError(.unknown))
+
+        XCTAssertTrue(collector.didFail)
     }
 
     func testInterruptionWithoutGapKeepsOneValidRange() async throws {

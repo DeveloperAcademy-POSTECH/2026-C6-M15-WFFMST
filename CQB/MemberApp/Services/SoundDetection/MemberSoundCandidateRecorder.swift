@@ -1,6 +1,7 @@
 @preconcurrency import AVFoundation
 import CQBCore
 import Foundation
+import os
 @preconcurrency import SoundAnalysis
 
 /// 녹화 중 마이크의 압축 전 소리(PCM)로 큰 소리 후보를 모은다(#172).
@@ -88,21 +89,41 @@ nonisolated final class MemberSoundCandidateRecorder: @unchecked Sendable {
         guard let current = segment, let recordingStart else { segment = nil; return }
         segment = nil
         let closed = current.close()
-        let rangeStart = max(0, current.hostStart - recordingStart)
-        let rangeEnd = current.hostEnd - recordingStart
-        guard rangeEnd > rangeStart else { return }
-        ranges = Self.appending(SoundTimeRange(start: rangeStart, end: rangeEnd), to: ranges)
+        guard let output = Self.segmentOutput(
+            hostStart: current.hostStart, hostEnd: current.hostEnd, recordingStart: recordingStart,
+            closed: closed, config: config
+        ) else { return }
+        ranges = Self.appending(output.range, to: ranges)
+        candidates += output.candidates
+    }
+
+    /// 닫은 구간 하나를 분석 구간과 후보로 바꾼다. 남길 것이 없으면 nil이다.
+    /// 분류기가 오류로 멈춘 구간은 점수가 0인 가짜 결과가 되므로 분석 구간과 후보에서 통째로 뺀다(#196).
+    /// 읽는 쪽은 그 시간을 "소리 없음"이 아니라 "분석 안 됨"으로 본다.
+    static func segmentOutput(
+        hostStart: Double,
+        hostEnd: Double,
+        recordingStart: Double,
+        closed: ClosedSegment,
+        config: FusionConfig
+    ) -> (range: SoundTimeRange, candidates: [SoundCandidate])? {
+        guard !closed.classifierFailed else { return nil }
+        let rangeStart = max(0, hostStart - recordingStart)
+        let rangeEnd = hostEnd - recordingStart
+        guard rangeEnd > rangeStart else { return nil }
+        var result: [SoundCandidate] = []
         for onset in closed.onsets {
-            let time = current.hostStart + onset.audioSeconds - recordingStart
+            let time = hostStart + onset.audioSeconds - recordingStart
             guard time >= rangeStart, time <= rangeEnd else { continue }
             let probe = onset.audioSeconds + config.probeDelaySeconds
-            candidates.append(SoundCandidate(
+            result.append(SoundCandidate(
                 time: time,
                 peakLevelDBFS: onset.levelDB,
                 decaySeconds: onset.decaySeconds,
-                classifierScores: Self.scores(at: probe, windows: closed.windows, labels: config.labels)
+                classifierScores: scores(at: probe, windows: closed.windows, labels: config.labels)
             ))
         }
+        return (SoundTimeRange(start: rangeStart, end: rangeEnd), result)
     }
 
     /// 구간을 끝에 붙인다. 앞 구간과 끝이 맞닿거나 겹치면 하나로 합친다.
@@ -150,13 +171,27 @@ nonisolated struct LabeledWindow: Sendable, Equatable {
     let confidences: [String: Double]
 }
 
+/// 구간 안의 급상승 하나. 시각은 구간 시작부터의 오디오 초다.
+nonisolated struct SegmentOnset: Sendable, Equatable {
+    let audioSeconds: Double
+    let levelDB: Double
+    let decaySeconds: Double?
+}
+
+/// 닫은 구간에서 나온 급상승과 분류기 창. 분류기가 오류로 멈췄으면 `classifierFailed`다.
+nonisolated struct ClosedSegment: Sendable, Equatable {
+    let onsets: [SegmentOnset]
+    let windows: [LabeledWindow]
+    let classifierFailed: Bool
+}
+
 /// 끊기지 않은 녹음 한 구간. 구간마다 감지기와 분류기를 새로 만든다.
 nonisolated private final class Segment {
     let hostStart: Double
     let sampleRate: Double
     private(set) var hostEnd: Double
     private var frameCursor: AVAudioFramePosition = 0
-    private var onsets: [Onset] = []
+    private var onsets: [SegmentOnset] = []
     private let detector: OnsetDetector
     private let analyzer: SNAudioStreamAnalyzer
     private let observer: WindowCollector
@@ -176,7 +211,7 @@ nonisolated private final class Segment {
 
     func append(_ buffer: AVAudioPCMBuffer, hostEnd: Double) {
         onsets += detector.process(buffer, startFrame: frameCursor).map {
-            Onset(audioSeconds: $0.audioSeconds, levelDB: $0.levelDB, decaySeconds: $0.decaySeconds)
+            SegmentOnset(audioSeconds: $0.audioSeconds, levelDB: $0.levelDB, decaySeconds: $0.decaySeconds)
         }
         analyzer.analyze(buffer, atAudioFramePosition: frameCursor)
         frameCursor += AVAudioFramePosition(buffer.frameLength)
@@ -184,32 +219,38 @@ nonisolated private final class Segment {
     }
 
     /// 분류기에 남은 창을 마저 받는다. 잔향을 재는 중이던 구간 끝 0.5초 안의 후보는 잔향 없이(`nil`) 남긴다(#196).
-    func close() -> (onsets: [Onset], windows: [LabeledWindow]) {
+    func close() -> ClosedSegment {
         analyzer.completeAnalysis()
         let unfinished = detector.drainUnfinished().map {
-            Onset(audioSeconds: $0.audioSeconds, levelDB: $0.levelDB, decaySeconds: nil)
+            SegmentOnset(audioSeconds: $0.audioSeconds, levelDB: $0.levelDB, decaySeconds: nil)
         }
-        return ((onsets + unfinished).sorted { $0.audioSeconds < $1.audioSeconds }, observer.windows)
-    }
-
-    /// 구간 안의 급상승 하나. 시각은 구간 시작부터의 오디오 초다.
-    struct Onset {
-        let audioSeconds: Double
-        let levelDB: Double
-        let decaySeconds: Double?
+        return ClosedSegment(
+            onsets: (onsets + unfinished).sorted { $0.audioSeconds < $1.audioSeconds },
+            windows: observer.windows,
+            classifierFailed: observer.didFail
+        )
     }
 }
 
-nonisolated private final class WindowCollector: NSObject, SNResultsObserving, @unchecked Sendable {
+/// 분류기 창을 모은다. 분류기가 오류로 멈추면 `didFail`이 된다.
+nonisolated final class WindowCollector: NSObject, SNResultsObserving, @unchecked Sendable {
+    private static let logger = Logger(subsystem: "com.wffmst.cqb", category: "MemberSoundCandidateRecorder")
     private let labels: [String]
     private let lock = NSLock()
     private var collected: [LabeledWindow] = []
+    private var failed = false
 
     init(labels: [String]) {
         self.labels = labels
     }
 
     var windows: [LabeledWindow] { lock.withLock { collected } }
+    var didFail: Bool { lock.withLock { failed } }
+
+    func request(_ request: SNRequest, didFailWithError error: Error) {
+        Self.logger.error("소리 분류 실패: \(error.localizedDescription, privacy: .private)")
+        lock.withLock { failed = true }
+    }
 
     func request(_ request: SNRequest, didProduce result: SNResult) {
         guard let result = result as? SNClassificationResult else { return }
