@@ -73,7 +73,8 @@ struct RecordingUploadView: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 .frame(minHeight: max(0, geometry.size.height - topPadding - bottomPadding))
-                .padding(.horizontal, isLandscape ? DSSpacing.s40 : DSSpacing.s20)
+                .padding(.leading, isLandscape ? max(0, DSSpacing.s40 - geometry.safeAreaInsets.leading) : DSSpacing.s20)
+                .padding(.trailing, isLandscape ? max(0, DSSpacing.s40 - geometry.safeAreaInsets.trailing) : DSSpacing.s20)
                 .padding(.top, topPadding)
                 .padding(.bottom, bottomPadding)
             }
