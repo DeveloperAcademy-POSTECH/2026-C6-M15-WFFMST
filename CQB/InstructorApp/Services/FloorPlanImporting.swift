@@ -5,21 +5,13 @@ import Foundation
 protocol FloorPlanImporting: Sendable {
     func normalize(url: URL) async throws -> LocalImportedImage
     func extractMask(from image: LocalImportedImage) async throws -> LocalMaskExtractionResult
-    func extractFallbackMask(from image: LocalImportedImage) async throws -> LocalMaskExtractionResult
 }
 
 extension FloorPlanImporting {
     /// 기존 단일 단계 호출이 필요한 검사 도구를 위한 조합 API다.
     func process(url: URL) async throws -> LocalExtractionResult {
         let image = try await normalize(url: url)
-        let result: LocalMaskExtractionResult
-        do {
-            result = try await extractMask(from: image)
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            result = try await extractFallbackMask(from: image)
-        }
+        let result = try await extractMask(from: image)
         return LocalExtractionResult(
             image: image,
             baseGrid: result.baseGrid,
