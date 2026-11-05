@@ -83,6 +83,7 @@ MemberAudioCaptureService ──PCM 버퍼──┬─▶ ARFrameVideoWriter (AA
 - 마이크 권한이 없으면 분석 구간이 비어 있다. 이때도 후보 파일을 올린다(빈 구간, 빈 후보). 교관 앱이 "분석 안 됨"과 "후보 없음"을 구분할 수 있다.
 - 전화 등으로 끊기면(`onInterruption`) 지금 구간을 닫고, 재개(`onResume`) 뒤 첫 버퍼에서 새 구간을 연다. 새 구간에서는 `OnsetDetector`와 분류기를 새로 만든다. 끊긴 앞뒤가 이어지지 않으므로 직전 중앙값이 섞이지 않게 한다.
 - 녹음이 이어지는 중에 다음 버퍼가 0.1초보다 늦게 오거나 샘플레이트가 바뀌어도 끊긴 것으로 보고 새 구간을 연다.
+- 소리 분류기가 오류로 멈춘 구간(`SNResultsObserving.request(_:didFailWithError:)`)은 분석 구간과 후보에서 통째로 뺀다(#196 리뷰). 그대로 두면 분류 점수가 0인 후보가 실제 결과처럼 올라간다. 다른 구간은 그대로 남긴다.
 - 분석 구간은 양 끝을 포함하므로 끝이 맞닿으면 계약 검증(#178)에 걸린다. 새 구간이 앞 구간 끝 이전이나 그 시각에서 시작하면(샘플레이트만 바뀌었거나, 끊김 알림만 오고 버퍼는 이어진 경우) 분석 구간 목록에서는 하나로 합친다. 감지기와 분류기는 그대로 새로 만든다.
 - 녹화 종료 시 마지막 구간을 닫는다. `OnsetDetector`는 잔향 측정이 끝난 후보만 내보내므로, 구간을 닫을 때(녹화 종료, 끊김, 0.1초 넘는 공백, 샘플레이트 변경) 잔향을 재던 구간 끝 0.5초 안의 후보는 `drainUnfinished()`(제품 추가, #196)로 꺼내 `decaySeconds = nil`로 남긴다. 교관 앱은 `nil`이면 잔향 조건을 쓰지 않는다.
 
@@ -117,7 +118,7 @@ MemberAudioCaptureService ──PCM 버퍼──┬─▶ ARFrameVideoWriter (AA
 
 ## 검증 계획
 
-- [x] 단위 테스트 (`MemberAppTests/MemberSoundCandidateTests.swift`, 14개 통과)
+- [x] 단위 테스트 (`MemberAppTests/MemberSoundCandidateTests.swift`, 16개 통과)
   - 합성한 16비트 마이크 버퍼의 큰 소리가 기록 시간 1.5초 후보가 되고, 녹화 시작 전은 0초로 자름
   - 끊김 콜백·0.1초 넘는 공백 모두 구간을 둘로 나누고, 끊긴 동안에는 후보가 없음
   - 끊김 알림만 오고 버퍼가 이어지면 구간 하나로 합쳐 업로드 검증을 통과함. 맞닿거나 겹치는 구간은 합치고 떨어진 구간은 그대로 둠
@@ -126,6 +127,7 @@ MemberAudioCaptureService ──PCM 버퍼──┬─▶ ARFrameVideoWriter (AA
   - 예전 업로드 기록표를 읽으면 후보는 안 올린 것으로 봄
   - 업로드 순서가 보정 결과 → 후보 → `done`. 네트워크 오류면 `done` 없이 멈추고 재시도에서 후보만 다시 올림. 계약 위반 문서면 건너뛰고 `done`
   - 녹화 종료·끊김 직전(구간 끝 0.03초 전) 큰 소리가 `decaySeconds = nil` 후보로 남고 문서 검증을 통과함
+  - 분류기가 멈춘 구간은 분석 구간·후보에서 빠지고, 분류기 오류 콜백이 실패로 기록됨
 - [x] 대원 앱 기존 테스트 회귀: 62개 통과. `MemberDemoScenarioTests.testDemoModeCreatesANewRunWhenRestarted`는 #161과 같은 Xcode 27 동기 테스트 크래시라 빼고 실행
 - [x] 연구 저장소 녹음 비교 (gunshot-lab 713e743, 맥에서 앱의 `MemberSoundCandidateRecorder`에 WAV를 4096프레임씩 흘려 넣음)
   - 다중 기기 데이터셋 5대: 총성 정답 100개 모두 앱 후보가 있음. 정답과의 시각 차 중앙 1ms, 최대 40ms
