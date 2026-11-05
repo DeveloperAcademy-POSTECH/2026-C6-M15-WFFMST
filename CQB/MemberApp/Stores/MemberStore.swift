@@ -881,17 +881,18 @@ final class MemberStore {
                 refreshUploadProgress(completedItems: totalItems, totalItems: totalItems)
             }
 
-            // 음향 후보는 선택 파일이다. 올리지 못해도 기록을 done으로 넘긴다(#169).
+            // 음향 후보도 다른 파일처럼 올라가야 done으로 넘긴다. 네트워크·권한 오류나 기록표 저장 실패는
+            // 업로드 실패로 남겨 재시도한다(#196). 계약 검증에 걸린 문서는 다시 올려도 실패하므로 로그만 남기고 넘어간다.
             if let soundCandidateDocument, let soundCandidateRepository,
                uploadManifest?.uploadedSoundCandidates != true {
                 uploadStatusMessage = "큰 소리 후보 업로드 중"
                 do {
                     try await soundCandidateRepository.upload(soundCandidateDocument)
-                    try await uploadQueue.markSoundCandidatesUploaded()
-                    uploadManifest = await uploadQueue.currentManifest()
-                } catch {
-                    Self.logger.error("큰 소리 후보 업로드 실패: \(error.localizedDescription, privacy: .private)")
+                } catch let error as SoundCandidateValidationError {
+                    Self.logger.error("큰 소리 후보가 계약을 지키지 않아 올리지 않음: \(String(describing: error), privacy: .public)")
                 }
+                try await uploadQueue.markSoundCandidatesUploaded()
+                uploadManifest = await uploadQueue.currentManifest()
             }
 
             uploadStatusMessage = "업로드 완료 확인 중"
