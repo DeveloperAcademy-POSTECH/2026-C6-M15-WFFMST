@@ -3,7 +3,7 @@ import Foundation
 import Testing
 @testable import InstructorApp
 
-struct LocalV13WallDetectorTests {
+struct LocalPixelWallDetectorTests {
     @Test
     func detectsSupportedHorizontalAndVerticalWallRuns() throws {
         let width = 128
@@ -25,7 +25,7 @@ struct LocalV13WallDetectorTests {
             for y in 12...112 { drawPixel(x: x, y: y) }
         }
 
-        let grid = try LocalV13WallDetector.grid(rgba: pixels, width: width, height: height)
+        let grid = try LocalPixelWallDetector.grid(rgba: pixels, width: width, height: height)
 
         #expect(grid.cellSizePixels == 2)
         #expect(grid.columns == 64)
@@ -38,7 +38,7 @@ struct LocalV13WallDetectorTests {
     @Test
     func rejectsMismatchedPixelBuffer() {
         #expect(throws: LocalFloorPlanError.self) {
-            try LocalV13WallDetector.grid(
+            try LocalPixelWallDetector.grid(
                 rgba: [UInt8](repeating: 255, count: 12),
                 width: 10,
                 height: 10

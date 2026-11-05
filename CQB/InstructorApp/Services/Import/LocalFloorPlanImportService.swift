@@ -38,7 +38,7 @@ struct LocalFloorPlanImportService: FloorPlanImporting {
         let worker = Task.detached(priority: .utility) {
             let pixels = try Self.decodedPixels(from: image)
             let extractionStart = ContinuousClock.now
-            let grid = try LocalV13WallDetector.grid(
+            let grid = try LocalPixelWallDetector.grid(
                 rgba: pixels,
                 width: image.width,
                 height: image.height
@@ -104,7 +104,7 @@ struct LocalFloorPlanImportService: FloorPlanImporting {
             throw LocalFloorPlanError.invalid("이미지를 변환하지 못했습니다.")
         }
         try Task.checkCancellation()
-        let cellSize = LocalV13WallDetector.cellSizePixels
+        let cellSize = LocalPixelWallDetector.cellSizePixels
         let width = (thumbnail.width + cellSize - 1) / cellSize * cellSize
         let height = (thumbnail.height + cellSize - 1) / cellSize * cellSize
         var pixels = [UInt8](repeating: 255, count: width * height * 4)

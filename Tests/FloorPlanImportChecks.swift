@@ -74,7 +74,7 @@ enum FloorPlanImportChecks {
         catch is CancellationError {}
         let started = ContinuousClock.now
         let detector = Task.detached {
-            try LocalV13WallDetector.grid(rgba: [UInt8](repeating: 0, count: 4_096 * 4_096 * 4), width: 4_096, height: 4_096)
+            try LocalPixelWallDetector.grid(rgba: [UInt8](repeating: 0, count: 4_096 * 4_096 * 4), width: 4_096, height: 4_096)
         }
         try await Task.sleep(for: .milliseconds(50))
         detector.cancel()
