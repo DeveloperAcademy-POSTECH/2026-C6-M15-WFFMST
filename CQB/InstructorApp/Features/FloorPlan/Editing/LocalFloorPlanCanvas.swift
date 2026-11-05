@@ -26,7 +26,6 @@ struct LocalFloorPlanCanvas: UIViewRepresentable {
     var scaleMarkerAppearance: LocalScaleMarkerAppearance = .standard
     var showsScanStartSelection = false
     var usesTransparentBackground = false
-    var keepsWhiteImageBackground = false
     var maximumInitialDisplaySize: CGSize? = nil
     var imageToneOverlayOpacity: CGFloat = 0
     var checkpointMarkers: [LocalScanCheckpointMarker] = []
@@ -62,7 +61,6 @@ struct LocalFloorPlanCanvas: UIViewRepresentable {
                     scaleMarkerAppearance: scaleMarkerAppearance,
                     showsScanStartSelection: showsScanStartSelection,
                     usesTransparentBackground: usesTransparentBackground,
-                    keepsWhiteImageBackground: keepsWhiteImageBackground,
                     maximumInitialDisplaySize: maximumInitialDisplaySize,
                     imageToneOverlayOpacity: imageToneOverlayOpacity,
                     checkpointMarkers: checkpointMarkers,
@@ -86,7 +84,7 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
     private let scrollView = UIScrollView()
     private let contentView = UIView()
     private let imageView = UIImageView()
-    private let imageToneOverlayView = UIView()
+    private let imageToneOverlayView = UIImageView()
     private let obstacleImageView = UIImageView()
     private let markersView = LocalFloorPlanMarkersView()
     private let canvasView = PKCanvasView()
@@ -154,7 +152,6 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
                 scaleMarkerAppearance: LocalScaleMarkerAppearance,
                 showsScanStartSelection: Bool,
                 usesTransparentBackground: Bool,
-                keepsWhiteImageBackground: Bool,
                 maximumInitialDisplaySize: CGSize?,
                 imageToneOverlayOpacity: CGFloat,
                 checkpointMarkers: [LocalScanCheckpointMarker],
@@ -165,19 +162,18 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
             discardPendingDrawing()
             needsFit = true
             imageView.image = image
+            imageToneOverlayView.image = image.withRenderingMode(.alwaysTemplate)
             imageSize = CGSize(width: image.cgImage?.width ?? Int(image.size.width),
                                height: image.cgImage?.height ?? Int(image.size.height))
         }
         let planAlpha = CGFloat(min(1, max(0, layers.planOpacity)))
         if imageView.alpha != planAlpha { imageView.alpha = planAlpha }
         let canvasBackground: UIColor = usesTransparentBackground ? .clear : .secondarySystemBackground
-        let imageBackground: UIColor = usesTransparentBackground && !keepsWhiteImageBackground
-            ? .clear
-            : .white
+        let imageBackground: UIColor = usesTransparentBackground ? .clear : .white
         if backgroundColor != canvasBackground { backgroundColor = canvasBackground }
         if contentView.backgroundColor != imageBackground { contentView.backgroundColor = imageBackground }
         isOpaque = !usesTransparentBackground
-        contentView.isOpaque = !usesTransparentBackground || keepsWhiteImageBackground
+        contentView.isOpaque = !usesTransparentBackground
         imageToneOverlayView.alpha = min(1, max(0, imageToneOverlayOpacity))
         if self.maximumInitialDisplaySize != maximumInitialDisplaySize {
             self.maximumInitialDisplaySize = maximumInitialDisplaySize
@@ -253,12 +249,14 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
         scrollView.bouncesZoom = true
         scrollView.contentInsetAdjustmentBehavior = .never
         addSubview(scrollView)
-        contentView.backgroundColor = .white
+        contentView.backgroundColor = .clear
+        contentView.isOpaque = false
         contentView.clipsToBounds = true
         scrollView.addSubview(contentView)
         imageView.contentMode = .scaleToFill
         contentView.addSubview(imageView)
-        imageToneOverlayView.backgroundColor = UIColor(DSPalette.Gray.g700)
+        imageToneOverlayView.contentMode = .scaleToFill
+        imageToneOverlayView.tintColor = UIColor(DSPalette.Gray.g700)
         imageToneOverlayView.isUserInteractionEnabled = false
         contentView.addSubview(imageToneOverlayView)
         obstacleImageView.contentMode = .scaleToFill
