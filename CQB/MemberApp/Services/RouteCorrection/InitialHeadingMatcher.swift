@@ -7,6 +7,13 @@ nonisolated struct InitialHeadingFit: Codable, Sendable {
     let coveredLengthRatio: Double
     let localPositionChangeMeters: Double
     let objective: Double
+    /// 실행 중 진단만 보유한다. 기존 진단 JSON 형식은 변경하지 않는다.
+    var registration: RouteRegistration? = nil
+
+    private enum CodingKeys: String, CodingKey {
+        case rotationDegrees, offsetDegrees, distanceCoverage, coveredLengthRatio
+        case localPositionChangeMeters, objective
+    }
 }
 nonisolated struct InitialHeadingSearchSummary: Codable, Sendable {
     let baselineRotationDegrees: Double
@@ -29,6 +36,7 @@ nonisolated enum InitialHeadingMatcher {
         level:DeformationLevel = .standard,budgetSeconds:Double = 20,
         preserveExcursions:Bool = false,
         improvedExcursions:Bool = false,
+        mode:RouteCorrectionMode = .manual,
         progress:@Sendable (Double)->Void = {_ in}) -> MapMatchResult? {
         guard input.count>1,rotationDegrees.isFinite,pixelsPerMeter.isFinite,pixelsPerMeter>0,
               budgetSeconds>0,map.grid.isFree(anchor) else { return nil }
@@ -42,7 +50,7 @@ nonisolated enum InitialHeadingMatcher {
         }
         guard total.isFinite,total>0.01 else { return nil }
         struct Trial { let candidate:MapMatchCandidate; let fit:InitialHeadingFit }
-        var retained:[Trial]=[],evaluated=Set<Int>(),tested:[InitialHeadingFit]=[]
+        var retained:[Trial]=[],evaluated=Set<RouteRegistration>(),tested:[InitialHeadingFit]=[]
         var baselineTrial:Trial?,limited=false,evaluationCount=0
         var resultTemplate:MapMatchResult?
         func rank(_ a:Trial,_ b:Trial)->Bool {
@@ -64,17 +72,18 @@ nonisolated enum InitialHeadingMatcher {
                 return max(difference,local.isEmpty ? 0 : local.reduce(0,+)/Double(local.count))
             }
         }
-        func evaluate(_ offset:Double,coherent:Bool=false) {
+        func evaluate(_ offset:Double,coherent:Bool=false,dx:Double=0,dy:Double=0) {
             guard !Task.isCancelled,Date()<deadline else { limited=true; return }
             guard evaluationCount<25 else { limited=true;return }
-            let key=Int(offset.rounded())*2+(coherent ? 1 : 0)
+            let key=RouteRegistration(offsetDegrees:offset,translationXMeters:dx,translationYMeters:dy,coherentOnly:coherent)
             guard evaluated.insert(key).inserted else { return }
             let remaining=deadline.timeIntervalSinceNow
             let budget=min(offset==0 ? 3.0 : 1.5,remaining)
             let angle=normalized(baseline+offset)
+            let shiftedAnchor=key.anchor(from:anchor,pixelsPerMeter:pixelsPerMeter)
             evaluationCount += 1
             let trialStarted=Date()
-            guard let result=NonrigidRouteMatcher.match(input:input,anchor:anchor,pixelsPerMeter:pixelsPerMeter,
+            guard let result=NonrigidRouteMatcher.match(input:input,anchor:shiftedAnchor,pixelsPerMeter:pixelsPerMeter,
                 rotationDegrees:angle,map:map,mapHash:mapHash,recordingID:recordingID,level:level,budgetSeconds:budget,
                 shapePolicy:improvedExcursions ? .improved(level) : (preserveExcursions ? .make(level) : nil),
                 coherentOnly:coherent) else {
@@ -100,11 +109,13 @@ nonisolated enum InitialHeadingMatcher {
                     + 0.5*pow((d?.maxTurnChangeDegrees ?? 0)/90,2)
                     + 0.06*pow(offset/halfRange,2) + (result.searchIncomplete ? 0.2 : 0)
                     + (c.routeShape?.qualityPenalty ?? 0)
-                let fit=InitialHeadingFit(rotationDegrees:angle,offsetDegrees:offset,distanceCoverage:coverage,
+                    + (mode == .worldMap ? 0.02*key.squaredTranslation : 0)
+                var fit=InitialHeadingFit(rotationDegrees:angle,offsetDegrees:offset,distanceCoverage:coverage,
                     coveredLengthRatio:ratio,localPositionChangeMeters:c.maxLocalChangeMeters,objective:objective)
+                if mode == .worldMap { fit.registration=key }
                 let trial=Trial(candidate:c,fit:fit)
                 tested.append(fit)
-                if offset==0,baselineTrial==nil || rank(trial,baselineTrial!) { baselineTrial=trial }
+                if offset==0 && dx==0 && dy==0,baselineTrial==nil || rank(trial,baselineTrial!) { baselineTrial=trial }
                 retained.append(trial); retained.sort(by:rank)
                 // Keep a few spatial/angle alternatives, not every full sample array from every trial.
                 var diverse:[Trial]=[]
@@ -121,7 +132,53 @@ nonisolated enum InitialHeadingMatcher {
             }
             progress(min(0.94,Double(evaluationCount)/25))
         }
-        if improvedExcursions {
+        if improvedExcursions,mode == .worldMap {
+            // Rank rigid rotation/translation cheaply before spending the existing per-trial budget.
+            var ranked:[(registration:RouteRegistration,cost:Double)]=[]
+            let strideCount=max(1,(input.count+1399)/1400)
+            for registration in RouteRegistration.worldMapCandidates {
+                if Task.isCancelled { return nil }
+                if Date()>=deadline { limited=true;break }
+                let origin=registration.anchor(from:anchor,pixelsPerMeter:pixelsPerMeter)
+                guard map.grid.isFree(origin) else { continue }
+                var previous:MapPoint?,segment:Int?,travel=0.0,blocked=0.0
+                for i in stride(from:0,to:input.count,by:strideCount) {
+                    guard let p=input[i].meters else { previous=nil;segment=nil;continue }
+                    let q=AnchoredMapMatcher.transformed(p,anchor:origin,scale:pixelsPerMeter,
+                        rotation:baseline+registration.offsetDegrees,factor:1)
+                    if let previous,segment==input[i].segment {
+                        let length=hypot(q.x-previous.x,q.y-previous.y)/pixelsPerMeter
+                        travel += length
+                        if !map.grid.canTravel(previous,q) { blocked += length }
+                    }
+                    previous=q;segment=input[i].segment
+                }
+                ranked.append((registration,blocked/max(0.01,travel)
+                    + 0.002*pow(registration.offsetDegrees/30,2)+0.002*registration.squaredTranslation))
+            }
+            ranked.sort {
+                if abs($0.cost-$1.cost)>1e-9 { return $0.cost<$1.cost }
+                let a=$0.registration,b=$1.registration
+                if abs(a.offsetDegrees) != abs(b.offsetDegrees) { return abs(a.offsetDegrees)<abs(b.offsetDegrees) }
+                if a.translationXMeters != b.translationXMeters { return a.translationXMeters<b.translationXMeters }
+                return a.translationYMeters<b.translationYMeters
+            }
+            var shortlist:[RouteRegistration]=[]
+            for trial in ranked where !shortlist.contains(where:{$0.isNear(trial.registration)}) {
+                shortlist.append(trial.registration)
+                if shortlist.count==4 { break }
+            }
+            for trial in shortlist {
+                evaluate(trial.offsetDegrees,coherent:true,dx:trial.translationXMeters,dy:trial.translationYMeters)
+            }
+            evaluate(0,coherent:true)
+            if let center=retained.first?.fit,let registration=center.registration {
+                for step in [-4.0,-2,2,4] where abs(center.offsetDegrees+step)<=30 {
+                    evaluate(center.offsetDegrees+step,coherent:true,
+                        dx:registration.translationXMeters,dy:registration.translationYMeters)
+                }
+            }
+        } else if improvedExcursions {
             // Cheap rigid registration ranking: no trajectory bending and no invented road graph.
             // It only orders hypotheses; every accepted edge is still checked by the full matcher.
             var ranked:[(offset:Double,cost:Double)]=[]
@@ -211,9 +268,12 @@ nonisolated enum InitialHeadingMatcher {
             candidates.append(candidate)
         }
         template=MapMatchResult(candidates:candidates,elapsedSeconds:Date().timeIntervalSince(start),searchIncomplete:limited,
-            mapHash:mapHash,sourceRecordingID:recordingID,anchor:anchor,rotationDegrees:baseline,pixelsPerMeter:pixelsPerMeter)
+            mapHash:mapHash,sourceRecordingID:recordingID,
+            anchor:best.fit.registration?.anchor(from:anchor,pixelsPerMeter:pixelsPerMeter) ?? anchor,
+            rotationDegrees:baseline,pixelsPerMeter:pixelsPerMeter)
         template.algorithm="initial-yaw-search-plus-v9-v1"
         if preserveExcursions { template.algorithm=improvedExcursions ? "initial-yaw-and-whole-lobe-shape-envelope-v2" : "initial-yaw-and-excursion-arc-budget-v1" }
+        if mode == .worldMap { template.algorithm="initial-yaw-translation-and-whole-lobe-v1" }
         template.deformationLevel=level
         template.scaleRange=[level.factorRange.lowerBound,level.factorRange.upperBound]
         template.initialHeadingSearch=InitialHeadingSearchSummary(baselineRotationDegrees:baseline,searchHalfRangeDegrees:halfRange,

@@ -41,6 +41,7 @@ final class MemberStore {
     private(set) var trainingMap: TrainingMap?
     private(set) var rawTrack: RawTrackDocument?
     private(set) var correction: RouteCorrectionOutput?
+    private(set) var recordingCorrectionMode: RouteCorrectionMode?
     private(set) var recordingFiles: LocalRecordingFiles?
     private(set) var savedRecordingURLs: [URL] = []
     private(set) var filesSaved = false
@@ -479,6 +480,7 @@ final class MemberStore {
         }
         guard isCurrentRecordingStart(attemptID, sessionID: sessionID), let map = trainingMap,
               isReady, let startPoint, let directionPoint else { return }
+        let correctionMode: RouteCorrectionMode = positioningState == .automaticReady ? .worldMap : .manual
         canRetryRecordingStart = false
         errorMessage = nil
         var pendingFiles: LocalRecordingFiles?
@@ -513,6 +515,7 @@ final class MemberStore {
                 self.directionPoint = position.direction
             }
             self.identity = identity
+            recordingCorrectionMode = correctionMode
             recordingFiles = files
             savedRecordingURLs = []
             rawTrack = nil
@@ -696,6 +699,7 @@ final class MemberStore {
     }
 
     private func leaveSessionWithoutRecording(message: String) {
+        recordingCorrectionMode = nil
         cancelRelocalizationTimer()
         automaticWorldMap = nil
         isSimulatingDemoScan = false
@@ -789,8 +793,9 @@ final class MemberStore {
             let output: RouteCorrectionOutput
             if let correction { output = correction }
             else {
+                let mode = recordingCorrectionMode ?? .manual
                 output = await Task.detached(priority: .userInitiated) {
-                    RouteCorrectionService.correct(raw: raw, rawHash: hash, map: map)
+                    RouteCorrectionService.correct(raw: raw, rawHash: hash, map: map, mode: mode)
                 }.value
                 correction = output
             }
@@ -1059,6 +1064,7 @@ final class MemberStore {
     }
 
     private func resetToJoin() {
+        recordingCorrectionMode = nil
         cancelRelocalizationTimer()
         automaticWorldMap = nil
         isSimulatingDemoScan = false
