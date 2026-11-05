@@ -2,6 +2,7 @@ import CoreGraphics
 import CQBCore
 import Foundation
 import Observation
+import OSLog
 
 enum MemberExecutionEnvironment: Sendable, Equatable {
     case operational
@@ -12,6 +13,7 @@ enum MemberExecutionEnvironment: Sendable, Equatable {
 @MainActor
 @Observable
 final class MemberStore {
+    private static let logger = Logger(subsystem: "com.wffmst.cqb", category: "MemberStore")
     @ObservationIgnored let cameraService: ARRecordingService
     @ObservationIgnored private let recordingStarter: any MemberRecordingStarting
     @ObservationIgnored private let executionEnvironment: MemberExecutionEnvironment
@@ -32,6 +34,9 @@ final class MemberStore {
     @ObservationIgnored private let recordingRepository: any RecordingRepository
     @ObservationIgnored private let videoChunkRepository: any VideoChunkRepository
     @ObservationIgnored private let trackResultRepository: any TrackResultRepository
+    @ObservationIgnored private let soundCandidateRepository: (any SoundCandidateRepository)?
+    /// 녹화 중 뽑은 큰 소리 후보(#172). 분석에 실패했거나 데모면 nil이다.
+    @ObservationIgnored private var soundCandidateDocument: SoundCandidateDocument?
 
     private(set) var trainingMap: TrainingMap?
     private(set) var rawTrack: RawTrackDocument?
@@ -87,6 +92,7 @@ final class MemberStore {
         recordingRepository: any RecordingRepository,
         videoChunkRepository: any VideoChunkRepository,
         trackResultRepository: any TrackResultRepository,
+        soundCandidateRepository: (any SoundCandidateRepository)? = nil,
         worldMapFileRepository: (any WorldMapFileRepository)? = nil,
         relocalizationTimeout: Duration = .seconds(10),
         cameraService: ARRecordingService? = nil,
@@ -102,6 +108,7 @@ final class MemberStore {
         self.recordingRepository = recordingRepository
         self.videoChunkRepository = videoChunkRepository
         self.trackResultRepository = trackResultRepository
+        self.soundCandidateRepository = soundCandidateRepository
         let resolvedCamera = cameraService ?? ARRecordingService()
         self.cameraService = resolvedCamera
         self.recordingStarter = recordingStarter ?? resolvedCamera
@@ -510,6 +517,7 @@ final class MemberStore {
             savedRecordingURLs = []
             rawTrack = nil
             correction = nil
+            soundCandidateDocument = nil
             filesSaved = false
             uploadedVideoChunkCount = 0
             enqueuedVideoChunkIndexes = []
@@ -740,6 +748,15 @@ final class MemberStore {
             }
         }
         catch { errorMessage = error.localizedDescription }
+        // 후보는 녹화가 끝날 때 한 번 만든다. 데모는 올리지 않으므로 만들지 않는다.
+        if !isDemoMode, let candidates = cameraService.soundCandidates {
+            soundCandidateDocument = SoundCandidateDocument(
+                identity: identity,
+                detector: MemberSoundCandidateRecorder.detector,
+                analyzedRanges: candidates.analyzedRanges,
+                candidates: candidates.candidates
+            )
+        }
         rawTrack = RawTrackDocument(identity: identity, floorPlan: map.reference,
             localStartedAt: recordingStartedAt, start: map.pixel(startPoint), direction: map.pixel(directionPoint),
             pixelsPerMeter: cameraService.recordingPixelsPerMeter ?? map.pixelsPerMeter, rotationDegrees: cameraService.rotationDegrees,
@@ -777,10 +794,15 @@ final class MemberStore {
                 }.value
                 correction = output
             }
+            let soundCandidates = soundCandidateDocument
             try await Task.detached {
                 try fileStore.save(output.document, to: files.result)
                 if let diagnostics = output.diagnostics {
                     try fileStore.save(diagnostics, to: files.diagnostics)
+                }
+                // 후보 저장 실패는 동선 저장을 막지 않는다. 메모리의 문서로 업로드는 그대로 시도한다.
+                if let soundCandidates {
+                    try? fileStore.save(soundCandidates, to: files.soundCandidates)
                 }
             }.value
             filesSaved = true
@@ -857,6 +879,20 @@ final class MemberStore {
                 try await uploadQueue.markTrackResultUploaded()
                 uploadManifest = await uploadQueue.currentManifest()
                 refreshUploadProgress(completedItems: totalItems, totalItems: totalItems)
+            }
+
+            // 음향 후보도 다른 파일처럼 올라가야 done으로 넘긴다. 네트워크·권한 오류나 기록표 저장 실패는
+            // 업로드 실패로 남겨 재시도한다(#196). 계약 검증에 걸린 문서는 다시 올려도 실패하므로 로그만 남기고 넘어간다.
+            if let soundCandidateDocument, let soundCandidateRepository,
+               uploadManifest?.uploadedSoundCandidates != true {
+                uploadStatusMessage = "큰 소리 후보 업로드 중"
+                do {
+                    try await soundCandidateRepository.upload(soundCandidateDocument)
+                } catch let error as SoundCandidateValidationError {
+                    Self.logger.error("큰 소리 후보가 계약을 지키지 않아 올리지 않음: \(String(describing: error), privacy: .public)")
+                }
+                try await uploadQueue.markSoundCandidatesUploaded()
+                uploadManifest = await uploadQueue.currentManifest()
             }
 
             uploadStatusMessage = "업로드 완료 확인 중"
@@ -1057,6 +1093,7 @@ final class MemberStore {
         identity = nil
         rawTrack = nil
         correction = nil
+        soundCandidateDocument = nil
         recordingFiles = nil
         uploadManifest = nil
         savedRecordingURLs = []
@@ -1102,10 +1139,12 @@ extension MemberStore {
         identity: TrackIdentity,
         correction: RouteCorrectionOutput,
         files: LocalRecordingFiles,
-        chunkURL: URL
+        chunkURL: URL,
+        soundCandidates: SoundCandidateDocument? = nil
     ) async throws {
         self.identity = identity
         self.correction = correction
+        soundCandidateDocument = soundCandidates
         recordingFiles = files
         savedRecordingURLs = [chunkURL]
         filesSaved = true

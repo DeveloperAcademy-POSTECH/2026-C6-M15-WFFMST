@@ -31,6 +31,7 @@ nonisolated struct LocalRecordingFiles: Sendable {
     var raw: URL { directory.appendingPathComponent("raw-track.json") }
     var result: URL { directory.appendingPathComponent("result.json") }
     var diagnostics: URL { directory.appendingPathComponent("correction-diagnostics.json") }
+    var soundCandidates: URL { directory.appendingPathComponent("sound-candidates.json") }
 
     func videoChunk(index: Int) -> URL {
         videoChunksDirectory.appendingPathComponent(String(format: "chunk_%04d.mp4", index))

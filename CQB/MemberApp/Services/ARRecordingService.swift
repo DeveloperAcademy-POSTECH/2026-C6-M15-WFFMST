@@ -25,6 +25,8 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
     private(set) var isRecording = false
     private(set) var samples: [RawTrackSample] = []
     private(set) var videoChunkURLs: [URL] = []
+    /// 마지막 녹화의 큰 소리 후보(#172). 분석 중 실패했으면 nil이다.
+    private(set) var soundCandidates: MemberSoundCandidateRecorder.Result?
     private(set) var rotationDegrees = 0.0
     @ObservationIgnored var onSessionRunningChange: ((Bool) -> Void)?
     @ObservationIgnored var onTrackingUpdate: ((ARPose?, Bool, Bool) -> Void)?
@@ -34,6 +36,7 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
     @ObservationIgnored private var positioningMap: TrainingMap?
     @ObservationIgnored private let writer = ARFrameVideoWriter()
     @ObservationIgnored private let audioCapture = MemberAudioCaptureService()
+    @ObservationIgnored private let soundRecorder = MemberSoundCandidateRecorder()
     @ObservationIgnored private var audioStatusTask: Task<Void, Never>?
     @ObservationIgnored var onVideoChunkReady: (@MainActor @Sendable (Int, URL) -> Void)?
     @ObservationIgnored private var origin = SIMD3<Float>(repeating: 0)
@@ -132,13 +135,16 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
         }
         guard wantsRunning, shouldStart(), !Task.isCancelled else { throw CaptureError.notReady }
         let videoWriter = writer
+        let soundRecorder = soundRecorder
         let audioStatus = startAudioStatusUpdates()
         let sampleRate: Double?
         if audioAllowed {
             sampleRate = await audioCapture.start(onSampleBuffer: { sampleBuffer in
                 videoWriter.append(audioSampleBuffer: sampleBuffer)
+                soundRecorder.append(sampleBuffer)
             }, onInterruption: {
                 videoWriter.markAudioInterrupted()
+                soundRecorder.interrupt()
                 audioStatus.yield(true)
             }, onResume: {
                 audioStatus.yield(false)
@@ -188,6 +194,9 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
         let position = frame.camera.transform.columns.3
         origin = SIMD3(position.x, position.y, position.z)
         firstTimestamp = frame.timestamp
+        soundCandidates = nil
+        // 마이크를 쓸 수 없어도 시작한다. 그러면 분석 구간이 빈 결과가 나온다.
+        soundRecorder.begin(recordingStart: frame.timestamp)
         lastSampleTime = -Double.infinity
         segment = 0
         wasNormal = true
@@ -207,6 +216,7 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
         isRecording = false
         stopAudioStatusUpdates()
         await audioCapture.stop()
+        soundRecorder.cancel()
         writer.cancel()
         samples = []
         videoChunkURLs = []
@@ -261,6 +271,7 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, Mem
         isRecording = false
         stopAudioStatusUpdates()
         await audioCapture.stop()
+        soundCandidates = await soundRecorder.finish()
         let end = finalFrame.map { $0.timestamp + 1.0 / 30.0 }
         let chunks = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[URL], Error>) in
             writer.finish(at: end) { continuation.resume(with: $0) }

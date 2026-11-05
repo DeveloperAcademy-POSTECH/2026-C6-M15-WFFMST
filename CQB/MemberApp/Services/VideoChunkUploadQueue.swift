@@ -101,6 +101,11 @@ actor VideoChunkUploadQueue {
         try persistManifest()
     }
 
+    func markSoundCandidatesUploaded() throws {
+        manifest.uploadedSoundCandidates = true
+        try persistManifest()
+    }
+
     func currentManifest() -> RecordingUploadManifest {
         manifest
     }

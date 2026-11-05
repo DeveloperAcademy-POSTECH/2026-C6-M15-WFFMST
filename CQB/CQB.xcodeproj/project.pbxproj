@@ -75,6 +75,7 @@
 				"docs/issue-88-implementation.md",
 				"docs/issue-136-implementation.md",
 				"docs/issue-150-implementation.md",
+				"docs/issue-172-sound-candidates.md",
 			);
 			target = 788A10723076802C003DEA3E /* MemberApp */;
 		};
