@@ -45,6 +45,10 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				AGENTS.md,
+				"Resources/Models/BinaryWallSegmentation-LICENSE.txt",
+				"Resources/Models/BinaryWallSegmentation.mlpackage",
+				"Services/Import/LocalAIWallDetector.swift",
+				"Services/Import/LocalAIWallMaskGridBuilder.swift",
 				docs/flows.md,
 				"docs/issue-8-implementation.md",
 				"docs/issue-46-implementation.md",

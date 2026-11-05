@@ -183,7 +183,7 @@ enum LocalAIWallMaskGridBuilder {
         contentHeight: Int,
         sourceWidth: Int,
         sourceHeight: Int,
-        cellSizePixels: Int = LocalV13WallDetector.cellSizePixels
+        cellSizePixels: Int = LocalPixelWallDetector.cellSizePixels
     ) throws -> LocalObstacleGrid {
         let maskCount = maskWidth.multipliedReportingOverflow(by: maskHeight)
         guard maskWidth > 0, maskHeight > 0, !maskCount.overflow,

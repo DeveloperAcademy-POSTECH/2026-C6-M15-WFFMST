@@ -1,7 +1,7 @@
 import Foundation
 
-/// floorplanPoC/FloorPlanWallDetector의 V13 규칙. 문과 통로의 빈틈을 임의로 메우지 않는다.
-enum LocalV13WallDetector {
+/// 픽셀 규칙으로 벽을 추출한다. 문과 통로의 빈틈을 임의로 메우지 않는다.
+enum LocalPixelWallDetector {
     nonisolated static let cellSizePixels = 2
 
     nonisolated static func grid(rgba: [UInt8], width: Int, height: Int) throws -> LocalObstacleGrid {

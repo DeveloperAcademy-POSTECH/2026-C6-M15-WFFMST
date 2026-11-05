@@ -108,8 +108,8 @@ enum LocalAIWallDetector {
         let preprocessed = try preprocess(image: image, configuration: configuration)
         let crop = preprocessed.crop
         let model = try loadModel()
-        let columns = sourceWidth / LocalV13WallDetector.cellSizePixels
-        let rows = sourceHeight / LocalV13WallDetector.cellSizePixels
+        let columns = sourceWidth / LocalPixelWallDetector.cellSizePixels
+        let rows = sourceHeight / LocalPixelWallDetector.cellSizePixels
         var weightedProbabilities = [Float](repeating: 0, count: columns * rows)
         var weights = [Float](repeating: 0, count: columns * rows)
 
@@ -156,7 +156,7 @@ enum LocalAIWallDetector {
         return LocalObstacleGrid(
             columns: columns,
             rows: rows,
-            cellSizePixels: LocalV13WallDetector.cellSizePixels,
+            cellSizePixels: LocalPixelWallDetector.cellSizePixels,
             blocked: blocked
         )
     }
@@ -495,7 +495,7 @@ enum LocalAIWallDetector {
         probabilities: inout [Float],
         weights: inout [Float]
     ) throws {
-        let cellSize = LocalV13WallDetector.cellSizePixels
+        let cellSize = LocalPixelWallDetector.cellSizePixels
         let firstColumn = max(0, Int(region.minX) / cellSize)
         let finalColumn = min(columns - 1, (Int(region.maxX) - 1) / cellSize)
         let firstRow = max(0, Int(region.minY) / cellSize)

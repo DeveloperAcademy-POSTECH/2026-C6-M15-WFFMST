@@ -332,8 +332,8 @@ final class FloorPlanDraftStore {
                 self.work = nil
                 if !(error is CancellationError) {
                     if self.image?.fileName == url.lastPathComponent {
-                        Self.logger.error("AI wall extraction failed; fallback will run after AR scan: \(error.localizedDescription, privacy: .public)")
-                        if self.worldMapDraft != nil { self.extractFallbackMask() }
+                        Self.logger.error("Pixel wall extraction failed; retry will run after AR scan: \(error.localizedDescription, privacy: .public)")
+                        if self.worldMapDraft != nil { self.startMaskExtraction() }
                     } else {
                         self.errorMessage = error.localizedDescription
                     }
@@ -354,7 +354,7 @@ final class FloorPlanDraftStore {
     func retryMaskExtraction() {
         guard canRetryMaskExtraction else { return }
         errorMessage = nil
-        extractFallbackMask()
+        startMaskExtraction()
     }
 
     func stageBrushStroke(_ stroke: LocalEditStroke) {
@@ -732,7 +732,7 @@ final class FloorPlanDraftStore {
             errorMessage = nil
             finishCreationIfReady()
             if maskExtractionState == .failed {
-                extractFallbackMask()
+                startMaskExtraction()
             }
         } catch {
             guard worldMapSaveGeneration == token else { return }
@@ -854,7 +854,7 @@ final class FloorPlanDraftStore {
         tool = .pen
     }
 
-    private func extractFallbackMask() {
+    private func startMaskExtraction() {
         guard let image else { return }
         invalidateWork()
         processingStage = .extractingMask
@@ -863,7 +863,7 @@ final class FloorPlanDraftStore {
         let service = importer
         work = Task { [weak self] in
             do {
-                let result = try await service.extractFallbackMask(from: image)
+                let result = try await service.extractMask(from: image)
                 try Task.checkCancellation()
                 let outline = result.suggestedOutline.isEmpty
                     ? Self.fullImageOutline : result.suggestedOutline
@@ -874,10 +874,16 @@ final class FloorPlanDraftStore {
                         height: image.height
                     )
                     let grid = try cache.resolve(edits: [], outline: outline)
+                    try Task.checkCancellation()
                     let png = try LocalFloorPlanMaskRenderer.pngData(grid: grid)
                     return (cache, grid, png)
                 }
-                let (cache, grid, png) = try await preparation.value
+                let (cache, grid, png) = try await withTaskCancellationHandler {
+                    try await preparation.value
+                } onCancel: {
+                    preparation.cancel()
+                }
+                try Task.checkCancellation()
                 guard let self, self.generation == token else { return }
                 self.baseGrid = result.baseGrid
                 self.resolvedGrid = grid
