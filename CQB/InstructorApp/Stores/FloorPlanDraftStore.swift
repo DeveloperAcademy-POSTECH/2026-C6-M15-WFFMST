@@ -874,10 +874,16 @@ final class FloorPlanDraftStore {
                         height: image.height
                     )
                     let grid = try cache.resolve(edits: [], outline: outline)
+                    try Task.checkCancellation()
                     let png = try LocalFloorPlanMaskRenderer.pngData(grid: grid)
                     return (cache, grid, png)
                 }
-                let (cache, grid, png) = try await preparation.value
+                let (cache, grid, png) = try await withTaskCancellationHandler {
+                    try await preparation.value
+                } onCancel: {
+                    preparation.cancel()
+                }
+                try Task.checkCancellation()
                 guard let self, self.generation == token else { return }
                 self.baseGrid = result.baseGrid
                 self.resolvedGrid = grid
