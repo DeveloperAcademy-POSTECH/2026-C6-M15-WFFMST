@@ -73,13 +73,13 @@ struct RecordingUploadView: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 .frame(minHeight: max(0, geometry.size.height - topPadding - bottomPadding))
-                .padding(.horizontal, isLandscape ? DSSpacing.s40 : DSSpacing.s20)
+                .padding(.leading, isLandscape ? max(0, DSSpacing.s40 - geometry.safeAreaInsets.leading) : DSSpacing.s20)
+                .padding(.trailing, isLandscape ? max(0, DSSpacing.s40 - geometry.safeAreaInsets.trailing) : DSSpacing.s20)
                 .padding(.top, topPadding)
                 .padding(.bottom, bottomPadding)
             }
         }
         .foregroundStyle(DSColor.contentPrimary)
-        .ignoresSafeArea(.container, edges: .horizontal)
         .background(DSColor.backgroundPrimary.ignoresSafeArea())
         .alert("업로드를 종료할까요?", isPresented: $showsAbandonConfirmation) {
             Button("업로드 종료", role: .destructive) { Task { await onAbandon() } }
