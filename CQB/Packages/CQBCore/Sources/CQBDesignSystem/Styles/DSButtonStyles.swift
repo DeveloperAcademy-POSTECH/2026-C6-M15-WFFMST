@@ -14,14 +14,14 @@ public struct DSPrimaryButtonStyle: ButtonStyle {
             .lineSpacing(10)
             .foregroundStyle(isEnabled ? DSColor.contentInverse : DSColor.contentDisabled)
             .padding(.horizontal, DSSpacing.s20)
-            .frame(minHeight: DSSize.controlHeight)
+            .frame(minHeight: DSSize.actionButtonHeight)
             .background(backgroundColor(isPressed: configuration.isPressed))
-            .clipShape(Capsule())
+            .clipShape(.rect(cornerRadius: DSRadius.full))
             .overlay {
-                Capsule()
+                RoundedRectangle(cornerRadius: DSRadius.full)
                     .stroke(isEnabled ? DSColor.borderEmphasized : .clear, lineWidth: 1)
             }
-            .contentShape(Capsule())
+            .contentShape(.rect(cornerRadius: DSRadius.full))
     }
 
     private func backgroundColor(isPressed: Bool) -> Color {
@@ -41,11 +41,11 @@ public struct DSSecondaryButtonStyle: ButtonStyle {
             .lineSpacing(10)
             .foregroundStyle(isEnabled ? DSColor.contentPrimary : DSColor.contentDisabled)
             .padding(.horizontal, DSSpacing.s20)
-            .frame(minHeight: DSSize.controlHeight)
+            .frame(minHeight: DSSize.actionButtonHeight)
             .background(isEnabled ? DSColor.actionSecondary : DSColor.actionDisabled)
-            .clipShape(Capsule())
+            .clipShape(.rect(cornerRadius: DSRadius.full))
             .opacity(configuration.isPressed ? 0.8 : 1)
-            .contentShape(Capsule())
+            .contentShape(.rect(cornerRadius: DSRadius.full))
     }
 }
 
@@ -86,38 +86,6 @@ public struct DSCircularButtonStyle: ButtonStyle {
             .opacity(configuration.isPressed ? 0.78 : 1)
             .contentShape(Circle())
             .dsButtonShadow()
-    }
-}
-
-public struct DSSelectablePillStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
-
-    private let isSelected: Bool
-
-    public init(isSelected: Bool) {
-        self.isSelected = isSelected
-    }
-
-    public func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(DSTypography.headingSemiBold20.font)
-            .lineSpacing(10)
-            .foregroundStyle(foregroundColor)
-            .padding(.horizontal, DSSpacing.s20)
-            .frame(minHeight: 45)
-            .background(isSelected ? DSPalette.Primary.p300 : .clear)
-            .clipShape(Capsule())
-            .overlay {
-                Capsule()
-                    .stroke(DSPalette.Primary.p100, lineWidth: isSelected ? 1 : 2)
-            }
-            .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
-            .contentShape(Capsule())
-    }
-
-    private var foregroundColor: Color {
-        guard isEnabled else { return DSColor.contentDisabled }
-        return isSelected ? DSPalette.Primary.p900 : DSPalette.Primary.p50
     }
 }
 

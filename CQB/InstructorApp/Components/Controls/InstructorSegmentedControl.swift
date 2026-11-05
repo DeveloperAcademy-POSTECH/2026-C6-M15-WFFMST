@@ -1,21 +1,13 @@
+import CQBDesignSystem
 import SwiftUI
 
-public struct DSSegmentedControl<Option: Hashable>: View {
-    private let options: [Option]
-    @Binding private var selection: Option
-    private let title: (Option) -> String
+/// InstructorApp 도면 편집 도구를 전환하는 segmented control입니다.
+struct InstructorSegmentedControl<Option: Hashable>: View {
+    let options: [Option]
+    @Binding var selection: Option
+    let title: (Option) -> String
 
-    public init(
-        options: [Option],
-        selection: Binding<Option>,
-        title: @escaping (Option) -> String
-    ) {
-        self.options = options
-        self._selection = selection
-        self.title = title
-    }
-
-    public var body: some View {
+    var body: some View {
         HStack(spacing: 0) {
             ForEach(options, id: \.self) { option in
                 let isSelected = selection == option

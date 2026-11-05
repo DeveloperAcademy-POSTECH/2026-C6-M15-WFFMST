@@ -9,13 +9,13 @@ enum InstructorColor {
     // MARK: - Surfaces
 
     /// Figma: `color/canvas`
-    static let canvas = DSColor.background
+    static let canvas = DSColor.backgroundPrimary
 
     /// Figma: `color/surface/base`
-    static let surfaceBase = DSColor.area1
+    static let surfaceBase = DSColor.surfacePrimary
 
     /// Figma: `color/surface/raised`
-    static let surfaceRaised = DSColor.area2
+    static let surfaceRaised = DSColor.surfaceSecondary
 
     /// Figma: `Liquid Glass - Regular - Medium`의 불투명 기본 면(#1A1A1A).
     static let savingOverlaySurface = Color("InstructorSavingOverlaySurface")
@@ -23,13 +23,13 @@ enum InstructorColor {
     // MARK: - Actions and borders
 
     /// Figma: `color/action/primary`
-    static let actionPrimary = DSColor.main
+    static let actionPrimary = DSColor.actionPrimary
 
     /// Figma: `color/action/disabled`
-    static let actionDisabled = Color("InstructorActionDisabled")
+    static let actionDisabled = DSColor.actionPrimaryDisabled
 
     /// Figma: `color/border/default`
-    static let borderDefault = DSColor.area3
+    static let borderDefault = DSColor.borderPrimary
 
     /// 도면 목록의 미선택 indicator와 미리보기 action border에 쓰는 Figma Gray/200.
     static let floorPlanSelectionIdle = DSPalette.Gray.g200
@@ -38,16 +38,16 @@ enum InstructorColor {
     // MARK: - Content
 
     /// Figma: `color/text/primary`
-    static let textPrimary = DSColor.white
+    static let textPrimary = DSColor.contentPrimary
 
     /// Figma: `color/text/secondary`
-    static let textSecondary = DSColor.darkGreen
+    static let textSecondary = DSColor.contentSecondary
 
     /// Figma: `color/icon/check`
-    static let iconCheck = DSColor.white
+    static let iconCheck = DSColor.contentPrimary
 
-    /// Apple semantic red used for validation and error feedback.
-    static let validationError = Color.red
+    /// 입력 검증과 오류 피드백에 쓰는 공통 의미 색상입니다.
+    static let validationError = DSColor.statusError
 
     /// 훈련 중 화면의 녹화 상태 표시점에 쓰는 Figma Red/400.
     static let trainingRecordingIndicator = DSPalette.Red.r400
@@ -78,21 +78,15 @@ enum InstructorColor {
     // MARK: - Menus
 
     /// Figma: `color/menu/surface`
-    static let menuSurface = DSColor.area3
+    static let menuSurface = DSColor.surfaceSecondary
 
     /// Figma: `color/menu/border`
-    static let menuBorder = DSColor.area2
-
-    // MARK: - Teams
-
-    static let teamOne = DSColor.team1
-    static let teamTwo = DSColor.team2
-    static let teamThree = DSColor.team3
+    static let menuBorder = DSColor.borderPrimary
 
     // MARK: - Player
 
     /// Figma: `color/player/surface`
-    static let playerSurface = DSColor.black
+    static let playerSurface = DSPalette.Neutral.black
 
     /// Figma: `color/player/play`
     static let playerPlay = Color("InstructorPlayerPlay")
@@ -128,4 +122,5 @@ enum InstructorColor {
         green: 116.0 / 255.0,
         blue: 116.0 / 255.0
     ).opacity(0.2)
+
 }

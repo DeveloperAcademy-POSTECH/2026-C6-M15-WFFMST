@@ -9,7 +9,7 @@ struct TrainingHistoryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            backButton
+            InstructorBackButton(action: store.goBack)
                 .padding(.bottom, 99)
 
             Text("이전 훈련 기록")
@@ -61,25 +61,6 @@ struct TrainingHistoryView: View {
             Text(store.trainingHistoryDeletionError ?? "")
         }
         .accessibilityIdentifier("trainingHistory")
-    }
-
-    /// Figma `Map navigation`: 56×56 원형 버튼, 1px 테두리, 버튼 그림자
-    private var backButton: some View {
-        Button(action: store.goBack) {
-            Image("TrainingHistoryBackIcon")
-                .renderingMode(.original)
-                .resizable()
-                .frame(width: DSSize.controlHeight, height: DSSize.controlHeight)
-                .overlay {
-                    Circle().strokeBorder(DSPalette.Gray.g600, lineWidth: 1)
-                }
-                .clipShape(Circle())
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .dsButtonShadow()
-        .accessibilityLabel("뒤로")
-        .accessibilityIdentifier("navigation.back")
     }
 
     @ViewBuilder

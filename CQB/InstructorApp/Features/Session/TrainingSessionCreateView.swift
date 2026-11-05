@@ -45,7 +45,7 @@ struct TrainingSessionCreateView: View {
 
     private var header: some View {
         HStack {
-            FloorPlanBackButton(action: store.goBack)
+            InstructorBackButton(action: store.goBack)
             .disabled(store.isCreatingSession)
 
             Spacer()

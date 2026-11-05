@@ -38,7 +38,7 @@ struct TeamReadinessView: View {
 
     private var navigationBar: some View {
         HStack(spacing: 0) {
-            FloorPlanBackButton(action: store.goBack)
+            InstructorBackButton(action: store.goBack)
                 .disabled(!store.canGoBack)
 
             Spacer()

@@ -1,28 +1,29 @@
+import CQBDesignSystem
 import SwiftUI
 
-/// SwiftUI `Slider`의 interaction과 접근성을 유지하면서 Figma track과 thumb를 표시합니다.
-public struct DSStyledSlider: View {
-    @Binding private var value: Double
-    private let range: ClosedRange<Double>
-    private let step: Double.Stride
-    private let accessibilityLabel: String
-    private let accessibilityValue: String
+/// InstructorApp 도면 편집용 Slider의 interaction과 접근성을 유지합니다.
+struct InstructorStyledSlider: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double.Stride
+    let accessibilityLabel: String
+    let accessibilityValue: String
 
-    public init(
+    init(
         value: Binding<Double>,
         in range: ClosedRange<Double> = 0...1,
         step: Double.Stride = 0.01,
         accessibilityLabel: String,
         accessibilityValue: String
     ) {
-        self._value = value
+        _value = value
         self.range = range
         self.step = step
         self.accessibilityLabel = accessibilityLabel
         self.accessibilityValue = accessibilityValue
     }
 
-    public var body: some View {
+    var body: some View {
         GeometryReader { proxy in
             let thumbDiameter: CGFloat = 20
             let trackWidth = max(0, proxy.size.width - thumbDiameter)
@@ -53,8 +54,11 @@ public struct DSStyledSlider: View {
             .highPriorityGesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { gesture in
-                        updateValue(at: gesture.location.x, trackWidth: trackWidth,
-                                    thumbDiameter: thumbDiameter)
+                        updateValue(
+                            at: gesture.location.x,
+                            trackWidth: trackWidth,
+                            thumbDiameter: thumbDiameter
+                        )
                     }
             )
         }
@@ -83,14 +87,14 @@ public struct DSStyledSlider: View {
     }
 }
 
-public struct DSLabeledSlider: View {
-    private let title: String
-    @Binding private var value: Double
-    private let range: ClosedRange<Double>
-    private let step: Double.Stride
-    private let formatValue: (Double) -> String
+struct InstructorLabeledSlider: View {
+    let title: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double.Stride
+    let formatValue: (Double) -> String
 
-    public init(
+    init(
         _ title: String,
         value: Binding<Double>,
         in range: ClosedRange<Double> = 0...1,
@@ -98,13 +102,13 @@ public struct DSLabeledSlider: View {
         formatValue: @escaping (Double) -> String = { "\(Int($0 * 100))%" }
     ) {
         self.title = title
-        self._value = value
+        _value = value
         self.range = range
         self.step = step
         self.formatValue = formatValue
     }
 
-    public var body: some View {
+    var body: some View {
         VStack(spacing: DSSpacing.s8) {
             HStack {
                 Text(title)
@@ -115,7 +119,7 @@ public struct DSLabeledSlider: View {
             .dsTextStyle(DSTypography.bodyRegular16)
             .foregroundStyle(DSColor.contentPrimary)
 
-            DSStyledSlider(
+            InstructorStyledSlider(
                 value: $value,
                 in: range,
                 step: step,

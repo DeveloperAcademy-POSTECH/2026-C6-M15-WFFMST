@@ -412,14 +412,11 @@ private struct SessionStartCard: View {
 
                     Spacer()
 
-                    Button(action: onStart) {
-                        Text("훈련 시작하기")
-                            .dsTextStyle(DSTypography.headingExtraBold24)
-                            .frame(width: 311, height: DSSize.controlHeight)
-                    }
-                        .buttonStyle(HomeTrainingStartButtonStyle())
+                    HomeTrainingStartButton(
+                        isEnabled: isEnabled,
+                        action: onStart
+                    )
                         .frame(maxWidth: .infinity, alignment: .center)
-                        .disabled(!isEnabled)
                         .accessibilityHint(
                             isEnabled
                                 ? "훈련 세션 생성 화면으로 이동합니다."
@@ -501,23 +498,6 @@ private struct HomeCardButtonStyle: ButtonStyle {
         configuration.label
             .opacity(configuration.isPressed ? 0.82 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
-    }
-}
-
-private struct HomeTrainingStartButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(isEnabled ? DSPalette.Primary.p800 : DSColor.contentDisabled)
-            .background(backgroundColor(isPressed: configuration.isPressed))
-            .clipShape(.capsule)
-            .contentShape(.capsule)
-    }
-
-    private func backgroundColor(isPressed: Bool) -> Color {
-        guard isEnabled else { return DSColor.actionPrimaryDisabled }
-        return isPressed ? DSColor.actionPrimaryPressed : DSPalette.Primary.p500
     }
 }
 

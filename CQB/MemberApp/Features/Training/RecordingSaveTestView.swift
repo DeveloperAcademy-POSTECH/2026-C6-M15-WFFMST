@@ -21,7 +21,7 @@ struct RecordingSaveTestView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Text("훈련 종료").font(DSTypography.h2)
+                Text("훈련 종료").dsTextStyle(DSTypography.headingSemiBold24)
                 if !recordingURLs.isEmpty {
                     VideoPlayer(player: player)
                         .aspectRatio(16.0 / 9.0, contentMode: .fit)
@@ -83,14 +83,14 @@ struct RecordingSaveTestView: View {
                     .disabled(!filesSaved || recordingURLs.isEmpty)
                 if isDemo && (!filesSaved || recordingURLs.isEmpty) {
                     Button("데모 종료하고 다시 시작", action: onDiscardDemo)
-                        .foregroundStyle(DSColor.darkGreen)
+                        .foregroundStyle(DSColor.contentSecondary)
                 } else if filesSaved, !isDemo {
                     Button("처음으로", action: onHome)
                 }
             }
             .padding(24)
         }
-        .foregroundStyle(DSColor.white)
-        .background(DSColor.background.ignoresSafeArea())
+        .foregroundStyle(DSColor.contentPrimary)
+        .background(DSColor.backgroundPrimary.ignoresSafeArea())
     }
 }

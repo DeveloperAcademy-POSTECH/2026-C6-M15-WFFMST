@@ -1,16 +1,8 @@
 #if DEBUG
 import SwiftUI
 
-private enum PreviewSegment: String, CaseIterable {
-    case pen = "펜툴"
-    case brush = "브러쉬"
-}
-
 private struct DesignSystemPreview: View {
     @State private var focusedText = "포커스 상태를 확인하세요"
-    @State private var segment: PreviewSegment = .pen
-    @State private var sliderValue = 0.5
-    @State private var selectedPill = 0
     @FocusState private var focusedField: Bool
 
     var body: some View {
@@ -56,11 +48,6 @@ private struct DesignSystemPreview: View {
                     }
                     .buttonStyle(.dsCircular(size: .compact))
 
-                    Button("선택 전") { selectedPill = 0 }
-                        .buttonStyle(DSSelectablePillStyle(isSelected: selectedPill == 0))
-
-                    Button("선택됨") { selectedPill = 1 }
-                        .buttonStyle(DSSelectablePillStyle(isSelected: selectedPill == 1))
                 }
             }
         }
@@ -84,13 +71,6 @@ private struct DesignSystemPreview: View {
                 .textFieldStyle(.dsDefault)
                 .disabled(true)
 
-            DSSegmentedControl(
-                options: PreviewSegment.allCases,
-                selection: $segment,
-                title: \.rawValue
-            )
-
-            DSLabeledSlider("벽 레이어 투명도", value: $sliderValue)
         }
         .frame(maxWidth: 520)
     }
@@ -110,13 +90,6 @@ private struct DesignSystemPreview: View {
                 "주변 공간을 천천히 스캔해 주세요.\n인식이 완료되면 다음 단계로 이동합니다.",
                 type: .card
             )
-
-            sectionTitle("Display · status")
-            HStack {
-                DSStepIndicator(current: 1, total: 5)
-                DSStatusBadge("준비 완료", tone: .success)
-                DSStatusBadge("오류", tone: .error)
-            }
         }
     }
 

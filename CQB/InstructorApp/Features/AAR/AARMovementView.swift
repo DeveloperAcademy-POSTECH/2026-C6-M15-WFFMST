@@ -141,9 +141,9 @@ struct AARMovementView: View {
             }
             .padding(12)
             .background(InstructorColor.aarSurfaceRaised.opacity(0.94))
-            .clipShape(.rect(cornerRadius: 4))
+            .clipShape(.rect(cornerRadius: DSRadius.small))
             .overlay {
-                RoundedRectangle(cornerRadius: 4)
+                RoundedRectangle(cornerRadius: DSRadius.small)
                     .strokeBorder(InstructorColor.aarBorder, lineWidth: 1)
             }
             .accessibilityIdentifier("aar.unavailablePositions")
@@ -239,8 +239,7 @@ struct AARMovementView: View {
     }
 
     private var markerFont: Font {
-        DSFonts.register()
-        return .custom("NotoSansKR-Bold", size: 14, relativeTo: .body)
+        InstructorTypography.captionBold14.font
     }
 }
 

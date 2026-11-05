@@ -58,7 +58,7 @@ Figma의 Apple SD Gothic Neo 스타일은 Issue #128의 `DSTypography`와 `dsTex
 | 요소 | 기준 위치·크기 | 내부 규칙 |
 | --- | --- | --- |
 | 화면 | `1366 × 1024` | 배경 `backgroundPrimary` |
-| 뒤로가기 | leading 40, top 40, `56 × 56` | `DSCircularButtonStyle(size: .regular)`, radius full, button shadow |
+| 뒤로가기 | leading 40, top 40, `55 × 55` | `InstructorBackButton`, `Gray/800`, `Gray/700` 1pt border, radius full, button shadow |
 | 새 도면 추가 | trailing 40, top 40, 높이 56 | primary, radius full, 텍스트 기준 horizontal padding 40 |
 | 화면 제목 | leading 40, top 195, height 36 | `도면 관리`, heading 36 |
 | 콘텐츠 행 | leading/trailing 40, top 256, bottom 60 | 좌우 gap 24 |
@@ -113,7 +113,7 @@ Figma 좌측 바깥의 빨간 `40` 표시는 margin 주석이며 앱 UI에 포�
 | --- | --- | --- |
 | 왼쪽 미리보기 영역 | 정보 패널을 제외한 나머지 폭 | 배경 `backgroundPrimary` |
 | 오른쪽 정보 패널 | 1366pt 기준 `404 × 1024` | 배경 `surfacePrimary`, 화면 폭에 따라 360~404pt |
-| 뒤로가기 | leading/top 40, `56 × 56` | 목록과 동일 |
+| 뒤로가기 | leading/top 40, `55 × 55` | 목록과 동일 |
 | 도면 canvas | 최대 `409 × 864` | 왼쪽 영역 중앙, aspect fit, pan/zoom 허용 |
 | 정보 패널 padding | horizontal 20, top 40, bottom 40 | leading 정렬 |
 | 삭제 | `132 × 56` | secondary, radius full |
