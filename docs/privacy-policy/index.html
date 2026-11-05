@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Hornet iPhone 대원 앱과 iPad 교관 앱에 적용되는 개인정보 처리방침입니다.">
+  <title>Hornet 개인정보 처리방침</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --background: #0b0b0d;
+      --surface: #17171c;
+      --surface-strong: #202027;
+      --text: #f7f7f8;
+      --muted: #a7a7b0;
+      --line: #303038;
+      --accent: #ffd600;
+      --accent-ink: #171300;
+      --warning: #fff3b0;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 85% 8%, rgba(255, 214, 0, 0.09), transparent 25rem),
+        var(--background);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+      line-height: 1.72;
+      word-break: keep-all;
+    }
+
+    a { color: var(--accent); }
+
+    a:focus-visible {
+      outline: 3px solid var(--accent);
+      outline-offset: 4px;
+      border-radius: 4px;
+    }
+
+    .shell {
+      width: min(100% - 40px, 900px);
+      margin: 0 auto;
+    }
+
+    header { padding: 72px 0 44px; }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 28px;
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .brand-mark {
+      width: 14px;
+      height: 14px;
+      border-radius: 4px 4px 7px 7px;
+      background: var(--accent);
+      box-shadow: 0 0 28px rgba(255, 214, 0, 0.45);
+    }
+
+    h1 {
+      max-width: 720px;
+      margin: 0;
+      font-size: clamp(38px, 7vw, 68px);
+      line-height: 1.08;
+      letter-spacing: -0.045em;
+    }
+
+    .lead {
+      max-width: 720px;
+      margin: 24px 0 0;
+      color: var(--muted);
+      font-size: clamp(17px, 2.4vw, 20px);
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      margin-top: 28px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 40px;
+    }
+
+    .summary article {
+      min-height: 132px;
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: linear-gradient(145deg, var(--surface-strong), var(--surface));
+    }
+
+    .summary strong {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--accent);
+      font-size: 15px;
+    }
+
+    .summary span { color: var(--muted); }
+
+    nav {
+      margin-bottom: 48px;
+      padding: 22px 26px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(23, 23, 28, 0.82);
+    }
+
+    nav strong { display: block; margin-bottom: 10px; }
+
+    nav ol {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 4px 28px;
+      margin: 0;
+      padding-left: 22px;
+    }
+
+    nav a { color: var(--text); text-decoration-color: #606069; }
+
+    main section {
+      padding: 38px 0;
+      border-top: 1px solid var(--line);
+      scroll-margin-top: 24px;
+    }
+
+    h2 {
+      margin: 0 0 18px;
+      font-size: clamp(24px, 4vw, 32px);
+      line-height: 1.28;
+      letter-spacing: -0.025em;
+    }
+
+    h3 { margin: 28px 0 8px; font-size: 18px; }
+
+    p { margin: 0 0 14px; }
+
+    ul { margin: 12px 0 0; padding-left: 24px; }
+
+    li + li { margin-top: 7px; }
+
+    .table-wrap {
+      margin-top: 18px;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+    }
+
+    table {
+      width: 100%;
+      min-width: 680px;
+      border-collapse: collapse;
+      background: var(--surface);
+    }
+
+    th, td {
+      padding: 15px 17px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th { color: var(--accent); font-size: 14px; }
+    tr:last-child td { border-bottom: 0; }
+
+    .notice {
+      margin-top: 18px;
+      padding: 18px 20px;
+      border-left: 4px solid var(--accent);
+      border-radius: 4px 14px 14px 4px;
+      background: var(--surface);
+      color: var(--warning);
+    }
+
+    footer {
+      margin-top: 32px;
+      padding: 34px 0 64px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    @media (max-width: 700px) {
+      header { padding-top: 52px; }
+      .summary { grid-template-columns: 1fr; }
+      .summary article { min-height: auto; }
+      nav ol { grid-template-columns: 1fr; }
+      main section { padding: 32px 0; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+    }
+  </style>
+</head>
+<body>
+  <header class="shell">
+    <div class="brand"><span class="brand-mark" aria-hidden="true"></span>Hornet</div>
+    <h1>개인정보 처리방침</h1>
+    <p class="lead">
+      Hornet은 CQB 훈련 기록과 사후 복기를 제공하는 과정에서 필요한 정보만 처리하며,
+      광고나 사용자 추적을 위해 정보를 이용하지 않습니다.
+    </p>
+    <div class="meta">
+      <span>시행일: 2026년 11월 5일</span>
+      <span>적용 대상: iPhone 대원 앱 · iPad 교관 앱</span>
+    </div>
+  </header>
+
+  <div class="shell summary" aria-label="핵심 개인정보 보호 원칙">
+    <article><strong>앱 기능에만 사용</strong><span>훈련 세션 운영, 기록 동기화와 사후 복기를 위해 처리합니다.</span></article>
+    <article><strong>광고·추적 없음</strong><span>맞춤형 광고, 데이터 중개 또는 제3자 추적에 이용하지 않습니다.</span></article>
+    <article><strong>삭제 요청 가능</strong><span>이용자는 자신의 훈련 기록과 관련 정보 삭제를 요청할 수 있습니다.</span></article>
+  </div>
+
+  <nav class="shell" aria-label="목차">
+    <strong>목차</strong>
+    <ol>
+      <li><a href="#scope">적용 범위</a></li>
+      <li><a href="#collection">수집 정보</a></li>
+      <li><a href="#method">수집 방법</a></li>
+      <li><a href="#purpose">이용 목적</a></li>
+      <li><a href="#processor">제3자 처리 서비스</a></li>
+      <li><a href="#transfer">국외 이전</a></li>
+      <li><a href="#retention">보유 및 삭제</a></li>
+      <li><a href="#rights">이용자의 권리</a></li>
+      <li><a href="#security">보호 조치</a></li>
+      <li><a href="#changes">방침 변경</a></li>
+      <li><a href="#contact">문의처</a></li>
+    </ol>
+  </nav>
+
+  <main class="shell">
+    <section id="scope">
+      <h2>1. 적용 범위</h2>
+      <p>
+        WFFMST 팀(이하 “운영팀”)이 제공하는 Hornet iPhone용 대원 앱과 iPad용 교관 앱은
+        하나의 훈련 서비스를 구성합니다. 본 개인정보 처리방침은 두 앱에 공통으로 적용됩니다.
+      </p>
+      <p>
+        iPhone 앱은 훈련 영상, 오디오, 이동 동선과 격발 시점을 생성·전송하며,
+        iPad 앱은 훈련 세션을 관리하고 해당 기록을 조회·재생·비교합니다.
+      </p>
+    </section>
+
+    <section id="collection">
+      <h2>2. 수집하는 정보</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>구분</th><th>수집될 수 있는 정보</th></tr></thead>
+          <tbody>
+            <tr><td>연락처 정보</td><td>사용자가 입력한 대원 이름 또는 표시 이름</td></tr>
+            <tr><td>사용자 콘텐츠</td><td>훈련 영상, 영상에 포함된 오디오, 훈련장 도면, 이동 동선, 격발 감지 시점 및 기타 훈련 기록</td></tr>
+            <tr><td>식별자</td><td>Firebase 익명 인증 식별자, 앱 내부 사용자·세션·기록 식별자</td></tr>
+            <tr><td>사용 데이터</td><td>훈련 세션 상태, 참여·활동 시각, 기록 시작·종료 정보와 기능 사용 상태</td></tr>
+            <tr><td>주변 환경</td><td>공간 매핑, 훈련장 구조와 환경 스캔 정보</td></tr>
+            <tr><td>기술 정보</td><td>Firebase 연결 및 보안 과정에서 자동으로 처리될 수 있는 IP 주소, 사용자 에이전트와 앱 관련 기술 정보</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="notice">Hornet은 광고 식별자를 이용한 추적, 맞춤형 광고 또는 개인정보 판매를 목적으로 정보를 수집하지 않습니다.</p>
+    </section>
+
+    <section id="method">
+      <h2>3. 수집 방법</h2>
+      <ul>
+        <li>사용자가 대원 이름, 훈련 세션 정보 또는 도면을 직접 입력·등록할 때</li>
+        <li>사용자가 카메라, 마이크와 공간 인식 기능을 이용해 훈련을 기록할 때</li>
+        <li>훈련 중 영상, 오디오, 이동 동선 및 격발 시점이 생성될 때</li>
+        <li>iPhone 대원 앱과 iPad 교관 앱 사이에서 훈련 정보를 동기화할 때</li>
+        <li>Firebase를 통해 익명 인증하거나 훈련 기록을 서버에 전송할 때</li>
+      </ul>
+      <p>카메라, 마이크 등 보호된 기기 기능은 이용자가 시스템 권한을 허용한 후에만 사용됩니다.</p>
+    </section>
+
+    <section id="purpose">
+      <h2>4. 이용 목적</h2>
+      <ul>
+        <li>훈련 세션 생성, 참가 및 진행 상태 관리</li>
+        <li>대원 앱과 교관 앱 사이의 데이터 동기화</li>
+        <li>훈련 영상, 이동 동선과 격발 시점의 저장 및 재생</li>
+        <li>대원별 훈련 기록 비교와 사후 복기(AAR)</li>
+        <li>사용자 인증, 접근 통제, 부정 이용 방지와 서비스 보안</li>
+        <li>오류 대응과 안정적인 서비스 제공</li>
+      </ul>
+    </section>
+
+    <section id="processor">
+      <h2>5. 제3자 처리 서비스</h2>
+      <p>Hornet은 서비스 제공을 위해 Google LLC의 Firebase를 처리 수탁 서비스로 사용합니다.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>서비스</th><th>처리 목적</th></tr></thead>
+          <tbody>
+            <tr><td>Firebase Authentication</td><td>익명 사용자 인증과 데이터 접근 통제</td></tr>
+            <tr><td>Cloud Firestore</td><td>세션, 대원, 기록 상태와 메타데이터 저장·동기화</td></tr>
+            <tr><td>Cloud Storage for Firebase</td><td>영상, 오디오, 이동 동선, 도면 및 환경 스캔 자료 저장</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Google은 운영팀의 지시에 따라 서비스 제공에 필요한 범위에서 정보를 처리합니다.
+        자세한 사항은 <a href="https://firebase.google.com/support/privacy/" rel="noreferrer">Firebase 개인정보 보호 및 보안 안내</a>에서 확인할 수 있습니다.
+      </p>
+    </section>
+
+    <section id="transfer">
+      <h2>6. 국외 이전</h2>
+      <p>Firebase 이용 과정에서 정보가 대한민국 외 지역의 Google 인프라로 전송·처리될 수 있습니다.</p>
+      <ul>
+        <li><strong>이전받는 자:</strong> Google LLC</li>
+        <li><strong>이전 국가:</strong> 미국 및 Google이 Firebase 인프라를 운영하는 국가</li>
+        <li><strong>이전 항목:</strong> 본 방침 제2조에 기재된 정보</li>
+        <li><strong>이전 방법:</strong> 앱 이용 중 암호화된 네트워크를 통한 전송</li>
+        <li><strong>이전 목적:</strong> 인증, 훈련 데이터 저장·동기화와 서비스 제공</li>
+        <li><strong>보유 기간:</strong> 본 방침 제7조에 기재된 기간</li>
+      </ul>
+      <p>Firebase Authentication은 미국 데이터 센터에서 처리되며, Firestore와 Storage의 처리 지역은 프로젝트 설정과 Google 인프라에 따라 달라질 수 있습니다.</p>
+    </section>
+
+    <section id="retention">
+      <h2>7. 보유 및 삭제</h2>
+      <p>
+        운영팀은 훈련 세션과 기록을 서비스 제공 및 사후 복기에 필요한 동안 보유합니다.
+        세션 관리자가 기록을 삭제하거나 이용자가 삭제를 요청하면 관련 활성 데이터를 지체 없이 삭제합니다.
+      </p>
+      <p>
+        Firebase 인증 정보는 관련 사용자의 삭제를 운영팀이 요청할 때까지 유지될 수 있습니다.
+        삭제된 정보가 Firebase 백업 시스템에서 완전히 제거되기까지 Firebase의 처리 절차에 따른 기간이 추가로 필요할 수 있습니다.
+        법령에 따라 일정 기간 보존해야 하는 정보가 있는 경우에는 해당 기간 동안 분리하여 보관합니다.
+      </p>
+      <p>현재 앱에서 직접 삭제할 수 없는 정보는 제11조의 문의처를 통해 삭제를 요청할 수 있습니다.</p>
+    </section>
+
+    <section id="rights">
+      <h2>8. 이용자의 권리</h2>
+      <p>이용자는 자신의 정보에 관하여 다음 사항을 요청할 수 있습니다.</p>
+      <ul>
+        <li>개인정보 수집·이용 여부의 확인과 열람</li>
+        <li>부정확한 정보의 정정</li>
+        <li>수집 동의 철회</li>
+        <li>훈련 기록 및 관련 사용자 정보 삭제</li>
+        <li>개인정보 처리에 관한 문의 또는 이의 제기</li>
+      </ul>
+      <p>삭제 시 해당 훈련 기록의 재생, 비교 또는 복기 기능을 더 이상 이용할 수 없을 수 있습니다.</p>
+    </section>
+
+    <section id="security">
+      <h2>9. 정보 보호 조치</h2>
+      <ul>
+        <li>통신 구간 암호화</li>
+        <li>Firebase 인증과 보안 규칙을 통한 접근 통제</li>
+        <li>서비스 제공에 필요한 최소한의 정보만 수집</li>
+        <li>개인정보 접근 권한의 최소화</li>
+        <li>보안 사고 예방을 위한 접근 기록과 설정 점검</li>
+      </ul>
+    </section>
+
+    <section id="changes">
+      <h2>10. 처리방침 변경</h2>
+      <p>
+        서비스 기능이나 개인정보 처리 방식이 변경되면 본 방침을 수정할 수 있습니다.
+        중요한 변경 사항은 적용 전에 앱 또는 본 페이지를 통해 안내하고, 페이지 상단의 시행일을 갱신합니다.
+      </p>
+    </section>
+
+    <section id="contact">
+      <h2>11. 문의처</h2>
+      <ul>
+        <li><strong>운영팀:</strong> WFFMST</li>
+        <li><strong>서비스:</strong> Hornet</li>
+        <li><strong>개인정보 문의:</strong> <a href="mailto:hornet.support@gmail.com">hornet.support@gmail.com</a></li>
+        <li><strong>일반 지원:</strong> <a href="https://github.com/DeveloperAcademy-POSTECH/2026-C6-M15-WFFMST/issues" rel="noreferrer">GitHub Issues</a></li>
+      </ul>
+      <p class="notice">GitHub Issues는 공개 공간입니다. 이름, 영상 또는 기타 개인정보를 포함한 열람·정정·삭제 요청은 hornet.support@gmail.com으로 보내 주십시오.</p>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell">© 2026 WFFMST. Hornet Privacy Policy.</div>
+  </footer>
+</body>
+</html>
