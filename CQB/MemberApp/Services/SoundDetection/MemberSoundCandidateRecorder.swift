@@ -156,7 +156,7 @@ nonisolated private final class Segment {
     let sampleRate: Double
     private(set) var hostEnd: Double
     private var frameCursor: AVAudioFramePosition = 0
-    private var onsets: [OnsetDetector.Candidate] = []
+    private var onsets: [Onset] = []
     private let detector: OnsetDetector
     private let analyzer: SNAudioStreamAnalyzer
     private let observer: WindowCollector
@@ -175,16 +175,28 @@ nonisolated private final class Segment {
     }
 
     func append(_ buffer: AVAudioPCMBuffer, hostEnd: Double) {
-        onsets += detector.process(buffer, startFrame: frameCursor)
+        onsets += detector.process(buffer, startFrame: frameCursor).map {
+            Onset(audioSeconds: $0.audioSeconds, levelDB: $0.levelDB, decaySeconds: $0.decaySeconds)
+        }
         analyzer.analyze(buffer, atAudioFramePosition: frameCursor)
         frameCursor += AVAudioFramePosition(buffer.frameLength)
         self.hostEnd = max(self.hostEnd, hostEnd)
     }
 
-    /// 분류기에 남은 창을 마저 받는다. 잔향을 재는 중인 마지막 후보(끝 0.5초 이내)는 나오지 않는다.
-    func close() -> (onsets: [OnsetDetector.Candidate], windows: [LabeledWindow]) {
+    /// 분류기에 남은 창을 마저 받는다. 잔향을 재는 중이던 구간 끝 0.5초 안의 후보는 잔향 없이(`nil`) 남긴다(#196).
+    func close() -> (onsets: [Onset], windows: [LabeledWindow]) {
         analyzer.completeAnalysis()
-        return (onsets, observer.windows)
+        let unfinished = detector.drainUnfinished().map {
+            Onset(audioSeconds: $0.audioSeconds, levelDB: $0.levelDB, decaySeconds: nil)
+        }
+        return ((onsets + unfinished).sorted { $0.audioSeconds < $1.audioSeconds }, observer.windows)
+    }
+
+    /// 구간 안의 급상승 하나. 시각은 구간 시작부터의 오디오 초다.
+    struct Onset {
+        let audioSeconds: Double
+        let levelDB: Double
+        let decaySeconds: Double?
     }
 }
 

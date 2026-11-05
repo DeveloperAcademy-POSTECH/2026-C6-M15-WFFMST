@@ -90,6 +90,31 @@ final class MemberSoundCandidateRecorderTests: XCTestCase {
         XCTAssertEqual(result.analyzedRanges.count, 2)
     }
 
+    func testSoundJustBeforeSegmentEndIsKeptWithoutDecay() async throws {
+        let recorder = MemberSoundCandidateRecorder()
+        recorder.begin(recordingStart: recordingStart)
+        // 전화로 끊기기 0.03초 전과 녹화 종료 0.03초 전에 큰 소리. 잔향을 다 재기 전에 구간이 닫힌다.
+        append(makeSignal(seconds: 2, impulseAt: 1.97), startingAt: recordingStart, to: recorder)
+        recorder.interrupt()
+        append(makeSignal(seconds: 2, impulseAt: 1.97), startingAt: recordingStart + 5, to: recorder)
+
+        let finished = await recorder.finish()
+        let result = try XCTUnwrap(finished)
+
+        let beforeInterruption = try XCTUnwrap(result.candidates.first { abs($0.time - 1.97) < 0.02 })
+        let beforeFinish = try XCTUnwrap(result.candidates.first { abs($0.time - 6.97) < 0.02 })
+        XCTAssertNil(beforeInterruption.decaySeconds, "잔향을 잴 수 없으면 nil로 남긴다")
+        XCTAssertNil(beforeFinish.decaySeconds)
+        XCTAssertGreaterThan(beforeFinish.peakLevelDBFS, -6)
+        let document = SoundCandidateDocument(
+            identity: TrackIdentity(sessionID: UUID(), memberID: UUID(), recordingID: UUID()),
+            detector: MemberSoundCandidateRecorder.detector,
+            analyzedRanges: result.analyzedRanges,
+            candidates: result.candidates
+        )
+        XCTAssertNoThrow(try document.validate())
+    }
+
     func testInterruptionWithoutGapKeepsOneValidRange() async throws {
         let recorder = MemberSoundCandidateRecorder()
         recorder.begin(recordingStart: recordingStart)
@@ -214,7 +239,7 @@ final class MemberSoundCandidateRecorderTests: XCTestCase {
 final class MemberSoundCandidateUploadTests: XCTestCase {
     func testCandidatesUploadAfterTrackResultBeforeDone() async throws {
         let log = UploadOrderLog()
-        let (store, identity, document) = try await makeStore(log: log, candidateFailure: false)
+        let (store, identity, document) = try await makeStore(log: log, candidateFailure: .none)
 
         await store.retryUploading()
 
@@ -226,21 +251,41 @@ final class MemberSoundCandidateUploadTests: XCTestCase {
         _ = identity
     }
 
-    func testCandidateUploadFailureStillCompletesRecording() async throws {
+    func testTransientCandidateFailureKeepsRecordingRetryable() async throws {
         let log = UploadOrderLog()
-        let (store, _, _) = try await makeStore(log: log, candidateFailure: true)
+        let (store, _, document) = try await makeStore(log: log, candidateFailure: .networkOnce)
+
+        await store.retryUploading()
+
+        XCTAssertFalse(store.isUploadComplete, "후보를 못 올렸으면 done으로 넘기지 않는다")
+        XCTAssertNotNil(store.uploadErrorMessage)
+        var events = await log.events
+        XCTAssertEqual(events, ["track", "candidates-failed"])
 
         await store.retryUploading()
 
         XCTAssertTrue(store.isUploadComplete)
+        events = await log.events
+        XCTAssertEqual(events, ["track", "candidates-failed", "candidates", "done"], "재시도는 보정 결과를 다시 올리지 않는다")
+        let uploaded = await log.uploadedCandidates
+        XCTAssertEqual(uploaded, [document])
+    }
+
+    func testInvalidCandidateDocumentStillCompletesRecording() async throws {
+        let log = UploadOrderLog()
+        let (store, _, _) = try await makeStore(log: log, candidateFailure: .invalidDocument)
+
+        await store.retryUploading()
+
+        XCTAssertTrue(store.isUploadComplete, "다시 올려도 실패할 문서 때문에 기록을 막지 않는다")
         XCTAssertNil(store.uploadErrorMessage)
         let events = await log.events
-        XCTAssertEqual(events, ["track", "candidates-failed", "done"])
+        XCTAssertEqual(events, ["track", "candidates-invalid", "done"])
     }
 
     private func makeStore(
         log: UploadOrderLog,
-        candidateFailure: Bool
+        candidateFailure: CandidateFailure
     ) async throws -> (MemberStore, TrackIdentity, SoundCandidateDocument) {
         let identity = TrackIdentity(sessionID: UUID(), memberID: UUID(), recordingID: UUID())
         let store = MemberStore(
@@ -250,7 +295,7 @@ final class MemberSoundCandidateUploadTests: XCTestCase {
             recordingRepository: SoundTestRecordingRepository(log: log),
             videoChunkRepository: SoundTestVideoRepository(),
             trackResultRepository: SoundTestTrackRepository(log: log),
-            soundCandidateRepository: SoundTestCandidateRepository(log: log, fails: candidateFailure)
+            soundCandidateRepository: SoundTestCandidateRepository(log: log, failure: candidateFailure)
         )
         let fileStore = LocalRecordingFileStore(
             baseDirectory: FileManager.default.temporaryDirectory
@@ -285,9 +330,23 @@ final class MemberSoundCandidateUploadTests: XCTestCase {
     }
 }
 
+private enum CandidateFailure {
+    case none
+    /// 첫 시도만 네트워크 오류
+    case networkOnce
+    /// 계약 검증 실패. 다시 올려도 실패한다
+    case invalidDocument
+}
+
 private actor UploadOrderLog {
     private(set) var events: [String] = []
     private(set) var uploadedCandidates: [SoundCandidateDocument] = []
+    private(set) var candidateAttempts = 0
+
+    func nextCandidateAttempt() -> Int {
+        candidateAttempts += 1
+        return candidateAttempts
+    }
 
     func add(_ event: String) { events.append(event) }
     func addCandidates(_ document: SoundCandidateDocument) {
@@ -298,14 +357,20 @@ private actor UploadOrderLog {
 
 private struct SoundTestCandidateRepository: SoundCandidateRepository {
     let log: UploadOrderLog
-    let fails: Bool
+    let failure: CandidateFailure
 
     func upload(_ document: SoundCandidateDocument) async throws {
-        if fails {
+        let attempt = await log.nextCandidateAttempt()
+        switch failure {
+        case .networkOnce where attempt == 1:
             await log.add("candidates-failed")
-            throw RepositoryError.notFound
+            throw URLError(.notConnectedToInternet)
+        case .invalidDocument:
+            await log.add("candidates-invalid")
+            throw SoundCandidateValidationError.invalidCandidates
+        default:
+            await log.addCandidates(document)
         }
-        await log.addCandidates(document)
     }
 
     func download(_ identity: TrackIdentity) async throws -> SoundCandidateDocument { throw RepositoryError.notFound }

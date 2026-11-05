@@ -1,7 +1,8 @@
 // 출처: DeveloperAcademy-POSTECH/2026-C6-M15-WFFMST-gunshot-lab
 //       Packages/GunshotDetection/Sources/GunshotDetection/OnsetDetector.swift @ 713e743a0dc54745a650710156c83601bd837147
-// 제품 통합(#172)을 위해 결합 방식에 필요한 파일만 복사했다. 내용은 고치지 않는다.
-// 대원 앱의 기본 MainActor 격리를 피하려고 최상위 타입 선언에 nonisolated만 붙였다.
+// 제품 통합(#172)을 위해 결합 방식에 필요한 파일만 복사했다. 아래 두 가지 말고는 고치지 않는다.
+// - 대원 앱의 기본 MainActor 격리를 피하려고 최상위 타입 선언에 nonisolated를 붙였다.
+// - "제품 추가(#196)" 표시가 있는 `drainUnfinished()`를 더했다. 연구 저장소에는 없다.
 // 감지 로직을 바꿀 때는 연구 저장소에서 먼저 고친 뒤 다시 가져온다.
 
 import AVFoundation
@@ -143,6 +144,25 @@ nonisolated public final class OnsetDetector: @unchecked Sendable {
         let finished = Set(done.map(\.audioSeconds))
         pending.removeAll { finished.contains(Double($0.onsetFrame) / sampleRate) }
         return done
+    }
+
+    // 제품 추가(#196): 감쇠 측정이 끝나지 않은 후보.
+    public struct Unfinished: Sendable, Equatable {
+        public let audioSeconds: Double
+        public let riseDB: Double
+        public let levelDB: Double
+        public let clipped: Bool
+    }
+
+    // 제품 추가(#196): 녹음 구간을 닫을 때 감쇠를 다 재지 못한 후보를 꺼낸다. 꺼낸 뒤에는 측정 중인 후보가 없다.
+    // 구간 끝 0.5초 안의 소리를 버리지 않고 잔향 없는 후보로 남기는 데 쓴다.
+    public func drainUnfinished() -> [Unfinished] {
+        let drained = pending.map {
+            Unfinished(audioSeconds: Double($0.onsetFrame) / sampleRate, riseDB: $0.riseDB,
+                       levelDB: $0.levelDB, clipped: $0.clipped)
+        }
+        pending = []
+        return drained
     }
 
     /// 아직 측정 중인 후보보다 오래된 샘플은 버린다. 후보가 없으면 0.1초만 남긴다.
