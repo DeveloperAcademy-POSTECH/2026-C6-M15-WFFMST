@@ -84,14 +84,15 @@ MemberAudioCaptureService ──PCM 버퍼──┬─▶ ARFrameVideoWriter (AA
 - 전화 등으로 끊기면(`onInterruption`) 지금 구간을 닫고, 재개(`onResume`) 뒤 첫 버퍼에서 새 구간을 연다. 새 구간에서는 `OnsetDetector`와 분류기를 새로 만든다. 끊긴 앞뒤가 이어지지 않으므로 직전 중앙값이 섞이지 않게 한다.
 - 녹음이 이어지는 중에 다음 버퍼가 0.1초보다 늦게 오거나 샘플레이트가 바뀌어도 끊긴 것으로 보고 새 구간을 연다.
 - 분석 구간은 양 끝을 포함하므로 끝이 맞닿으면 계약 검증(#178)에 걸린다. 새 구간이 앞 구간 끝 이전이나 그 시각에서 시작하면(샘플레이트만 바뀌었거나, 끊김 알림만 오고 버퍼는 이어진 경우) 분석 구간 목록에서는 하나로 합친다. 감지기와 분류기는 그대로 새로 만든다.
-- 녹화 종료 시 마지막 구간을 닫는다. `OnsetDetector`는 잔향 측정이 끝난 후보만 내보내므로, 녹화 끝 0.5초 이내 후보는 남지 않는다. 그래서 `decaySeconds`는 항상 값이 있다.
+- 녹화 종료 시 마지막 구간을 닫는다. `OnsetDetector`는 잔향 측정이 끝난 후보만 내보내므로, 구간을 닫을 때(녹화 종료, 끊김, 0.1초 넘는 공백, 샘플레이트 변경) 잔향을 재던 구간 끝 0.5초 안의 후보는 `drainUnfinished()`(제품 추가, #196)로 꺼내 `decaySeconds = nil`로 남긴다. 교관 앱은 `nil`이면 잔향 조건을 쓰지 않는다.
 
 ## 저장과 업로드
 
 - 녹화가 끝나면 `SoundCandidateDocument`를 보정 결과와 같은 기록 폴더에 `sound-candidates.json`으로 저장한다(`LocalRecordingFileStore`). 앱을 다시 켜도 같은 파일로 재시도한다.
 - 업로드 순서: 영상 조각 → 보정 결과 → **음향 후보** → `done`.
 - 업로드 기록표(`uploadManifest`)에 후보 업로드 여부를 남겨 다시 올리지 않는다.
-- 후보 업로드는 업로드 한 번에 한 번 시도한다. 실패하면 로그만 남기고 `done`으로 바꾼다. 후보 때문에 기록을 `failed`로 만들지 않는다. 사용자가 다른 항목 실패로 재시도하면 기록표를 보고 아직 안 올린 후보를 다시 시도한다.
+- 후보도 다른 파일처럼 올라가야 `done`으로 바꾼다(#196 리뷰). 네트워크·권한 오류나 기록표 저장 실패는 업로드 실패로 남기고, 재시도하면 기록표를 보고 아직 안 올린 후보부터 다시 올린다.
+- 계약 검증(`SoundCandidateValidationError`)에 걸린 문서는 다시 올려도 실패하므로 로그만 남기고 올린 것으로 표시한 뒤 `done`으로 넘어간다. 후보 때문에 기록이 끝나지 못하는 일은 없다.
 - 감지·분석이 실패해도(분류기 생성 실패 등) 녹화, 보정, 영상 업로드를 막지 않는다. 이때 후보 파일을 만들지 않는다.
 - 기기 저장에 실패해도 동선 저장을 막지 않는다. 메모리의 문서로 업로드는 그대로 시도한다.
 - 업로드 기록표에 `uploadedSoundCandidates`를 더했다. 이 항목이 없는 예전 기록표는 `false`로 읽는다.
@@ -111,19 +112,20 @@ MemberAudioCaptureService ──PCM 버퍼──┬─▶ ARFrameVideoWriter (AA
 | `Services/ARRecordingService.swift` | 마이크 콜백에서 기록기에 버퍼 전달, 끊김·재개 전달, 녹화 종료 시 문서 받기 |
 | `Services/LocalRecordingFileStore.swift` | 후보 파일 저장·읽기 |
 | `Services/VideoChunkUploadQueue.swift` | 업로드 기록표에 후보 업로드 여부 |
-| `Stores/MemberStore.swift` | `finishing` 업로드 순서에 후보 추가, 실패해도 `done` |
+| `Stores/MemberStore.swift` | `finishing` 업로드 순서에 후보 추가. 일시 오류는 재시도, 계약 위반 문서만 건너뜀 |
 | `App/AppContainer.swift` | `StorageSoundCandidateRepository` 주입 |
 
 ## 검증 계획
 
-- [x] 단위 테스트 (`MemberAppTests/MemberSoundCandidateTests.swift`, 12개 통과)
+- [x] 단위 테스트 (`MemberAppTests/MemberSoundCandidateTests.swift`, 14개 통과)
   - 합성한 16비트 마이크 버퍼의 큰 소리가 기록 시간 1.5초 후보가 되고, 녹화 시작 전은 0초로 자름
   - 끊김 콜백·0.1초 넘는 공백 모두 구간을 둘로 나누고, 끊긴 동안에는 후보가 없음
   - 끊김 알림만 오고 버퍼가 이어지면 구간 하나로 합쳐 업로드 검증을 통과함. 맞닿거나 겹치는 구간은 합치고 떨어진 구간은 그대로 둠
   - 마이크가 없으면 빈 결과, 시작 전 버퍼는 무시
   - 점수 붙이기: 후보 직후 시점을 담은 창의 라벨별 최고 점수, 덮는 창이 없으면 0
   - 예전 업로드 기록표를 읽으면 후보는 안 올린 것으로 봄
-  - 업로드 순서가 보정 결과 → 후보 → `done`, 후보 업로드가 실패해도 `done`
+  - 업로드 순서가 보정 결과 → 후보 → `done`. 네트워크 오류면 `done` 없이 멈추고 재시도에서 후보만 다시 올림. 계약 위반 문서면 건너뛰고 `done`
+  - 녹화 종료·끊김 직전(구간 끝 0.03초 전) 큰 소리가 `decaySeconds = nil` 후보로 남고 문서 검증을 통과함
 - [x] 대원 앱 기존 테스트 회귀: 62개 통과. `MemberDemoScenarioTests.testDemoModeCreatesANewRunWhenRestarted`는 #161과 같은 Xcode 27 동기 테스트 크래시라 빼고 실행
 - [x] 연구 저장소 녹음 비교 (gunshot-lab 713e743, 맥에서 앱의 `MemberSoundCandidateRecorder`에 WAV를 4096프레임씩 흘려 넣음)
   - 다중 기기 데이터셋 5대: 총성 정답 100개 모두 앱 후보가 있음. 정답과의 시각 차 중앙 1ms, 최대 40ms
@@ -135,7 +137,7 @@ MemberAudioCaptureService ──PCM 버퍼──┬─▶ ARFrameVideoWriter (AA
   - 총성 없이 폰을 바닥에 치기 등 약 57초: 후보 27개. 연구 기준(점수 0.25, 잔향 0.05초)으로 거르면 3개만 남음(점수 0.26~0.35). 0dBFS 근처 충격음은 잔향 0.035~0.045초라 잔향 조건으로 걸러짐
   - 녹화 시작 후 첫 1~1.5초는 마이크 버퍼가 오지 않아 분석 구간에서 빠짐
   - 녹화 중 `World tracking performance is being affected by resource constraints`, `ARSession is retaining 11~12 ARFrames` 경고가 보임. 소리 분석 때문인지는 이번 확인으로 가리지 못함
-- [ ] 실기기에서 `sound-candidates.json` 업로드: 하지 않음. 업로드 경로는 단위 테스트(업로드 순서·실패해도 `done`)와 Storage 규칙 테스트로 확인
+- [ ] 실기기에서 `sound-candidates.json` 업로드: 하지 않음. 업로드 경로는 단위 테스트(업로드 순서·재시도)와 Storage 규칙 테스트로 확인
 - [ ] 녹화 중 전화 수신 후 재개: 하지 않음. 끊김·공백 처리는 단위 테스트로 확인
 - [ ] 13분 녹화 동안 배터리·발열, 영상 프레임 누락: 하지 않음
 
