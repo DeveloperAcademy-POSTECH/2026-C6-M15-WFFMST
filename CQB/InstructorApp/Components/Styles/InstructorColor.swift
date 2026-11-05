@@ -52,6 +52,29 @@ enum InstructorColor {
     /// 훈련 중 화면의 녹화 상태 표시점에 쓰는 Figma Red/400.
     static let trainingRecordingIndicator = DSPalette.Red.r400
 
+    // MARK: - World map scanning
+
+    static let worldMapUnavailableIndicator = Color(
+        red: 142.0 / 255.0,
+        green: 142.0 / 255.0,
+        blue: 147.0 / 255.0
+    )
+    static let worldMapLimitedIndicator = Color(
+        red: 255.0 / 255.0,
+        green: 159.0 / 255.0,
+        blue: 10.0 / 255.0
+    )
+    static let worldMapExtendingIndicator = Color(
+        red: 255.0 / 255.0,
+        green: 214.0 / 255.0,
+        blue: 10.0 / 255.0
+    )
+    static let worldMapMappedIndicator = Color(
+        red: 48.0 / 255.0,
+        green: 209.0 / 255.0,
+        blue: 88.0 / 255.0
+    )
+
     // MARK: - Menus
 
     /// Figma: `color/menu/surface`
