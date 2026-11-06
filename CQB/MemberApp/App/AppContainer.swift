@@ -9,7 +9,9 @@ struct AppContainer: View {
         floorPlanFileRepository: StorageFloorPlanFileRepository(),
         recordingRepository: FirestoreRecordingRepository(),
         videoChunkRepository: StorageVideoChunkRepository(),
-        trackResultRepository: StorageTrackResultRepository()
+        trackResultRepository: StorageTrackResultRepository(),
+        soundCandidateRepository: StorageSoundCandidateRepository(),
+        worldMapFileRepository: StorageWorldMapFileRepository()
     )
     @State private var demoMode = MemberDemoMode()
 

@@ -8,7 +8,7 @@ struct AARCompletedView: View {
         ZStack {
             Text("AAR 종료")
                 .font(completionFont)
-                .foregroundStyle(InstructorColor.textPrimary)
+                .foregroundStyle(InstructorColor.aarContentPrimary)
                 .frame(minWidth: 270, minHeight: 80)
                 .accessibilityAddTraits(.isHeader)
 
@@ -21,10 +21,10 @@ struct AARCompletedView: View {
                     ActionButton(
                         "처음으로",
                         tone: .secondary,
-                        fillsWidth: true,
+                        width: .fill,
                         action: store.returnHome
                     )
-                    .frame(width: 300, height: 48)
+                    .frame(width: 300)
                     .accessibilityIdentifier("aar.home")
                 }
             }
@@ -32,13 +32,12 @@ struct AARCompletedView: View {
             .padding(.bottom, 18)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(InstructorColor.canvas.ignoresSafeArea())
+        .background(InstructorColor.aarCanvas.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
     }
 
     private var completionFont: Font {
-        DSFonts.register()
-        return .custom("NotoSansKR-Bold", size: 64, relativeTo: .largeTitle)
+        InstructorTypography.displayBold64.font
     }
 }
 

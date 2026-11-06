@@ -22,7 +22,7 @@ Store는 `CQBCore`의 프로토콜만 안다. Firebase 구현을 아는 곳은 �
   - 교관은 자기가 만든 세션(`instructorUid`)만 바꾼다. 상태는 앞으로만 바뀐다.
   - 대원은 맞는 PIN으로 `preparing`·`waiting` 세션에만 입장하고, 본인 문서(`uid`)와 본인 기록만 쓴다. 다른 대원 목록은 볼 수 없다.
   - 문서 목록 조회는 교관이 자기 세션의 대원·기록을 볼 때만 된다.
-  - Storage의 보정 결과·영상은 기록 주인이 올리고, 그 세션의 교관이 받고 지운다. 도면은 처음 한 번만 올린다.
+  - Storage의 보정 결과·음향 후보·영상은 기록 주인이 올리고, 그 세션의 교관이 받고 지운다. 도면은 처음 한 번만 올린다.
 - Storage 버킷의 `.mp4` 1일 자동 삭제(수명 주기 규칙)는 **UT 영상을 남기려고 2026-10-13부터 꺼 두었다.** 지금은 영상이 지워지지 않고 쌓인다(10분 훈련·대원 4명에 약 600MB). UT가 끝나면 영상을 백업하고 다시 켠다.
 
   ```bash
@@ -41,7 +41,9 @@ Store는 `CQBCore`의 프로토콜만 안다. Firebase 구현을 아는 곳은 �
 | `MemberRepository` | `observeMembers` | `join`, `updateReadiness` |
 | `RecordingRepository` | `observeRecordings` | `startRecording`, `updateRecording` |
 | `FloorPlanFileRepository` | `upload` | `download` |
+| `WorldMapFileRepository` | `upload` | `download` |
 | `TrackResultRepository` | `download` | `upload` |
+| `SoundCandidateRepository` | `download` | `upload` |
 | `VideoChunkRepository` | `downloadVideo`, `deleteVideo` | `upload` |
 
 ## Store에 넣기
@@ -207,6 +209,7 @@ Storage Repository도 Firestore와 같은 방식으로 `AppContainer`에서 넣�
 // 교관 앱
 floorPlanFileRepository: StorageFloorPlanFileRepository(),
 trackResultRepository: StorageTrackResultRepository(),
+soundCandidateRepository: StorageSoundCandidateRepository(),
 videoChunkRepository: StorageVideoChunkRepository(),
 ```
 
@@ -223,9 +226,9 @@ try await sessionRepository.createSession(session)
 let files = try await floorPlanFileRepository.download(session.floorPlan)
 ```
 
-### 보정 결과와 영상 (대원 → 교관)
+### 보정 결과, 음향 후보와 영상 (대원 → 교관)
 
-대원 앱은 녹화하면서 영상 조각을 하나씩 올리고, 녹화가 끝나면 보정 결과를 올린 뒤 기록을 `done`으로 바꾼다.
+대원 앱은 녹화하면서 영상 조각을 하나씩 올리고, 녹화가 끝나면 보정 결과와 음향 후보를 올린 뒤 기록을 `done`으로 바꾼다.
 
 ```swift
 // 대원 앱: 녹화 중, 조각이 만들어질 때마다 (index는 0부터)
@@ -235,6 +238,11 @@ try await videoChunkRepository.upload(fileURL: chunkURL, identity: identity, ind
 try await recordingRepository.updateRecording(
     Recording(identity: identity, state: .finishing, lastActiveAt: .now, videoChunkCount: chunkCount))
 try await trackResultRepository.upload(result)
+do {
+    try await soundCandidateRepository.upload(candidates)
+} catch {
+    // 재시도해도 실패하면 후보 파일 없이 done으로 넘어간다. 기록을 failed로 만들지 않는다.
+}
 try await recordingRepository.updateRecording(
     Recording(identity: identity, state: .done, lastActiveAt: .now, videoChunkCount: chunkCount))
 ```
@@ -244,6 +252,17 @@ try await recordingRepository.updateRecording(
 ```swift
 // 교관 앱
 let result = try await trackResultRepository.download(recording.identity)
+
+// 파일이 없거나(.notFound) 이 앱이 모르는 새 형식이면 분석 안 된 기록으로 보고 동선·영상은 그대로 연다.
+// 네트워크·권한 오류, 손상된 파일은 분석 안 됨이 아니다. 오류로 알리고 다시 받는다.
+let candidates: SoundCandidateDocument?
+do {
+    candidates = try await soundCandidateRepository.download(recording.identity)
+} catch RepositoryError.notFound {
+    candidates = nil
+} catch SoundCandidateValidationError.unsupportedSchema {
+    candidates = nil
+}
 
 let directory = FileManager.default.temporaryDirectory
     .appending(path: recording.identity.recordingID.uuidString)
@@ -288,14 +307,37 @@ do {
 
 - `upload`, `download`: `navigation-map.json`의 SHA-256이 `FloorPlanReference.navigationSHA256`과 다르면 `RepositoryError.integrityMismatch`. 받을 때 이 에러가 나면 도면이 바뀌었거나 깨진 것이다.
 
+### WorldMapFileRepository
+
+- `upload`, `download`: `setup.json`의 SHA-256이 `WorldMapReference.setupSHA256`과 다르거나, 스캔 파일의 SHA-256이 `WorldMapSetup.worldMapSHA256`과 다르면 `RepositoryError.integrityMismatch`.
+- `upload`, `download`: `WorldMapSetup.matches(reference)`가 false면 `RepositoryError.integrityMismatch`. 스캔 ID나 도면이 참조와 다른 조합이다.
+- `upload`: 스캔 파일은 `application/octet-stream`으로 50MB까지, `setup.json`은 `application/json`으로 1MB까지 올린다. 넘으면 `RepositoryError.fileTooLarge`. 이미 올라간 스캔은 덮어쓰지 않는다.
+- 세션을 만들 때 `Session.worldMapMatchesFloorPlan`이 false인 조합은 만들지 않는다. Firestore 규칙도 거부한다.
+- `download`: 세션의 `worldMap`이 `nil`이면 부르지 않는다.
+
 ### TrackResultRepository
 
 - `upload`: 경로는 `result.identity`로 정한다. 같은 기록에 다시 올리면 덮어쓴다.
 - `download`: 아직 올라오지 않았으면 `RepositoryError.notFound`. 기록이 `done`이 된 뒤에 부른다.
 
+### SoundCandidateRepository
+
+- `upload`: 경로는 `document.identity`로 정한다. 같은 기록에 다시 올리면 덮어쓴다. 20MB를 넘으면 `RepositoryError.fileTooLarge`. 올리기 전에 `validate()`로 계약을 확인하고, 어기면 올리지 않고 `SoundCandidateValidationError`를 던진다.
+- `download`: 기록이 `done`이 된 뒤에 부른다. 실패는 다음처럼 나눠 처리한다.
+
+| 실패 | 의미 | 교관 앱 처리 |
+| --- | --- | --- |
+| `RepositoryError.notFound` | 파일 없음. 이 기능 이전 기록, 분석·업로드 실패 | 분석 안 됨 |
+| `SoundCandidateValidationError.unsupportedSchema` | 이 앱이 모르는 새 형식 | 분석 안 됨 |
+| `RepositoryError.integrityMismatch` | 다른 기록의 문서 | 오류로 알리고 다시 받기 |
+| `SoundCandidateValidationError.invalidRanges`·`invalidCandidates`, `DecodingError` | 손상된 문서 | 오류로 알리고 다시 받기 |
+| Firebase 오류 | 네트워크·권한 | 오류로 알리고 다시 받기 |
+- 형식과 시간축은 [데이터 계약](cqb-core-models.md#음향-후보)을 따른다. 최종 판정은 교관 앱이 한다.
+
 ### VideoChunkRepository
 
-- `upload`: 파일 하나가 20MB를 넘으면 `RepositoryError.fileTooLarge`. 조각 길이와 화질은 이 제한 안에 들어오게 정한다.
+- `upload`: 파일 하나가 20MB를 넘으면 `RepositoryError.fileTooLarge`. 조각 길이와 화질은 소리 트랙을 포함해 이 제한 안에 들어오게 정한다.
+- 조각에는 소리 트랙이 있을 수도, 없을 수도 있다. Repository는 파일 내용을 해석하지 않는다. 형식은 [데이터 계약](cqb-core-models.md#소리-트랙)을 따른다.
 - `downloadVideo`: 조각을 하나씩 순서대로 받는다. 하나라도 없으면 `RepositoryError.notFound`. `chunkCount`는 `Recording.videoChunkCount`를 넘긴다.
 - `deleteVideo`: AAR이 끝나면 부른다. 이미 없는 조각은 건너뛴다. 실패해도 AAR 종료를 막지 않는다. 남은 영상은 수명 주기 규칙이 켜져 있으면 1일 뒤 지워진다.
   - 지금은 UT 영상을 남기려고 교관 앱이 AAR 종료 시 부르지 않고(#66), 수명 주기 규칙도 꺼 두었다. 영상은 지워지지 않는다.

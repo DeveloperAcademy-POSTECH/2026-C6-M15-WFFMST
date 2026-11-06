@@ -1,6 +1,5 @@
 import ARKit
 import SwiftUI
-import CQBDesignSystem
 
 struct CameraPreviewView: View {
     let service: ARRecordingService
@@ -8,42 +7,16 @@ struct CameraPreviewView: View {
     let isWaiting: Bool
     var onStopRecording: () async -> Void
     var onAvailabilityChange: (Bool) -> Void
+    var onVisibilityChange: (Bool) -> Void = { _ in }
     @Environment(\.scenePhase) private var scenePhase
 
-    private var guidanceMessage: String? {
-        if let error = service.fatalError { return error }
-        if isRecording { return service.trackingWarning }
-        if isWaiting && !service.isReady { return service.statusMessage }
-        return nil
-    }
-
     var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                ARCameraSurface(session: service.session)
-                    .ignoresSafeArea()
-                if let guidanceMessage {
-                    VStack {
-                        Spacer()
-                        Text(guidanceMessage)
-                            .font(DSTypography.body)
-                            .multilineTextAlignment(.center)
-                            .lineSpacing(4)
-                            .frame(maxWidth: .infinity, minHeight: 48)
-                            .padding(24)
-                            .background(DSColor.area1)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(DSColor.area3))
-                            .opacity(0.94)
-                            .frame(maxWidth: min(650, max(0, geometry.size.width - 48)))
-                        if isWaiting, service.fatalError != nil {
-                            Button("카메라 다시 준비") { Task { await service.start() } }
-                        }
-                        Spacer()
-                    }
-                }
+        ARCameraSurface(session: service.session)
+            .ignoresSafeArea()
+            .task {
+                onVisibilityChange(scenePhase == .active)
+                await service.start()
             }
-            .task { await service.start() }
             .onChange(of: service.isReady, initial: true) { _, ready in onAvailabilityChange(ready) }
             .onChange(of: service.fatalError) { _, error in
                 guard error != nil else { return }
@@ -53,16 +26,26 @@ struct CameraPreviewView: View {
                 }
             }
             .onChange(of: scenePhase) { _, phase in
-                Task {
-                    if phase == .active { await service.start() }
-                    else {
+                onVisibilityChange(phase == .active)
+                switch phase {
+                case .active:
+                    Task { await service.start() }
+                case .background:
+                    Task {
                         if isRecording { await onStopRecording() }
                         service.stop()
                     }
+                case .inactive:
+                    // 시스템 UI에 의한 일시적 비활성화에서는 AR과 녹화를 유지한다.
+                    break
+                @unknown default:
+                    break
                 }
             }
-            .onDisappear { service.stop() }
-        }
+            .onDisappear {
+                onVisibilityChange(false)
+                service.stop()
+            }
     }
 }
 

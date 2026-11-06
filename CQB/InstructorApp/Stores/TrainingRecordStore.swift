@@ -38,6 +38,7 @@ nonisolated final class TrainingRecordStore {
     private var sessionID: UUID?
     private(set) var participants: [InstructorParticipant] = []
     private(set) var recordings: [Recording] = []
+    private(set) var excludedParticipantIDs: Set<String> = []
     private(set) var connectionState: ConnectionState = .idle
     private(set) var errorMessage: String?
 
@@ -58,10 +59,25 @@ nonisolated final class TrainingRecordStore {
 
     var terminalCount: Int { rows.filter { $0.state.isTerminal }.count }
     var failedCount: Int { rows.filter { $0.state == .failed }.count }
+    var excludedCount: Int { excludedParticipantIDs.count }
+    var completedParticipantIDs: Set<String> {
+        Set(rows.filter { $0.state == .done }.map(\.id))
+    }
+    var aarEligibleParticipantIDs: Set<String> {
+        completedParticipantIDs.subtracting(excludedParticipantIDs)
+    }
+    var blockingParticipantIDs: Set<String> {
+        Set(rows.filter { !$0.state.isTerminal && !excludedParticipantIDs.contains($0.id) }.map(\.id))
+    }
     var canRetry: Bool { connectionState == .failed && sessionID != nil }
     var isReadyForAAR: Bool {
         connectionState == .connected && !participants.isEmpty
+            && !aarEligibleParticipantIDs.isEmpty
             && rows.allSatisfy { $0.state.isTerminal }
+    }
+    var canProceedToAAR: Bool {
+        connectionState == .connected && !aarEligibleParticipantIDs.isEmpty
+            && blockingParticipantIDs.isEmpty
     }
 
     @MainActor
@@ -76,7 +92,22 @@ nonisolated final class TrainingRecordStore {
     @MainActor
     func retry() {
         guard canRetry else { return }
+        excludedParticipantIDs = []
         startObservation()
+    }
+
+    @MainActor
+    func excludeParticipant(_ id: String) {
+        guard connectionState == .connected,
+              let row = rows.first(where: { $0.id == id }),
+              !row.state.isTerminal else { return }
+        excludedParticipantIDs.insert(id)
+    }
+
+    func canExcludeParticipant(_ id: String) -> Bool {
+        connectionState == .connected
+            && !excludedParticipantIDs.contains(id)
+            && rows.contains { $0.id == id && !$0.state.isTerminal }
     }
 
     /// AAR에서도 실패 정보를 표시하도록 결과는 보존하고 구독만 정리한다.
@@ -96,6 +127,7 @@ nonisolated final class TrainingRecordStore {
         sessionID = nil
         participants = []
         recordings = []
+        excludedParticipantIDs = []
     }
 
     @MainActor

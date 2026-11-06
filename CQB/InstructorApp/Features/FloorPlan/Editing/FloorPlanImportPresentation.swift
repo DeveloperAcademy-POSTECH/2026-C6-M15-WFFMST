@@ -14,6 +14,7 @@ final class FloorPlanImportPresentation: NSObject {
     @ObservationIgnored private var keyboardVisible = false
     @ObservationIgnored private var requestID = UUID()
     @ObservationIgnored private var timeout: DispatchWorkItem?
+    @ObservationIgnored private var pendingRequest: (() -> Void)?
 
     override init() {
         super.init()
@@ -28,10 +29,14 @@ final class FloorPlanImportPresentation: NSObject {
         NotificationCenter.default.removeObserver(self)
     }
 
-    func request(dismissFocus: () -> Void) {
+    func request(dismissFocus: @escaping () -> Void) {
         guard !isPreparing, !isPresented else { return }
         message = nil
-        guard let window = anchor?.window else { return }
+        guard let window = anchor?.window else {
+            pendingRequest = { [weak self] in self?.request(dismissFocus: dismissFocus) }
+            return
+        }
+        pendingRequest = nil
         guard canvas?.prepareForFileSelection() != false else {
             message = "편집 중인 획이 끝난 뒤 다시 선택해주세요."
             return
@@ -57,11 +62,18 @@ final class FloorPlanImportPresentation: NSObject {
 
     func finish() {
         requestID = UUID()
+        pendingRequest = nil
         timeout?.cancel()
         timeout = nil
         isPreparing = false
         isPresented = false
         canvas?.resumeAfterFileSelection()
+    }
+
+    func anchorDidMove(to window: UIWindow?) {
+        guard window != nil, let pendingRequest else { return }
+        self.pendingRequest = nil
+        pendingRequest()
     }
 
     private func fail(_ text: String) {
@@ -96,11 +108,89 @@ final class FloorPlanImportPresentation: NSObject {
 /// Finds only this screen's window; never dismisses editing in a different scene.
 struct FloorPlanInputAnchor: UIViewRepresentable {
     let presentation: FloorPlanImportPresentation
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
+    let onTapOutsideInput: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onTapOutsideInput: onTapOutsideInput)
+    }
+
+    func makeUIView(context: Context) -> FloorPlanInputAnchorView {
+        let view = FloorPlanInputAnchorView()
         view.isUserInteractionEnabled = false
+        view.onWindowChange = { window in
+            context.coordinator.attach(to: window)
+            presentation.anchorDidMove(to: window)
+        }
         presentation.anchor = view
         return view
     }
-    func updateUIView(_ uiView: UIView, context: Context) {}
+
+    func updateUIView(_ uiView: FloorPlanInputAnchorView, context: Context) {
+        context.coordinator.onTapOutsideInput = onTapOutsideInput
+        context.coordinator.attach(to: uiView.window)
+        presentation.anchorDidMove(to: uiView.window)
+    }
+
+    static func dismantleUIView(_ uiView: FloorPlanInputAnchorView, coordinator: Coordinator) {
+        coordinator.detach()
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var onTapOutsideInput: () -> Void
+        private weak var window: UIWindow?
+        private lazy var tapRecognizer: UITapGestureRecognizer = {
+            let recognizer = UITapGestureRecognizer(target: self, action: #selector(handleTap))
+            recognizer.cancelsTouchesInView = false
+            recognizer.delaysTouchesBegan = false
+            recognizer.delaysTouchesEnded = false
+            recognizer.delegate = self
+            return recognizer
+        }()
+
+        init(onTapOutsideInput: @escaping () -> Void) {
+            self.onTapOutsideInput = onTapOutsideInput
+        }
+
+        func attach(to window: UIWindow?) {
+            guard self.window !== window else { return }
+            detach()
+            guard let window else { return }
+            window.addGestureRecognizer(tapRecognizer)
+            self.window = window
+        }
+
+        func detach() {
+            window?.removeGestureRecognizer(tapRecognizer)
+            window = nil
+        }
+
+        @objc private func handleTap() {
+            onTapOutsideInput()
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldReceive touch: UITouch) -> Bool {
+            var touchedView = touch.view
+            while let view = touchedView {
+                if view is UITextField || view is UITextView { return false }
+                touchedView = view.superview
+            }
+            return true
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            true
+        }
+    }
+}
+
+final class FloorPlanInputAnchorView: UIView {
+    var onWindowChange: ((UIWindow?) -> Void)?
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        onWindowChange?(window)
+    }
 }

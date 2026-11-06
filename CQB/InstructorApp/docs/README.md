@@ -11,10 +11,18 @@
 ## 작업 기록
 
 - [Issue #8 로컬 도면 등록](issue-8-implementation.md): 구현 과정, 검증 결과와 제약
+- [Issue #141 도면 관리 하이파이 사전 정의](issue-141-hifi-spec.md): 목록·상세·삭제·수정 흐름의 layout, token, 상태 기준
+- [Issue #142 훈련 중 하이파이 사전 정의](issue-142-hifi-spec.md): 훈련 중 화면과 종료 확인의 layout, token, 상태 기준
 - [Issue #49 세션·준비 상태 연동](issue-49-implementation.md): 구현 범위, 경계 조건 회귀 검사와 실제 앱 검증
 - [Issue #56 훈련·기록 생명주기 연동](issue-56-implementation.md): 서버 상태 전환, 기록 종결 대기, 회귀·에뮬레이터 검증
 - [Issue #80 데모 실행 환경](issue-80-implementation.md): TestFlight 심사용 메모리 저장소와 세션 흐름
 - [Issue #82 데모 AAR 샘플](issue-82-implementation.md): 결과 처리 완료, 3인 동선과 번들 영상 흐름
+- [Issue #102 이동 불가 영역 자동 보정](issue-102-blocked-region-autofill.md): 원본 선 보조, flood fill과 안전한 수동 fallback
+- [Issue #115 도면 파일 로컬 캐시](issue-115-floor-plan-cache.md): 불변 도면 파일의 메모리·디스크 캐시와 무결성 정책
+- [Issue #116 도면 목록 선택 미리보기](issue-116-floor-plan-list-preview.md): 목록 선택 상태, 썸네일 재사용과 비동기 취소 정책
+- [Issue #126 이전 훈련 기록](issue-126-training-history.md): 기기 저장, 목록·삭제 화면과 AAR 다시 열기 스펙
+- [Issue #168 AAR 큰 소리 마커](issue-168-sound-events.md): 대원별 후보 묶기, 재생바 핀 표시와 이동, 임시 가정
+- [Issue #192 실제 기록의 큰 소리 후보](issue-192-real-sound-candidates.md): Storage 후보 파일 받기, 판정 기준, 실패 처리
 
 작업 기록은 당시의 이력이다. 현재 동작은 `flows.md`를 기준으로 관리하고, 정책이 바뀌면 관련 이슈와 함께 갱신한다.
 

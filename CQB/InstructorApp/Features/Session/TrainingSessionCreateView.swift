@@ -5,151 +5,307 @@ struct TrainingSessionCreateView: View {
     @Environment(InstructorStore.self) private var store
 
     var body: some View {
-        DropdownHost {
-            VStack(alignment: .leading, spacing: 0) {
-                InstructorBackButton(action: store.goBack)
-                    .disabled(store.isCreatingSession)
+        VStack(alignment: .leading, spacing: 0) {
+            Text("새 훈련 세션")
+                .dsTextStyle(DSTypography.headingBold36)
+                .foregroundStyle(DSColor.contentPrimary)
+                .frame(height: 43, alignment: .leading)
 
-                Text("새 훈련 세션")
-                    .font(DSTypography.h1)
-                    .foregroundStyle(InstructorColor.textPrimary)
-                    .frame(height: 48, alignment: .leading)
+            trainingNameField
+                .padding(.top, 12)
 
-                HStack(alignment: .top, spacing: 24) {
-                    sessionFields
-                        .disabled(store.isCreatingSession)
-                        .frame(minWidth: 320, idealWidth: 544, maxWidth: 544, alignment: .topLeading)
+            GeometryReader { proxy in
+                let previewWidth = max(0, proxy.size.width - 517 - 40)
 
-                    planPreview
-                        .frame(minWidth: 420, maxWidth: 702, maxHeight: 728)
+                HStack(alignment: .top, spacing: 40) {
+                    floorPlanList
+                        .frame(width: 517, height: proxy.size.height)
+                        .zIndex(1)
+
+                    floorPlanPreview
+                        .frame(width: previewWidth, height: proxy.size.height)
+                        .clipped()
+                        .zIndex(0)
                 }
-                .padding(.top, 20)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-
-                HStack {
-                    if store.isCreatingSession {
-                        ProgressView()
-                            .tint(InstructorColor.actionPrimary)
-                            .accessibilityLabel("세션 생성 중")
-                    }
-
-                    if let error = store.sessionCreationError {
-                        Label(error, systemImage: "exclamationmark.triangle")
-                            .font(DSTypography.bodySmall)
-                            .foregroundStyle(InstructorColor.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("session.creationError")
-                    }
-
-                    Spacer()
-                    ActionButton(store.isCreatingSession ? "세션 생성 중…" : "세션 생성", action: store.createSession)
-                        .frame(width: 354, height: 52)
-                        .disabled(!store.canCreateSession)
-                        .accessibilityIdentifier("session.create")
-                }
-                .padding(.top, 32)
+                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
             }
-            .padding(.top, 32)
-            .padding(.horizontal, 48)
-            .padding(.bottom, 24)
+            .padding(.top, 60)
         }
+        .padding(.top, 195)
+        .padding(.horizontal, 40)
+        .padding(.bottom, 60)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(InstructorColor.canvas.ignoresSafeArea())
+        .background(DSColor.backgroundPrimary)
+        .overlay(alignment: .top) {
+            header
+        }
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .toolbar(.hidden, for: .navigationBar)
     }
 
-    private var sessionFields: some View {
-        VStack(alignment: .leading, spacing: 40) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("훈련명")
-                    .font(DSTypography.h3)
-                    .foregroundStyle(InstructorColor.textPrimary)
+    private var header: some View {
+        HStack {
+            InstructorBackButton(action: store.goBack)
+            .disabled(store.isCreatingSession)
 
-                InstructorTextField(
-                    title: "훈련명",
-                    placeholder: "훈련명을 입력하세요",
-                    text: Binding(
-                        get: { store.trainingName },
-                        set: store.setTrainingName
-                    )
-                )
-                .accessibilityIdentifier("session.name")
+            Spacer()
+
+            Button(action: store.createSession) {
+                Text("세션 생성")
+                    .padding(.vertical, DSSpacing.s12)
+                    // DSPrimaryButtonStyle의 좌우 20pt padding을 포함해 최종 너비 180pt.
+                    .frame(width: 140)
             }
+            .buttonStyle(.dsPrimary)
+            .disabled(!store.canCreateSession)
+            .accessibilityIdentifier("session.create")
+        }
+        .padding(.top, 40)
+        .padding(.horizontal, 40)
+        .frame(maxWidth: .infinity, alignment: .top)
+    }
 
-            VStack(alignment: .leading, spacing: 12) {
-                Text("훈련 도면")
-                    .font(DSTypography.h3)
-                    .foregroundStyle(InstructorColor.textPrimary)
-
-                SingleSelectionMenu(
-                    title: "훈련 도면",
-                    options: store.floorPlans,
-                    selection: store.selectedFloorPlanID,
-                    optionTitle: \.name,
-                    fieldBackground: InstructorColor.surfaceRaised,
-                    menuFillsFieldWidth: true,
-                    onSelect: store.selectFloorPlan
+    private var trainingNameField: some View {
+        ZStack(alignment: .leading) {
+            TextField(
+                "",
+                text: Binding(
+                    get: { store.trainingName },
+                    set: store.setTrainingName
                 )
-                .frame(maxWidth: .infinity)
+            )
+            .textFieldStyle(.dsDefault)
+
+            if store.trainingName.isEmpty {
+                Text("훈련명을 입력하세요")
+                    .dsTextStyle(DSTypography.headingSemiBold20)
+                    .foregroundStyle(DSPalette.Gray.g300)
+                    .padding(.horizontal, DSSpacing.s20)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+        .disabled(store.isCreatingSession)
+        .frame(width: 517, height: 58)
+        .accessibilityLabel("훈련명")
+        .accessibilityIdentifier("session.name")
+        .overlay(alignment: .bottomLeading) {
+            if let error = store.sessionCreationError {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .dsTextStyle(DSTypography.captionRegular14)
+                    .foregroundStyle(DSColor.statusError)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .offset(y: 32)
+                    .accessibilityIdentifier("session.creationError")
+            }
+        }
+    }
+
+    private var floorPlanList: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.s40) {
+            Text("훈련 도면")
+                .dsTextStyle(DSTypography.headingBold20)
+                .foregroundStyle(DSColor.contentPrimary)
+
+            if store.floorPlans.isEmpty {
+                emptyFloorPlanList
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: DSSpacing.s4) {
+                        ForEach(store.floorPlans) { floorPlan in
+                            floorPlanRow(floorPlan)
+                        }
+                    }
+                }
+                .scrollIndicators(.hidden)
                 .accessibilityIdentifier("session.plan")
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(DSSpacing.s12)
+        .background(DSColor.surfacePrimary)
+        .clipShape(RoundedRectangle(cornerRadius: DSRadius.large))
+        .overlay {
+            RoundedRectangle(cornerRadius: DSRadius.large)
+                .stroke(DSColor.borderPrimary, lineWidth: 1)
+        }
+        .disabled(store.isCreatingSession)
     }
 
-    private var planPreview: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            Text("도면 미리보기")
-                .font(DSTypography.h3)
-                .foregroundStyle(InstructorColor.textPrimary)
-                .frame(height: 24, alignment: .leading)
+    private func floorPlanRow(_ floorPlan: InstructorFloorPlan) -> some View {
+        let isSelected = store.selectedFloorPlanID == floorPlan.id
 
-            Group {
+        return Button {
+            store.selectFloorPlan(floorPlan.id)
+        } label: {
+            HStack(spacing: DSSpacing.s32) {
+                selectionIndicator(isSelected: isSelected)
+
+                VStack(alignment: .leading, spacing: DSSpacing.s8) {
+                    Text(floorPlan.name)
+                        .dsTextStyle(DSTypography.headingSemiBold24)
+                        .foregroundStyle(isSelected ? DSColor.contentPrimary : DSColor.contentSecondary)
+                        .lineLimit(1)
+
+                    Text("생성일 \(formattedCreationDate(floorPlan.createdAt))")
+                        .dsTextStyle(DSTypography.bodyRegular16)
+                        .foregroundStyle(isSelected ? DSColor.contentPrimary : DSColor.contentSecondary)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.leading, 22)
+            .padding(.trailing, DSSpacing.s20)
+            .padding(.vertical, DSSpacing.s16)
+            .frame(maxWidth: .infinity, minHeight: 95, alignment: .leading)
+            .background(isSelected ? DSColor.surfaceSelected : DSColor.surfacePrimary)
+            .clipShape(.rect(cornerRadius: DSRadius.large))
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(floorPlan.name), 생성일 \(formattedCreationDate(floorPlan.createdAt))")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityIdentifier("session.plan.\(floorPlan.id)")
+    }
+
+    private func selectionIndicator(isSelected: Bool) -> some View {
+        ZStack {
+            Circle()
+                .stroke(
+                    isSelected ? DSPalette.Primary.p300 : InstructorColor.floorPlanSelectionIdle,
+                    lineWidth: isSelected ? 2 : 1.5
+                )
+            if isSelected {
+                Circle()
+                    .fill(DSPalette.Primary.p300)
+                    .padding(DSSpacing.s4)
+            }
+        }
+        .frame(width: DSSpacing.s24, height: DSSpacing.s24)
+        .accessibilityHidden(true)
+    }
+
+    private var emptyFloorPlanList: some View {
+        VStack(spacing: 0) {
+            Spacer()
+
+            Text("등록된 도면이 없습니다.")
+                .dsTextStyle(DSTypography.headingSemiBold24)
+                .foregroundStyle(DSColor.contentSecondary)
+
+            Button("도면 등록 바로가기", action: store.openFloorPlanList)
+                .dsTextStyle(DSTypography.headingSemiBold20)
+                .foregroundStyle(DSColor.actionPrimary)
+                .padding(10)
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("session.floorPlanShortcut")
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("session.plan.empty")
+    }
+
+    private var floorPlanPreview: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                DSColor.surfaceSecondary
+
                 if let image = store.selectedPlanImage {
                     Image(uiImage: image)
                         .resizable()
+                        .interpolation(.high)
                         .scaledToFit()
-                        .opacity(0.5)
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                        .allowsHitTesting(false)
                         .accessibilityLabel("선택한 훈련 도면")
-                } else {
-                    ContentUnavailableView(
-                        "도면 미리보기 없음",
-                        systemImage: "map",
-                        description: Text("저장된 훈련 도면을 선택하세요.")
-                    )
-                    .foregroundStyle(InstructorColor.textSecondary)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipShape(.rect(cornerRadius: 4))
 
-            Text("출발점·방향은 대원 기기에서 보정")
-                .font(DSTypography.bodySmall)
-                .foregroundStyle(InstructorColor.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+                    InstructorColor.floorPlanPreviewOverlay
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                        .allowsHitTesting(false)
+                } else {
+                    previewStatus
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                }
+
+                Text("도면 미리보기")
+                    .dsTextStyle(DSTypography.headingBold20)
+                    .foregroundStyle(DSColor.surfaceSelected)
+                    .padding(20)
+                    .allowsHitTesting(false)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .clipShape(RoundedRectangle(cornerRadius: DSRadius.large))
+            .contentShape(.interaction, RoundedRectangle(cornerRadius: DSRadius.large))
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 32)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(InstructorColor.surfaceBase)
-        .clipShape(.rect(cornerRadius: 4))
-        .overlay {
-            RoundedRectangle(cornerRadius: 4)
-                .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
+        .accessibilityIdentifier("session.planPreview")
+    }
+
+    @ViewBuilder
+    private var previewStatus: some View {
+        switch store.sessionFloorPlanPreviewState {
+        case .loading:
+            ProgressView()
+                .tint(DSPalette.Primary.p300)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityLabel("도면 미리보기 불러오는 중")
+        case .failed(let message):
+            VStack(spacing: 16) {
+                Text(message)
+                    .dsTextStyle(DSTypography.bodyRegular16)
+                    .foregroundStyle(DSColor.contentSecondary)
+                    .multilineTextAlignment(.center)
+
+                Button("다시 불러오기", action: store.retrySessionFloorPlanPreview)
+                    .buttonStyle(.dsSecondary)
+            }
+            .padding(40)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityIdentifier("session.planPreview.error")
+        case .idle, .loaded:
+            EmptyView()
         }
     }
+
+    private func formattedCreationDate(_ date: Date) -> String {
+        Self.creationDateFormatter.string(from: date)
+    }
+
+    private static let creationDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy.MM.dd"
+        return formatter
+    }()
 }
 
-#Preview("새 훈련 세션") {
+#Preview("새 훈련 세션 · 도면 있음") {
     let store = InstructorStore(floorPlans: [
         InstructorFloorPlan(
-            id: "preview-plan",
-            name: "훈련장 A 도면",
+            id: "preview-plan-1",
+            name: "훈련장 A 도면 v1",
             fileName: "훈련장 A 도면.png",
-            referenceDistance: 15
+            referenceDistance: 15,
+            createdAt: Date(timeIntervalSince1970: 1_792_454_400)
+        ),
+        InstructorFloorPlan(
+            id: "preview-plan-2",
+            name: "훈련장 B 도면 v1",
+            fileName: "훈련장 B 도면.png",
+            referenceDistance: 12,
+            createdAt: Date(timeIntervalSince1970: 1_792_454_400)
         )
     ])
+    store.openSessionCreation()
+
+    return TrainingSessionCreateView()
+        .environment(store)
+        .frame(width: 1_366, height: 1_024)
+        .preferredColorScheme(.dark)
+}
+
+#Preview("새 훈련 세션 · 도면 없음") {
+    let store = InstructorStore(floorPlans: [])
+    store.loadFloorPlans()
     store.openSessionCreation()
 
     return TrainingSessionCreateView()

@@ -9,7 +9,15 @@ enum InstructorDemoScenario {
     private static let memberIDs = [
         UUID(uuidString: "20000000-0000-0000-0000-000000000081")!,
         UUID(uuidString: "20000000-0000-0000-0000-000000000082")!,
-        UUID(uuidString: "20000000-0000-0000-0000-000000000083")!
+        UUID(uuidString: "20000000-0000-0000-0000-000000000083")!,
+        UUID(uuidString: "20000000-0000-0000-0000-000000000084")!,
+        UUID(uuidString: "20000000-0000-0000-0000-000000000085")!,
+        UUID(uuidString: "20000000-0000-0000-0000-000000000086")!
+    ]
+    /// 이전 훈련 기록 샘플. 끝난 세션으로 미리 넣어 두어 기록을 누르면 바로 AAR을 볼 수 있다.
+    private static let sampleSessionIDs = [
+        UUID(uuidString: "40000000-0000-0000-0000-000000000126")!,
+        UUID(uuidString: "40000000-0000-0000-0000-000000000127")!
     ]
 
     @MainActor
@@ -21,13 +29,16 @@ enum InstructorDemoScenario {
     @MainActor
     static func makeEnvironment(processingDelay: Duration = .seconds(1)) -> Environment {
         let plan = makeFloorPlan()
-        let sessionRepository = InstructorDemoSessionRepository()
+        let samples = makeSampleHistory(floorPlan: plan)
+        let sessionRepository = InstructorDemoSessionRepository(sessions: samples.map(\.session))
         let memberRepository = InstructorDemoMemberRepository(memberIDs: memberIDs)
         let recordingRepository = InstructorDemoRecordingRepository(
             memberIDs: memberIDs,
             sessionRepository: sessionRepository,
-            processingDelay: processingDelay
+            processingDelay: processingDelay,
+            completedSessionIDs: Set(sampleSessionIDs)
         )
+        let videoChunkRepository = InstructorDemoVideoChunkRepository(memberIDs: memberIDs)
         let store = InstructorStore(
             floorPlans: [plan],
             floorPlanFileRepository: DemoFloorPlanFileRepository(),
@@ -35,6 +46,7 @@ enum InstructorDemoScenario {
             sessionRepository: sessionRepository,
             memberRepository: memberRepository,
             recordingRepository: recordingRepository,
+            trainingHistory: samples.map(\.record),
             pinGenerator: { "012345" }
         )
         store.setTrainingName("TestFlight 데모 훈련")
@@ -48,7 +60,8 @@ enum InstructorDemoScenario {
                 floorPlan: plan.reference
             ),
             floorPlanFileRepository: DemoFloorPlanFileRepository(),
-            videoChunkRepository: InstructorDemoVideoChunkRepository()
+            videoChunkRepository: videoChunkRepository,
+            soundCandidateLoader: InstructorDemoSoundCandidateLoader(memberIDs: memberIDs)
         )
         return Environment(store: store, aarStore: aarStore)
     }
@@ -56,6 +69,34 @@ enum InstructorDemoScenario {
     @MainActor
     static func makeStore() -> InstructorStore {
         makeEnvironment().store
+    }
+
+    /// 데모 영상 길이(30초)에 맞춘 지난 훈련 두 건
+    private static func makeSampleHistory(
+        floorPlan: InstructorFloorPlan
+    ) -> [(session: Session, record: TrainingHistoryRecord)] {
+        let names = ["데모 거점 진입 훈련", "데모 복도 수색 훈련"]
+        return sampleSessionIDs.enumerated().map { index, sessionID in
+            let startedAt = Date.now.addingTimeInterval(-Double(index + 1) * 86_400)
+            let session = Session(
+                id: sessionID,
+                pin: "00012\(index)",
+                name: names[index],
+                status: .ended,
+                startedAt: startedAt,
+                floorPlan: floorPlan.reference
+            )
+            let record = TrainingHistoryRecord(
+                sessionID: sessionID,
+                trainingName: names[index],
+                floorPlan: floorPlan.reference,
+                floorPlanName: floorPlan.name,
+                participantNames: memberIDs.indices.map { "데모 대원 \($0 + 1)" },
+                startedAt: startedAt,
+                endedAt: startedAt.addingTimeInterval(30)
+            )
+            return (session, record)
+        }
     }
 
     @MainActor
@@ -131,13 +172,20 @@ enum InstructorDemoScenario {
                 b: LocalPlanPoint(x: 0.35, y: 0.9),
                 meters: 10
             ),
-            resolvedGrid: grid
+            resolvedGrid: grid,
+            extractionAlgorithm: .v13
         )
     }
 
     @MainActor
     private static func makeFloorPlanPNG(width: Int, height: Int) -> Data {
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: width, height: height))
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(
+            size: CGSize(width: width, height: height),
+            format: format
+        )
         let image = renderer.image { context in
             let bounds = CGRect(x: 0, y: 0, width: width, height: height)
             UIColor(red: 0.94, green: 0.93, blue: 0.89, alpha: 1).setFill()
@@ -170,8 +218,12 @@ enum InstructorDemoScenario {
 
 private final class InstructorDemoSessionRepository: SessionRepository, @unchecked Sendable {
     private let lock = NSLock()
-    private var sessions: [UUID: Session] = [:]
+    private var sessions: [UUID: Session]
     private var observers: [UUID: [UUID: AsyncThrowingStream<Session, Error>.Continuation]] = [:]
+
+    init(sessions: [Session] = []) {
+        self.sessions = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
+    }
 
     func createSession(_ session: Session) async throws {
         save(session)
@@ -267,12 +319,11 @@ private struct InstructorDemoMemberRepository: MemberRepository {
     func updateReadiness(of member: Member) async throws {}
 
     func observeMembers(sessionID: UUID) -> AsyncThrowingStream<[Member], Error> {
-        let names = ["데모 대원 1", "데모 대원 2", "데모 대원 3"]
-        let members = zip(memberIDs, names).map { id, name in
+        let members = memberIDs.enumerated().map { index, id in
             Member(
                 id: id,
                 sessionID: sessionID,
-                name: name,
+                name: "데모 대원 \(index + 1)",
                 isReady: true,
                 lastActiveAt: .now
             )
@@ -287,6 +338,8 @@ private final class InstructorDemoRecordingRepository: RecordingRepository, @unc
     let memberIDs: [UUID]
     let sessionRepository: InstructorDemoSessionRepository
     let processingDelay: Duration
+    /// 이미 처리가 끝난 샘플 세션. 기록을 바로 완료 상태로 돌려준다.
+    let completedSessionIDs: Set<UUID>
     private let lock = NSLock()
     private var recordings: [UUID: [Recording]] = [:]
     private var scheduledSessions: Set<UUID> = []
@@ -295,11 +348,13 @@ private final class InstructorDemoRecordingRepository: RecordingRepository, @unc
     init(
         memberIDs: [UUID],
         sessionRepository: InstructorDemoSessionRepository,
-        processingDelay: Duration
+        processingDelay: Duration,
+        completedSessionIDs: Set<UUID> = []
     ) {
         self.memberIDs = memberIDs
         self.sessionRepository = sessionRepository
         self.processingDelay = processingDelay
+        self.completedSessionIDs = completedSessionIDs
     }
 
     func startRecording(_ recording: Recording) async throws {}
@@ -308,11 +363,13 @@ private final class InstructorDemoRecordingRepository: RecordingRepository, @unc
     func observeRecordings(sessionID: UUID) -> AsyncThrowingStream<[Recording], Error> {
         return AsyncThrowingStream { continuation in
             let token = UUID()
+            let isCompleted = completedSessionIDs.contains(sessionID)
             let (current, shouldSchedule) = lock.withLock { () -> ([Recording], Bool) in
-                let current = recordings[sessionID] ?? makeRecordings(sessionID: sessionID, state: .finishing)
+                let current = recordings[sessionID]
+                    ?? makeRecordings(sessionID: sessionID, state: isCompleted ? .done : .finishing)
                 recordings[sessionID] = current
                 observers[sessionID, default: [:]][token] = continuation
-                return (current, scheduledSessions.insert(sessionID).inserted)
+                return (current, !isCompleted && scheduledSessions.insert(sessionID).inserted)
             }
             continuation.yield(current)
             if shouldSchedule { scheduleCompletion(sessionID: sessionID) }
@@ -343,7 +400,8 @@ private final class InstructorDemoRecordingRepository: RecordingRepository, @unc
                 identity: TrackIdentity(
                     sessionID: sessionID,
                     memberID: memberID,
-                    recordingID: UUID(uuidString: "30000000-0000-0000-0000-00000000008\(index + 1)")!
+                    // 앱을 덮어 설치해도 이전 번들 영상 캐시를 재사용하지 않도록 세대를 구분한다.
+                    recordingID: UUID(uuidString: "30000000-0000-0000-0000-00000000029\(index + 1)")!
                 ),
                 state: state,
                 startedAt: startedAt,
@@ -351,6 +409,27 @@ private final class InstructorDemoRecordingRepository: RecordingRepository, @unc
                 videoChunkCount: state == .done ? 1 : nil
             )
         }
+    }
+}
+
+/// 데모 영상(30초)에 맞춘 큰 소리 후보. 21.5초는 한 명만 들은 후보라 타임라인에 표시되지 않는다.
+private struct InstructorDemoSoundCandidateLoader: AARSoundCandidateLoading {
+    let memberIDs: [UUID]
+
+    /// 대원 순서별 후보 시각(기록 내부 초). 같은 소리도 기기마다 조금씩 늦게 들린다.
+    private static let candidateTimes: [[Double]] = [
+        [6.20, 26.00],
+        [6.23, 14.80],
+        [6.21, 21.50],
+        [6.26, 26.04],
+        [14.83],
+        [14.86],
+    ]
+
+    func candidates(for identity: TrackIdentity) async throws -> [AARSoundCandidate] {
+        guard let index = memberIDs.firstIndex(of: identity.memberID),
+              Self.candidateTimes.indices.contains(index) else { return [] }
+        return Self.candidateTimes[index].map { AARSoundCandidate(recordingTime: $0) }
     }
 }
 
@@ -367,7 +446,7 @@ private struct InstructorDemoTrackResultRepository: TrackResultRepository {
         let points = Self.paths[index]
         let vertices = points.enumerated().map { offset, point in
             TrackResultVertex(
-                t: Double(offset) * 1.5,
+                t: Double(offset) * 3.75,
                 point: point,
                 part: 0,
                 sampleIndex: offset,
@@ -418,6 +497,27 @@ private struct InstructorDemoTrackResultRepository: TrackResultRepository {
             ImagePoint(x: 610, y: 330), ImagePoint(x: 570, y: 460),
             ImagePoint(x: 500, y: 600), ImagePoint(x: 680, y: 650),
             ImagePoint(x: 880, y: 640)
+        ],
+        [
+            ImagePoint(x: 1040, y: 140), ImagePoint(x: 900, y: 170),
+            ImagePoint(x: 790, y: 230), ImagePoint(x: 690, y: 330),
+            ImagePoint(x: 630, y: 440), ImagePoint(x: 720, y: 540),
+            ImagePoint(x: 820, y: 600), ImagePoint(x: 970, y: 590),
+            ImagePoint(x: 1080, y: 520)
+        ],
+        [
+            ImagePoint(x: 580, y: 700), ImagePoint(x: 570, y: 610),
+            ImagePoint(x: 550, y: 520), ImagePoint(x: 520, y: 430),
+            ImagePoint(x: 500, y: 340), ImagePoint(x: 480, y: 250),
+            ImagePoint(x: 520, y: 160), ImagePoint(x: 610, y: 120),
+            ImagePoint(x: 700, y: 150)
+        ],
+        [
+            ImagePoint(x: 220, y: 700), ImagePoint(x: 300, y: 620),
+            ImagePoint(x: 370, y: 530), ImagePoint(x: 390, y: 420),
+            ImagePoint(x: 470, y: 350), ImagePoint(x: 590, y: 350),
+            ImagePoint(x: 690, y: 290), ImagePoint(x: 790, y: 220),
+            ImagePoint(x: 940, y: 170)
         ]
     ]
 }
@@ -425,13 +525,14 @@ private struct InstructorDemoTrackResultRepository: TrackResultRepository {
 private final class InstructorDemoBundleToken {}
 
 private struct InstructorDemoVideoChunkRepository: VideoChunkRepository {
+    let memberIDs: [UUID]
+
     func upload(fileURL: URL, identity: TrackIdentity, index: Int) async throws {}
 
     func downloadVideo(_ identity: TrackIdentity, chunkCount: Int, to directory: URL) async throws -> [URL] {
         guard chunkCount == 1,
-              let source = [Bundle.main, Bundle(for: InstructorDemoBundleToken.self)]
-                .compactMap({ $0.url(forResource: "DEBRIEF-Demo-AAR", withExtension: "mp4") })
-                .first else {
+              let memberIndex = memberIDs.firstIndex(of: identity.memberID),
+              let source = demoVideoURL(memberIndex: memberIndex) else {
             throw RepositoryError.notFound
         }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -441,4 +542,19 @@ private struct InstructorDemoVideoChunkRepository: VideoChunkRepository {
     }
 
     func deleteVideo(_ identity: TrackIdentity, chunkCount: Int) async throws {}
+
+    private func demoVideoURL(memberIndex: Int) -> URL? {
+        let suffix = memberIndex + 1
+        let resourceNames = [
+            "CQB-Private-Demo-AAR-\(suffix)",
+            "DEBRIEF-Demo-AAR-\(suffix)"
+        ]
+        let bundles = [Bundle.main, Bundle(for: InstructorDemoBundleToken.self)]
+
+        return resourceNames.lazy.compactMap { resourceName in
+            bundles.lazy.compactMap { bundle in
+                bundle.url(forResource: resourceName, withExtension: "mp4")
+            }.first
+        }.first
+    }
 }

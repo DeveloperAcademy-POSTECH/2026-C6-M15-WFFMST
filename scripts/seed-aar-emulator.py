@@ -18,6 +18,15 @@ uid는 교관 앱을 (Emulator) 스킴으로 실행한 뒤 http://localhost:4000
 - 대원 3: 보정 실패(failed). 영상 조각 1개
 - 대원 4: 기록은 끝났지만 result.json과 영상이 없다
 
+큰 소리 후보(sound-candidates.json, #192)도 넣는다. 세션 시각 기준
+- 8초: 대원 1·2·5가 들은 총성 → 마커
+- 15초: 대원 1·6이 들은 총성 → 마커
+- 20초: 대원 2만 들은 총성 → 한 명이라 표시 안 함
+- 25초: 대원 1·5 폰 충격음(잔향 0.03초) → 판정에서 빠짐
+- 30초: 대원 1·2·6 박수(점수 0.1) → 판정에서 빠짐
+- 33초: 대원 2·5·6이 들은 총성(대원 6은 잔향까지 두 후보) → 마커
+대원 3은 모르는 버전 파일(분석 안 됨), 대원 4는 파일 없음.
+
 영상 조각은 ffmpeg로 만든다. 화면에 대원 이름과 영상 시각이 보여 타임라인과 맞는지 눈으로 확인할 수 있다.
 글자를 그릴 수 없는 ffmpeg(drawtext 없음)면 조각마다 0초부터 세는 시계만 보인다.
 ffmpeg가 없거나 `--no-video`를 주면 영상 없이 넣는다.
@@ -83,14 +92,17 @@ def upload_file(host, path, data, content_type="application/json"):
     request("POST", f"http://{host}:9199/v0/b/{BUCKET}/o?uploadType=media&name={name}", data, content_type)
 
 
-def make_chunks(ffmpeg, directory, name, durations):
-    """대원 이름과 영상 시각(초)이 보이는 mp4 조각을 만든다."""
+def make_chunks(ffmpeg, directory, name, durations, audio_frequency):
+    """대원 이름·영상 시각과 구분 가능한 AAC 시험음이 있는 mp4 조각을 만든다."""
     files, elapsed = [], 0.0
     for index, seconds in enumerate(durations):
         path = f"{directory}/{name.replace(' ', '')}_{index}.mp4"
         label = f"drawtext=text='{name.replace(' ', '')}  %{{eif\\:t+{elapsed}\\:d}}s':fontsize=48:fontcolor=white:x=40:y=40"
-        command = [ffmpeg, "-loglevel", "error", "-y", "-f", "lavfi", "-i", f"testsrc2=s=640x360:r=15:d={seconds}",
-                   "-vf", label, "-c:v", "libx264", "-pix_fmt", "yuv420p", path]
+        command = [ffmpeg, "-loglevel", "error", "-y",
+                   "-f", "lavfi", "-i", f"testsrc2=s=640x360:r=15:d={seconds}",
+                   "-f", "lavfi", "-i", f"sine=frequency={audio_frequency}:sample_rate=48000:duration={seconds}",
+                   "-vf", label, "-filter:a", "volume=0.35", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                   "-c:a", "aac", "-profile:a", "aac_low", "-ac", "1", "-b:a", "64k", "-shortest", path]
         if subprocess.run(command, stderr=subprocess.DEVNULL).returncode != 0:
             # 글자를 그릴 수 없는 ffmpeg(drawtext 없음)면 조각마다 0초부터 세는 시계가 있는 기본 화면으로 만든다.
             command[command.index("-vf"):command.index("-vf") + 2] = []
@@ -186,6 +198,39 @@ def broken_path(width, height):
     return first + second, unresolved
 
 
+# (세션 시각, 들은 대원 번호, 점수, 잔향)
+SOUND_EVENTS = [
+    (8.0, [1, 2, 5], 0.9, 0.2),
+    (15.0, [1, 6], 0.8, 0.18),
+    (20.0, [2], 0.85, 0.2),
+    (25.0, [1, 5], 0.9, 0.03),
+    (30.0, [1, 2, 6], 0.1, 0.15),
+    (33.0, [2, 5, 6], 0.75, 0.22),
+]
+
+
+def sound_candidates(identity, number, offset, analyzed_seconds):
+    """대원 번호의 후보 문서. 시각은 기록 내부 초(세션 시각 − 기록 시작 오프셋)이고, 대원마다 조금씩 늦게 듣는다."""
+    candidates = []
+    for time, heard_by, score, decay in SOUND_EVENTS:
+        if number not in heard_by:
+            continue
+        recording_time = round(time - offset + 0.01 * number, 3)
+        candidates.append({"time": recording_time, "peakLevelDBFS": -1.5, "decaySeconds": decay,
+                           "classifierScores": {"gunshot_gunfire": score, "artillery_fire": 0.05}})
+        if number == 6 and time == 33.0:
+            # 같은 총성의 잔향. 교관 앱이 0.45초 안이라 하나로 본다.
+            candidates.append({"time": round(recording_time + 0.2, 3), "peakLevelDBFS": -9.0, "decaySeconds": 0.1,
+                               "classifierScores": {"gunshot_gunfire": 0.6, "artillery_fire": 0.05}})
+    return {
+        "schemaVersion": 2 if number == 3 else 1,
+        "identity": identity,
+        "detector": {"name": "gunshot-combined", "version": "713e743", "settingsID": "onset-standard"},
+        "analyzedRanges": [{"start": 0, "end": analyzed_seconds}],
+        "candidates": candidates,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--host", default="localhost", help="에뮬레이터 주소 (기본 localhost)")
@@ -219,24 +264,28 @@ def main():
     broken, unresolved = broken_path(args.width, args.height)
     # (이름, 기록 시작 오프셋, 보정 결과, 꼭짓점, 끊긴 구간, 영상 조각 길이)
     members = [
-        ("대원 1", 2.0, "done", square_path(args.width, args.height, 40), [], [20, 20]),
-        ("대원 2", 3.5, "partial", broken, unresolved, [15, 15]),
-        ("대원 3", 5.0, "failed", [], [], [10]),
-        ("대원 4", 1.0, None, None, [], []),
+        ("대원 1", 2.0, "done", square_path(args.width, args.height, 40), [], [20, 20], 420),
+        ("대원 2", 3.5, "partial", broken, unresolved, [15, 15], 440),
+        ("대원 3", 5.0, "failed", [], [], [10], 460),
+        ("대원 4", 1.0, None, None, [], [12], 640),
+        ("대원 5", 2.5, "done", square_path(args.width, args.height, 60), [], [12], 660),
+        ("대원 6", 4.0, "done", square_path(args.width, args.height, 80), [], [12], 680),
     ]
     summary = {"sessionID": session_id, "pin": pin, "floorPlan": floor_plan, "members": []}
 
     # 중간에 실패해도 만든 영상 조각을 지운다.
     video_dir = tempfile.mkdtemp(prefix="cqb-aar-seed-")
     try:
-        for name, offset, status, vertices, gaps, chunk_seconds in members:
+        for number, (name, offset, status, vertices, gaps, chunk_seconds, audio_frequency) in enumerate(members, start=1):
             member_id, recording_id = str(uuid.uuid4()).upper(), str(uuid.uuid4()).upper()
             identity = {"sessionID": session_id, "memberID": member_id, "recordingID": recording_id}
             write_document(args.host, f"sessions/{session_id}/members/{member_id}", {
                 "id": member_id, "sessionID": session_id, "name": name, "isReady": True,
                 "lastActiveAt": started_at, "uid": f"seed-{member_id}", "pin": pin,
             })
-            chunks = make_chunks(ffmpeg, video_dir, name, chunk_seconds) if ffmpeg and chunk_seconds else []
+            chunks = make_chunks(
+                ffmpeg, video_dir, name, chunk_seconds, audio_frequency
+            ) if ffmpeg and chunk_seconds else []
             for index, chunk in enumerate(chunks):
                 with open(chunk, "rb") as file:
                     upload_file(args.host, f"sessions/{session_id}/recordings/{recording_id}/video/chunk_{index:04d}.mp4",
@@ -248,6 +297,10 @@ def main():
             if status is not None:
                 document = track_result(identity, floor_plan, status, vertices, gaps)
                 upload_file(args.host, f"sessions/{session_id}/recordings/{recording_id}/result.json",
+                            json.dumps(document, ensure_ascii=False, sort_keys=True).encode(), "application/json")
+            if number != 4:
+                document = sound_candidates(identity, number, offset, 90)
+                upload_file(args.host, f"sessions/{session_id}/recordings/{recording_id}/sound-candidates.json",
                             json.dumps(document, ensure_ascii=False, sort_keys=True).encode(), "application/json")
             summary["members"].append({"name": name, "result": status or "없음", "videoChunks": len(chunks),
                                        "recordingOffset": offset, **identity})

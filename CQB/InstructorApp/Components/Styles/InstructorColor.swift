@@ -9,58 +9,119 @@ enum InstructorColor {
     // MARK: - Surfaces
 
     /// Figma: `color/canvas`
-    static let canvas = DSColor.background
+    static let canvas = DSColor.backgroundPrimary
 
     /// Figma: `color/surface/base`
-    static let surfaceBase = DSColor.area1
+    static let surfaceBase = DSColor.surfacePrimary
 
     /// Figma: `color/surface/raised`
-    static let surfaceRaised = DSColor.area2
+    static let surfaceRaised = DSColor.surfaceSecondary
+
+    /// Figma: `Liquid Glass - Regular - Medium`의 불투명 기본 면(#1A1A1A).
+    static let savingOverlaySurface = Color("InstructorSavingOverlaySurface")
 
     // MARK: - Actions and borders
 
     /// Figma: `color/action/primary`
-    static let actionPrimary = DSColor.main
+    static let actionPrimary = DSColor.actionPrimary
 
     /// Figma: `color/action/disabled`
-    static let actionDisabled = Color("InstructorActionDisabled")
+    static let actionDisabled = DSColor.actionPrimaryDisabled
 
     /// Figma: `color/border/default`
-    static let borderDefault = DSColor.area3
+    static let borderDefault = DSColor.borderPrimary
+
+    /// 도면 목록의 미선택 indicator와 미리보기 action border에 쓰는 Figma Gray/200.
+    static let floorPlanSelectionIdle = DSPalette.Gray.g200
+    static let floorPlanPreviewActionBorder = DSPalette.Gray.g200
 
     // MARK: - Content
 
     /// Figma: `color/text/primary`
-    static let textPrimary = DSColor.white
+    static let textPrimary = DSColor.contentPrimary
 
     /// Figma: `color/text/secondary`
-    static let textSecondary = DSColor.darkGreen
+    static let textSecondary = DSColor.contentSecondary
 
     /// Figma: `color/icon/check`
-    static let iconCheck = DSColor.white
+    static let iconCheck = DSColor.contentPrimary
 
-    /// Apple semantic red used for validation and error feedback.
-    static let validationError = Color.red
+    /// 입력 검증과 오류 피드백에 쓰는 공통 의미 색상입니다.
+    static let validationError = DSColor.statusError
+
+    /// 훈련 중 화면의 녹화 상태 표시점에 쓰는 Figma Red/400.
+    static let trainingRecordingIndicator = DSPalette.Red.r400
+
+    // MARK: - World map scanning
+
+    static let worldMapUnavailableIndicator = Color(
+        red: 142.0 / 255.0,
+        green: 142.0 / 255.0,
+        blue: 147.0 / 255.0
+    )
+    static let worldMapLimitedIndicator = Color(
+        red: 255.0 / 255.0,
+        green: 159.0 / 255.0,
+        blue: 10.0 / 255.0
+    )
+    static let worldMapExtendingIndicator = Color(
+        red: 255.0 / 255.0,
+        green: 214.0 / 255.0,
+        blue: 10.0 / 255.0
+    )
+    static let worldMapMappedIndicator = Color(
+        red: 48.0 / 255.0,
+        green: 209.0 / 255.0,
+        blue: 88.0 / 255.0
+    )
 
     // MARK: - Menus
 
     /// Figma: `color/menu/surface`
-    static let menuSurface = DSColor.area3
+    static let menuSurface = DSColor.surfaceSecondary
 
     /// Figma: `color/menu/border`
-    static let menuBorder = DSColor.area2
-
-    // MARK: - Teams
-
-    static let teamOne = DSColor.team1
-    static let teamTwo = DSColor.team2
-    static let teamThree = DSColor.team3
+    static let menuBorder = DSColor.borderPrimary
 
     // MARK: - Player
 
     /// Figma: `color/player/surface`
-    static let playerSurface = DSColor.black
+    static let playerSurface = DSPalette.Neutral.black
 
     /// Figma: `color/player/play`
     static let playerPlay = Color("InstructorPlayerPlay")
+
+    // MARK: - AAR
+
+    static let aarCanvas = DSColor.backgroundPrimary
+    static let aarSurfaceRaised = DSColor.backgroundElevated
+    static let aarActionPrimary = DSColor.actionPrimary
+    static let aarActionDisabled = DSColor.actionPrimaryDisabled
+    static let aarBorder = DSColor.borderPrimary
+    static let aarContentPrimary = DSColor.contentPrimary
+    static let aarContentSecondary = DSColor.contentSecondary
+    static let aarPlayerSurface = DSPalette.Gray.g900
+    static let aarMapSurface = DSPalette.Gray.g800
+    static let aarVideoSlotSurface = DSPalette.Gray.g700
+    static let aarPanelLabel = DSPalette.Gray.g200
+    static let aarPlaceholderText = DSPalette.Gray.g400
+    static let aarParticipantMarker = DSPalette.Gray.g600
+    static let aarParticipantSelectedBorder = DSPalette.Primary.p300
+    static let aarFloorPlanOverlay = DSPalette.Gray.g700.opacity(0.2)
+    static let aarTimelineTrack = Color(
+        red: 77.0 / 255.0,
+        green: 77.0 / 255.0,
+        blue: 77.0 / 255.0
+    )
+    static let aarTimelineProgress = DSPalette.Primary.p300
+
+    // MARK: - Floor plan preview
+
+    /// Figma: preview image overlay, `#747474` at 20% opacity.
+    static let floorPlanPreviewOverlay = Color(
+        red: 116.0 / 255.0,
+        green: 116.0 / 255.0,
+        blue: 116.0 / 255.0
+    ).opacity(0.2)
+
 }

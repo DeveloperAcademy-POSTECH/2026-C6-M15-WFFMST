@@ -25,6 +25,21 @@ nonisolated struct LocalRecordingFileStore: Sendable {
         return LocalRecordingFiles(directory: directory)
     }
 
+    /// Remove only this store's uncommitted startup files, never a saved recording.
+    func discardUncommittedFiles(_ files: LocalRecordingFiles) throws {
+        let directory = files.directory.standardizedFileURL
+        guard directory.deletingLastPathComponent() == (try recordingRoot()).standardizedFileURL,
+              UUID(uuidString: directory.lastPathComponent) != nil else {
+            throw CleanupError.invalidRecordingDirectory
+        }
+        guard !FileManager.default.fileExists(atPath: files.raw.path),
+              !FileManager.default.fileExists(atPath: files.result.path) else {
+            throw CleanupError.savedRecording
+        }
+        guard FileManager.default.fileExists(atPath: directory.path) else { return }
+        try FileManager.default.removeItem(at: directory)
+    }
+
     /// 데모 실행 디렉터리만 제거한다. 운영 Recordings 경로에는 사용할 수 없다.
     func removeDemoRun() throws {
         guard case .demo = scope else { throw CleanupError.operationalScope }
@@ -93,5 +108,7 @@ nonisolated struct LocalRecordingFileStore: Sendable {
 
     private enum CleanupError: Error {
         case operationalScope
+        case invalidRecordingDirectory
+        case savedRecording
     }
 }

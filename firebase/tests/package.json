@@ -1,0 +1,14 @@
+{
+  "name": "cqb-rules-tests",
+  "private": true,
+  "type": "module",
+  "description": "Firestore·Storage 보안 규칙 테스트. Firebase 에뮬레이터 안에서 실행한다.",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 *.test.mjs",
+    "test:emulators": "cd ../.. && firebase emulators:exec --only firestore,storage --project demo-cqb-rules \"npm --prefix firebase/tests test\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "6.0.0",
+    "firebase": "13.0.0"
+  }
+}

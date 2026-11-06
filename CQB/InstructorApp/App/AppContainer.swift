@@ -1,3 +1,4 @@
+import CQBCore
 import CQBFirebase
 import SwiftUI
 
@@ -8,22 +9,29 @@ struct AppContainer: View {
 
     @MainActor
     init(
-        floorPlanCatalogRepository: (any FloorPlanCatalogRepository)? = nil
+        floorPlanFileRepository: any FloorPlanFileRepository,
+        worldMapFileRepository: any WorldMapFileRepository = StorageWorldMapFileRepository(),
+        floorPlanCatalogRepository: (any FloorPlanCatalogRepository)? = nil,
+        trainingHistoryRepository: (any TrainingHistoryRepository)? = nil
     ) {
         _store = State(initialValue: InstructorStore(
-            floorPlanFileRepository: StorageFloorPlanFileRepository(),
+            floorPlanDraft: FloorPlanDraftStore(worldMapScanner: LocalARWorldMapScanService()),
+            floorPlanFileRepository: floorPlanFileRepository,
+            worldMapFileRepository: worldMapFileRepository,
             floorPlanCatalogRepository: floorPlanCatalogRepository,
             sessionRepository: FirestoreSessionRepository(),
             memberRepository: FirestoreMemberRepository(),
-            recordingRepository: FirestoreRecordingRepository()
+            recordingRepository: FirestoreRecordingRepository(),
+            trainingHistoryRepository: trainingHistoryRepository
         ))
         _aarStore = State(initialValue: AARStore(
             sessionRepository: FirestoreSessionRepository(),
             memberRepository: FirestoreMemberRepository(),
             recordingRepository: FirestoreRecordingRepository(),
             trackResultRepository: StorageTrackResultRepository(),
-            floorPlanFileRepository: StorageFloorPlanFileRepository(),
-            videoChunkRepository: StorageVideoChunkRepository()
+            floorPlanFileRepository: floorPlanFileRepository,
+            videoChunkRepository: StorageVideoChunkRepository(),
+            soundCandidateLoader: RepositoryAARSoundCandidateLoader(repository: StorageSoundCandidateRepository())
         ))
     }
 
@@ -37,7 +45,10 @@ struct AppContainer: View {
                     .environment(store)
                     .environment(store.floorPlanDraft)
                     .environment(aarStore)
-                    .task { store.loadFloorPlans() }
+                    .task {
+                        store.loadFloorPlans()
+                        store.loadTrainingHistory()
+                    }
 #if DEBUG
                     .task { await openDebugAARIfRequested() }
 #endif

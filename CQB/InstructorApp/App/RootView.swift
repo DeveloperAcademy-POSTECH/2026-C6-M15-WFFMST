@@ -17,7 +17,7 @@ struct RootView: View {
                     }
                 }
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    if demoMode.isActive {
+                    if demoMode.isActive && store.phase != .aar {
                         demoBanner
                     } else if !usesHiFiChrome {
                         Text("등록 도면 목록은 기기에 저장 · 훈련 진행은 앱 종료 시 사라집니다")
@@ -59,8 +59,11 @@ struct RootView: View {
     private var usesHiFiChrome: Bool {
         [
             .home,
+            .trainingHistory,
             .floorPlanList,
+            .floorPlanDetail,
             .floorPlanCreation,
+            .floorPlanEditing,
             .sessionCreation,
             .teamReadiness,
             .trainingInProgress,
@@ -74,12 +77,14 @@ struct RootView: View {
     private var destination: some View {
         switch store.phase {
         case .home: HomeView()
+        case .trainingHistory: TrainingHistoryView()
         case .floorPlanList: FloorPlanListView()
+        case .floorPlanDetail: FloorPlanDetailView()
         case .floorPlanCreation: FloorPlanCreateView()
+        case .floorPlanEditing: FloorPlanCreateView()
         case .sessionCreation: TrainingSessionCreateView()
         case .teamReadiness: TeamReadinessView()
-        case .trainingInProgress: TrainingInProgressView()
-        case .resultsPreparation: TrainingResultsPreparationView()
+        case .trainingInProgress, .resultsPreparation: TrainingInProgressView()
         case .aar: AARView()
         case .aarCompleted: AARCompletedView()
         }
@@ -87,5 +92,5 @@ struct RootView: View {
 }
 
 #Preview {
-    AppContainer()
+    AppContainer(floorPlanFileRepository: DemoFloorPlanFileRepository())
 }

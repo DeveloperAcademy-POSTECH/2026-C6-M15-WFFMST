@@ -5,13 +5,16 @@ import Foundation
 enum TrainingLifecycleChecks {
     static func run() async {
         await checkLifecycleAndRecovery()
+        await checkManualAARExclusion()
         await checkExclusionAndCancellation()
         await checkEmptyRosterAndNormalStreamEnd()
-        print("PASS: 훈련 서버 시작·종료, 서버 타이머, 기록 전원 종결, 오류·재연결·취소")
+        await checkHistorySaveFailure()
+        print("PASS: 훈련 서버 시작·종료, 서버 타이머, 기록 전원 종결, 오류·재연결·취소, 종료 시 이전 기록 저장")
     }
 
     private static func checkLifecycleAndRecovery() async {
-        let (store, repository, members) = await readyStore()
+        let history = InMemoryTrainingHistoryRepository()
+        let (store, repository, members) = await readyStore(history: history)
         let session = store.currentSession!
         store.startTraining()
         await wait("시작 쓰기 대기") { repository.hasPendingWrite }
@@ -37,8 +40,8 @@ enum TrainingLifecycleChecks {
         repository.sessions[0].send(updated(session, status: .waiting))
         repository.sessions[0].send(updated(session, status: .running, start: start))
         await wait("서버 시작 시각 수신") { store.currentSession?.startedAt == start }
-        expect(store.trainingElapsed(at: start.addingTimeInterval(3661)) == "01:01:01", "서버 시각 기준 경과 시간")
-        expect(store.trainingElapsed(at: start.addingTimeInterval(-10)) == "00:00:00", "음수 경과 시간 차단")
+        expect(store.trainingElapsed(at: start.addingTimeInterval(3661)) == "61:01", "서버 시각 기준 경과 시간")
+        expect(store.trainingElapsed(at: start.addingTimeInterval(-10)) == "00:00", "음수 경과 시간 차단")
         repository.sessions[0].finish(throwing: Failure.disconnected)
         await wait("세션 구독 실패") { store.canRetrySessionObservation }
         expect(store.currentSession?.startedAt == start, "세션 구독 실패 중 서버 시각 보존")
@@ -59,6 +62,7 @@ enum TrainingLifecycleChecks {
         repository.completeWrite(error: Failure.disconnected)
         await wait("종료 실패") { !store.isFinishingTraining }
         expect(store.phase == .trainingInProgress && store.trainingActionError != nil, "종료 실패 후 현재 화면 유지")
+        expect(store.trainingHistory.isEmpty && (try? history.fetchAll())?.isEmpty == true, "종료 실패 시 기록 저장 안 함")
         repository.sessions[1].send(updated(session, status: .running, start: start))
         await wait("보류 쓰기 롤백") { store.currentSession?.status == .running }
         store.finishTraining()
@@ -67,6 +71,13 @@ enum TrainingLifecycleChecks {
         await wait("결과 준비 진입") { store.phase == .resultsPreparation && repository.recordingCount == 1 }
         expect(store.currentSession?.status == .ended && store.trainingRecords.connectionState == .connecting,
                "종료 ACK 후 첫 기록 스냅샷 대기")
+        let saved = try? history.fetchAll()
+        expect(saved?.count == 1 && store.trainingHistory == saved
+               && saved?.first?.sessionID == session.id && saved?.first?.trainingName == session.name
+               && saved?.first?.floorPlanName == "검사 도면"
+               && saved?.first?.participantNames == store.trainingParticipants.map(\.name)
+               && saved?.first?.startedAt == start,
+               "종료 성공 직후 서버 시작 시각으로 이전 기록 저장")
         await wait("세션 구독 종료") { repository.sessions[1].terminationCount == 1 }
 
         let firstID = UUID(uuidString: store.trainingParticipants[0].id)!
@@ -95,13 +106,56 @@ enum TrainingLifecycleChecks {
                "재연결 첫 스냅샷 전 완료 판정 차단")
         repository.recordings[1].send([firstDone, record(session.id, secondID, .failed)])
         await wait("전원 종결 후 AAR") { store.phase == .aar }
-        expect(store.selectedParticipants.count == 2 && store.trainingRecords.failedCount == 1,
-               "failed도 종결이지만 실패 정보와 참가 명단 유지")
+        expect(store.participants.count == 2 && store.aarParticipants.map(\.id) == [firstID.uuidString]
+                   && store.selectedParticipants.isEmpty
+                   && store.trainingRecords.failedCount == 1,
+               "failed도 종결이지만 AAR 재생 대상에서 제외하고 초기 선택은 비운다")
         await wait("AAR에서 기록 구독 정리") { repository.recordings[1].terminationCount == 1 }
         expect(repository.writes == [.running, .running, .ended, .ended], "실패 재시도 외 중복 상태 쓰기 없음")
         store.returnHome()
         repository.recordings[1].send([])
-        expect(store.trainingParticipants.isEmpty && store.trainingRecords.recordings.isEmpty, "홈 복귀 시 결과 초기화")
+        expect(store.trainingParticipants.isEmpty && store.trainingRecords.recordings.isEmpty
+               && store.aarParticipantIDs.isEmpty,
+               "홈 복귀 시 결과와 고정된 AAR 대상 초기화")
+    }
+
+    private static func checkManualAARExclusion() async {
+        let (store, repository, _) = await readyStore()
+        let session = store.currentSession!
+        store.startTraining()
+        await wait("수동 제외 훈련 시작") { repository.hasPendingWrite }
+        repository.completeWrite()
+        await wait("수동 제외 훈련 진행") { store.phase == .trainingInProgress }
+        store.finishTraining()
+        await wait("수동 제외 훈련 종료") { repository.hasPendingWrite }
+        repository.completeWrite()
+        await wait("수동 제외 결과 준비") { store.phase == .resultsPreparation && repository.recordingCount == 1 }
+
+        let firstID = UUID(uuidString: store.trainingParticipants[0].id)!
+        let secondID = UUID(uuidString: store.trainingParticipants[1].id)!
+        repository.recordings[0].send([
+            record(session.id, firstID, .done),
+            record(session.id, secondID, .finishing),
+        ])
+        await wait("완료와 미종결 기록 수신") { store.trainingRecords.connectionState == .connected }
+        expect(!store.trainingRecords.canProceedToAAR && store.phase == .resultsPreparation,
+               "미종결 대원을 제외하기 전 AAR 차단")
+
+        store.excludeParticipantFromAAR(secondID.uuidString)
+        expect(store.trainingRecords.canProceedToAAR && store.trainingRecords.excludedCount == 1,
+               "미종결 대원 제외 후 완료 기록으로 진행 가능")
+        store.proceedToAAR()
+        expect(store.phase == .aar && store.aarParticipants.map(\.id) == [firstID.uuidString]
+               && store.selectedParticipantIDs.isEmpty,
+               "AAR 입력을 완료 대원으로 고정하고 초기 선택은 비움")
+
+        repository.recordings[0].send([
+            record(session.id, firstID, .done),
+            record(session.id, secondID, .done),
+        ])
+        await settle()
+        expect(store.aarParticipants.map(\.id) == [firstID.uuidString],
+               "AAR 진입 후 늦은 완료 상태로 참가자 스냅샷을 변경하지 않음")
     }
 
     private static func checkExclusionAndCancellation() async {
@@ -119,8 +173,9 @@ enum TrainingLifecycleChecks {
         store.returnHome()
         repository.completeWrite()
         await settle()
-        expect(store.phase == .home && store.currentSession == nil && repository.recordingCount == 0,
-               "화면 이탈 후 늦은 종료 성공 무시")
+        expect(store.phase == .home && store.currentSession == nil && repository.recordingCount == 0
+               && store.trainingHistory.isEmpty,
+               "화면 이탈 후 늦은 종료 성공 무시, 기록 저장 안 함")
 
         let (other, otherRepository, _) = await readyStore()
         other.startTraining()
@@ -145,6 +200,24 @@ enum TrainingLifecycleChecks {
         await wait("기록 스트림 정상 종료도 재연결") { records.canRetry }
         records.reset()
 
+        let failedRepository = LifecycleRepository()
+        let failedRecords = TrainingRecordStore(repository: failedRepository)
+        let failedParticipants = [
+            InstructorParticipant(id: UUID().uuidString, number: 1, name: "실패 A", isReady: true, x: 0, y: 0),
+            InstructorParticipant(id: UUID().uuidString, number: 2, name: "실패 B", isReady: true, x: 0, y: 0),
+        ]
+        var didEnterEmptyAAR = false
+        let failedSessionID = UUID()
+        failedRecords.observe(sessionID: failedSessionID, participants: failedParticipants) { didEnterEmptyAAR = true }
+        await wait("전원 실패 기록 구독") { failedRepository.recordingCount == 1 }
+        failedRepository.recordings[0].send(failedParticipants.map {
+            record(failedSessionID, UUID(uuidString: $0.id)!, .failed)
+        })
+        await wait("전원 실패 스냅샷") { failedRecords.failedCount == 2 }
+        expect(!failedRecords.isReadyForAAR && !failedRecords.canProceedToAAR && !didEnterEmptyAAR,
+               "완료 기록이 없으면 빈 AAR 진입 차단")
+        failedRecords.reset()
+
         let (store, sessionRepository, _) = await readyStore()
         store.startTraining()
         await wait("정상 종료 검사 시작") { sessionRepository.hasPendingWrite }
@@ -155,13 +228,34 @@ enum TrainingLifecycleChecks {
         store.returnHome()
     }
 
-    private static func readyStore(allReady: Bool = true) async -> (InstructorStore, LifecycleRepository, [Member]) {
+    private static func checkHistorySaveFailure() async {
+        let history = InMemoryTrainingHistoryRepository()
+        history.saveError = Failure.disconnected
+        let (store, repository, _) = await readyStore(history: history)
+        store.startTraining()
+        await wait("저장 실패 검사 시작") { repository.hasPendingWrite }
+        repository.completeWrite()
+        await wait("저장 실패 검사 진행") { store.phase == .trainingInProgress }
+        store.finishTraining()
+        await wait("저장 실패 검사 종료") { repository.hasPendingWrite }
+        repository.completeWrite()
+        await wait("저장 실패해도 결과 준비") { store.phase == .resultsPreparation }
+        expect(store.trainingHistory.isEmpty && store.trainingActionError == nil, "기록 저장 실패가 훈련 흐름을 막지 않음")
+        store.returnHome()
+    }
+
+    private static func readyStore(
+        allReady: Bool = true,
+        history: InMemoryTrainingHistoryRepository? = nil
+    ) async -> (InstructorStore, LifecycleRepository, [Member]) {
         let repository = LifecycleRepository()
         let store = InstructorStore(
             floorPlans: [InstructorFloorPlan(id: "plan", name: "검사 도면", fileName: "plan.png", referenceDistance: 10)],
-            sessionRepository: repository, memberRepository: repository, recordingRepository: repository
+            sessionRepository: repository, memberRepository: repository, recordingRepository: repository,
+            trainingHistoryRepository: history
         )
         store.openSessionCreation()
+        store.setTrainingName("훈련 생명주기 검사")
         store.createSession()
         await wait("검사 세션 생성") { repository.memberCount == 1 }
         let members = [

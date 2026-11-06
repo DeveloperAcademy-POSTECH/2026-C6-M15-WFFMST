@@ -1,22 +1,43 @@
 import ARKit
 import AVFoundation
+import CQBCore
 import Observation
 import UIKit
 
+/// The Store can control startup independently from the AR preview and session subscription.
+@MainActor
+protocol MemberRecordingStarting: AnyObject {
+    func startRecording(to directory: URL, start: MapPoint, direction: MapPoint,
+                        shouldStart: @escaping @MainActor () -> Bool) async throws
+    func cancelUncommittedRecording() async
+}
+
 /// 카메라의 단일 소유자. 같은 ARFrame 시계를 영상 PTS와 동선 t에 사용한다.
 @MainActor @Observable
-final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate {
+final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate, MemberRecordingStarting {
     let session = ARSession()
     private(set) var isReady = false
     private(set) var statusMessage = "카메라 준비 중"
     /// 시작 전 방향 안정화와 별개인, 현재 AR 추적 품질 안내.
     private(set) var trackingWarning: String?
+    private(set) var audioWarning: String?
     private(set) var fatalError: String?
     private(set) var isRecording = false
     private(set) var samples: [RawTrackSample] = []
     private(set) var videoChunkURLs: [URL] = []
+    /// 마지막 녹화의 큰 소리 후보(#172). 분석 중 실패했으면 nil이다.
+    private(set) var soundCandidates: MemberSoundCandidateRecorder.Result?
     private(set) var rotationDegrees = 0.0
+    @ObservationIgnored var onSessionRunningChange: ((Bool) -> Void)?
+    @ObservationIgnored var onTrackingUpdate: ((ARPose?, Bool, Bool) -> Void)?
+    private(set) var recordingPosition: WorldMapPosition?
+    private(set) var recordingPixelsPerMeter: Double?
+    @ObservationIgnored private var initialWorldMap: LoadedMemberWorldMap?
+    @ObservationIgnored private var positioningMap: TrainingMap?
     @ObservationIgnored private let writer = ARFrameVideoWriter()
+    @ObservationIgnored private let audioCapture = MemberAudioCaptureService()
+    @ObservationIgnored private let soundRecorder = MemberSoundCandidateRecorder()
+    @ObservationIgnored private var audioStatusTask: Task<Void, Never>?
     @ObservationIgnored var onVideoChunkReady: (@MainActor @Sendable (Int, URL) -> Void)?
     @ObservationIgnored private var origin = SIMD3<Float>(repeating: 0)
     @ObservationIgnored private var firstTimestamp = 0.0
@@ -26,8 +47,9 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate {
     @ObservationIgnored private var segment = 0
     @ObservationIgnored private var wasNormal = false
     @ObservationIgnored private var running = false
-    @ObservationIgnored private var startingSession = false
+    @ObservationIgnored private var sessionStartID: UUID?
     @ObservationIgnored private var wantsRunning = false
+    @ObservationIgnored private var startingRecording = false
 
     override init() {
         super.init()
@@ -35,26 +57,47 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate {
         session.delegateQueue = .main
     }
 
+    /// 모드 변경은 실행 중인 좌표계를 먼저 종료한 뒤 수행한다.
+    func configureWorldMap(_ worldMap: LoadedMemberWorldMap?, map: TrainingMap? = nil) {
+        stop()
+        initialWorldMap = worldMap
+        positioningMap = map
+        recordingPosition = nil
+        recordingPixelsPerMeter = nil
+    }
+
     func start() async {
         wantsRunning = true
-        guard !running, !startingSession else { return }
-        startingSession = true
-        defer { startingSession = false }
+        guard !running, sessionStartID == nil else { return }
+        let attemptID = UUID()
+        sessionStartID = attemptID
+        defer {
+            if sessionStartID == attemptID { sessionStartID = nil }
+        }
         guard ARWorldTrackingConfiguration.isSupported else {
             statusMessage = "이 기기는 AR 동선 추적을 지원하지 않습니다."
+            fatalError = statusMessage
             return
         }
+        isReady = false
+        statusMessage = "카메라·마이크 권한 확인 중"
         let allowed: Bool
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized: allowed = true
         case .notDetermined: allowed = await AVCaptureDevice.requestAccess(for: .video)
         default: allowed = false
         }
-        guard wantsRunning else { return }
+        guard wantsRunning, sessionStartID == attemptID, !Task.isCancelled else { return }
         guard allowed else {
             statusMessage = "설정에서 카메라 접근을 허용해주세요."
+            fatalError = statusMessage
             return
         }
+        // 준비 완료를 보고하기 전에 권한 결정을 마친다. 실제 녹음은 훈련 시작 시 실행한다.
+        if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
+            _ = await Self.requestMicrophoneAccess()
+        }
+        guard wantsRunning, sessionStartID == attemptID, !Task.isCancelled else { return }
         fatalError = nil
         trackingWarning = nil
         normalSince = nil
@@ -62,16 +105,22 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate {
         isReady = false
         let configuration = ARWorldTrackingConfiguration()
         configuration.worldAlignment = .gravity
+        configuration.initialWorldMap = initialWorldMap?.worldMap
         // 영상과 추적 모두 이 세션만 사용한다. 재시작 시 이전 좌표계를 재사용하지 않는다.
         session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
         running = true
+        onSessionRunningChange?(true)
     }
 
     func stop() {
-        guard !isRecording else { return }
         wantsRunning = false
+        // 이전 권한 응답이 복귀 후 새 카메라 준비 작업을 재개하지 못하도록 무효화한다.
+        sessionStartID = nil
+        guard !isRecording else { return }
+        stopAudioStatusUpdates()
         session.pause()
         running = false
+        onSessionRunningChange?(false)
         trackingWarning = nil
         isReady = false
         normalSince = nil
@@ -85,31 +134,83 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate {
         writer.discardFinishedCapture()
     }
 
-    func startRecording(to directory: URL, start: MapPoint, direction: MapPoint) throws {
-        guard !isRecording, isReady, let frame = session.currentFrame,
+    func startRecording(to directory: URL, start: MapPoint, direction: MapPoint,
+                        shouldStart: @escaping @MainActor () -> Bool = { true }) async throws {
+        guard !Task.isCancelled, !isRecording, !startingRecording else { throw CaptureError.notReady }
+        startingRecording = true
+        defer { startingRecording = false }
+        let audioAllowed = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        guard wantsRunning, shouldStart(), !Task.isCancelled else { throw CaptureError.notReady }
+        let videoWriter = writer
+        let soundRecorder = soundRecorder
+        let audioStatus = startAudioStatusUpdates()
+        let sampleRate: Double?
+        if audioAllowed {
+            sampleRate = await audioCapture.start(onSampleBuffer: { sampleBuffer in
+                videoWriter.append(audioSampleBuffer: sampleBuffer)
+                soundRecorder.append(sampleBuffer)
+            }, onInterruption: {
+                videoWriter.markAudioInterrupted()
+                soundRecorder.interrupt()
+                audioStatus.yield(true)
+            }, onResume: {
+                audioStatus.yield(false)
+            })
+        } else { sampleRate = nil }
+        if sampleRate == nil {
+            stopAudioStatusUpdates()
+            audioWarning = "마이크를 사용할 수 없어 소리 없이 녹화합니다."
+        }
+        guard wantsRunning, shouldStart(), !Task.isCancelled, isReady, let frame = session.currentFrame,
               case .normal = frame.camera.trackingState,
               let heading = RouteHeading.stableCameraDirection(headings.map(\.1)),
-              let rotation = RouteHeading.rotation(start: start, toward: direction, referenceRadians: heading) else {
+              let manualRotation = RouteHeading.rotation(start: start, toward: direction, referenceRadians: heading) else {
+            stopAudioStatusUpdates()
+            await audioCapture.stop()
             throw CaptureError.notReady
         }
+        // 오디오 준비 중 이동할 수 있으므로 실제 첫 녹화 프레임으로 자동 좌표를 확정한다.
+        let automaticPosition: WorldMapPosition?
+        if let initialWorldMap, let positioningMap {
+            automaticPosition = WorldMapPositionCalculator.position(
+                pose: Self.pose(frame), alignment: initialWorldMap.setup.alignment, map: positioningMap)
+            guard automaticPosition != nil else {
+                stopAudioStatusUpdates()
+                await audioCapture.stop()
+                throw CaptureError.notReady
+            }
+        } else { automaticPosition = nil }
         let orientation = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first(where: { $0.activationState == .foregroundActive })?.interfaceOrientation ?? .landscapeRight
-        try writer.start(firstFrame: frame.capturedImage, timestamp: frame.timestamp,
-                         outputDirectory: directory, orientation: orientation) { [weak self] index, url in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                if !self.videoChunkURLs.contains(url) { self.videoChunkURLs.append(url) }
-                self.onVideoChunkReady?(index, url)
+        do {
+            try writer.start(firstFrame: frame.capturedImage, timestamp: frame.timestamp,
+                             outputDirectory: directory, orientation: orientation,
+                             audioSampleRate: sampleRate) { [weak self] index, url in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if !self.videoChunkURLs.contains(url) { self.videoChunkURLs.append(url) }
+                    self.onVideoChunkReady?(index, url)
+                }
             }
+        } catch {
+            stopAudioStatusUpdates()
+            await audioCapture.stop()
+            writer.cancel()
+            throw error
         }
         let position = frame.camera.transform.columns.3
         origin = SIMD3(position.x, position.y, position.z)
         firstTimestamp = frame.timestamp
+        soundCandidates = nil
+        // 마이크를 쓸 수 없어도 시작한다. 그러면 분석 구간이 빈 결과가 나온다.
+        soundRecorder.begin(recordingStart: frame.timestamp)
         lastSampleTime = -Double.infinity
         segment = 0
         wasNormal = true
         samples = []
-        rotationDegrees = rotation
+        recordingPosition = automaticPosition
+        recordingPixelsPerMeter = initialWorldMap?.setup.alignment.pixelsPerMeter
+        rotationDegrees = initialWorldMap?.setup.alignment.rotationDegrees ?? manualRotation
         isRecording = true
         isReady = false
         trackingWarning = nil
@@ -117,20 +218,77 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate {
         recordSample(frame)
     }
 
+    /// Only used for a startup result the Store has not committed to its recording phase.
+    func cancelUncommittedRecording() async {
+        isRecording = false
+        stopAudioStatusUpdates()
+        await audioCapture.stop()
+        soundRecorder.cancel()
+        writer.cancel()
+        samples = []
+        videoChunkURLs = []
+        if !wantsRunning { stop() }
+    }
+
+    func startAudioStatusUpdates() -> AsyncStream<Bool>.Continuation {
+        stopAudioStatusUpdates()
+        let (updates, continuation) = AsyncStream<Bool>.makeStream()
+        // One consumer preserves capture-queue ordering across repeated interruptions.
+        // Cancelling it isolates late callbacks from a stopped or subsequent recording.
+        audioStatusTask = Task { @MainActor [weak self] in
+            for await isInterrupted in updates {
+                guard !Task.isCancelled, let self else { return }
+                self.audioWarning = isInterrupted
+                    ? "소리 녹음이 중단되었습니다. 영상과 동선은 계속 기록합니다." : nil
+            }
+        }
+        return continuation
+    }
+
+    private func stopAudioStatusUpdates() {
+        audioStatusTask?.cancel()
+        audioStatusTask = nil
+        audioWarning = nil
+    }
+
+    static func requestMicrophoneAccess(
+        using request: (@escaping @Sendable (Bool) -> Void) -> Void = { callback in
+            AVCaptureDevice.requestAccess(for: .audio, completionHandler: callback)
+        }
+    ) async -> Bool {
+        // Cancelling iteration returns immediately. The system dialog cannot be dismissed,
+        // but its eventual callback only finishes this already-terminated stream.
+        let responses = AsyncStream<Bool>(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            request { allowed in
+                continuation.yield(allowed)
+                continuation.finish()
+            }
+        }
+        var iterator = responses.makeAsyncIterator()
+        return await iterator.next() ?? false
+    }
+
     func stopRecording() async throws -> [URL] {
         guard isRecording else { throw CaptureError.notRecording }
-        if let frame = session.currentFrame, frame.timestamp > firstTimestamp + lastSampleTime {
+        let finalFrame = session.currentFrame
+        if let frame = finalFrame, frame.timestamp > firstTimestamp + lastSampleTime {
             recordSample(frame, force: true)
+            writer.append(pixelBuffer: frame.capturedImage, timestamp: frame.timestamp)
         }
         isRecording = false
+        stopAudioStatusUpdates()
+        await audioCapture.stop()
+        soundCandidates = await soundRecorder.finish()
+        let end = finalFrame.map { $0.timestamp + 1.0 / 30.0 }
         let chunks = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[URL], Error>) in
-            writer.finish { continuation.resume(with: $0) }
+            writer.finish(at: end) { continuation.resume(with: $0) }
         }
         videoChunkURLs = chunks
         return chunks
     }
 
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
+        guard running else { return }
         let normal: Bool
         switch frame.camera.trackingState {
         case .normal:
@@ -164,6 +322,7 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate {
             headings = []
             isReady = false
         }
+        onTrackingUpdate?(normal ? Self.pose(frame) : nil, normal, isReady)
         guard isRecording else { return }
         if let failure = writer.failureDescription {
             fatalError = failure
@@ -172,6 +331,12 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate {
         writer.append(pixelBuffer: frame.capturedImage, timestamp: frame.timestamp)
         // 상태 변화는 10Hz 제한과 무관하게 남겨 짧은 단절도 보존한다.
         recordSample(frame, force: normal != wasNormal)
+    }
+
+    private static func pose(_ frame: ARFrame) -> ARPose {
+        let t = frame.camera.transform
+        return ARPose(x: Double(t.columns.3.x), y: Double(t.columns.3.y), z: Double(t.columns.3.z),
+                      forwardX: -Double(t.columns.2.x), forwardZ: -Double(t.columns.2.z))
     }
 
     private func recordSample(_ frame: ARFrame, force: Bool = false) {
@@ -212,6 +377,7 @@ final class ARRecordingService: NSObject, @preconcurrency ARSessionDelegate {
         isReady = false
         normalSince = nil
         headings = []
+        writer.markAudioInterrupted()
         guard isRecording, let last = samples.last else { return }
         samples.append(RawTrackSample(t: last.t + 0.000001, x: last.x, y: last.y, z: last.z,
             relative: nil, trackingState: state, segment: segment))

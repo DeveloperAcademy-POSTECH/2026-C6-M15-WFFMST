@@ -6,6 +6,7 @@ import Foundation
 protocol FloorPlanCatalogRepository {
     func fetchAll() throws -> [InstructorFloorPlan]
     func save(_ floorPlan: InstructorFloorPlan) throws
+    func delete(id: String) throws
 }
 
 @MainActor
@@ -18,4 +19,5 @@ final class UnavailableFloorPlanCatalogRepository: FloorPlanCatalogRepository {
 
     func fetchAll() throws -> [InstructorFloorPlan] { throw error }
     func save(_ floorPlan: InstructorFloorPlan) throws { throw error }
+    func delete(id: String) throws { throw error }
 }

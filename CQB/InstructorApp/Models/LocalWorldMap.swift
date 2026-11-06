@@ -1,0 +1,103 @@
+import CQBCore
+import Foundation
+
+nonisolated enum LocalWorldMapPointTarget: Equatable, Sendable {
+    case start, direction, checkpoint
+}
+
+nonisolated enum LocalScanCheckpointState: Equatable, Sendable {
+    case planned, selected, completed
+}
+
+nonisolated enum LocalScanCheckpointSelectionResult: Equatable, Sendable {
+    case selected
+    case startRequired
+    case alreadyCaptured
+    case invalidCheckpoint
+}
+
+nonisolated enum LocalScanCheckpointCaptureResult: Equatable, Sendable {
+    case captured
+    case startRequired
+    case selectionRequired
+    case trackingUnavailable(LocalWorldMapTrackingState)
+    case mappingUnavailable(LocalWorldMapMappingState)
+    case alreadyCaptured
+    case invalidCheckpoint
+    case failed(String)
+}
+
+nonisolated enum LocalScanCheckpointAppearance: Equatable, Sendable {
+    case labeled, plain
+}
+
+nonisolated struct LocalScanCheckpointMarker: Equatable, Sendable {
+    let point: LocalPlanPoint
+    let number: Int
+    let state: LocalScanCheckpointState
+}
+
+nonisolated enum LocalWorldMapMappingState: Equatable, Sendable {
+    case unavailable, limited, extending, mapped
+
+    var canCaptureCheckpoint: Bool {
+        switch self {
+        case .extending, .mapped: true
+        case .unavailable, .limited: false
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .unavailable: "카메라 준비 중 · 잠시만 기다려 주세요"
+        case .limited: "공간 정보 부족 · 벽 모서리나 주변 사물이 보이게 움직여 주세요"
+        case .extending: "공간 인식 중 · 현재 지점 주변을 천천히 둘러봐 주세요"
+        case .mapped: "현재 지점 스캔 완료 · 위치를 기록할 수 있어요"
+        }
+    }
+}
+
+nonisolated enum LocalWorldMapTrackingState: Equatable, Sendable {
+    case normal
+    case notAvailable
+    case initializing
+    case excessiveMotion
+    case insufficientFeatures
+    case relocalizing
+    case limited
+
+    var canCapture: Bool { self == .normal }
+
+    var message: String {
+        switch self {
+        case .normal: "추적 정상"
+        case .notAvailable: "카메라 추적을 시작할 수 없습니다."
+        case .initializing: "카메라 위치를 확인하고 있습니다. 주변을 비추며 잠시 천천히 움직여주세요."
+        case .excessiveMotion: "기기를 더 천천히 움직여주세요."
+        case .insufficientFeatures: "벽 모서리나 주변 사물이 보이도록 비춰주세요."
+        case .relocalizing: "저장된 공간을 다시 찾는 중에는 현재 위치를 기록할 수 없습니다."
+        case .limited: "카메라 추적이 제한되어 현재 위치를 기록할 수 없습니다."
+        }
+    }
+}
+
+nonisolated enum LocalWorldMapPoseCaptureResult: Equatable, Sendable {
+    case captured(ARPose)
+    case trackingUnavailable(LocalWorldMapTrackingState)
+    case failed(String)
+}
+
+nonisolated struct LocalWorldMapFrameState: Equatable, Sendable {
+    var mapping: LocalWorldMapMappingState
+    var tracking: LocalWorldMapTrackingState
+}
+
+nonisolated struct LocalWorldMapScanDraft: Sendable {
+    let id: UUID
+    let createdAt: Date
+    let archive: Data
+    let start: WorldMapStart
+    let correspondences: [WorldMapCorrespondence]
+    let alignment: WorldMapAlignment
+    let compression: WorldMapCompression
+}

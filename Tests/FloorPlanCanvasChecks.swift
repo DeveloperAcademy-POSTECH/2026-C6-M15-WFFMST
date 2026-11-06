@@ -131,7 +131,7 @@ final class FloorPlanCanvasChecks: UIResponder, UIApplicationDelegate {
                         FloorPlanLayerDisplay(planOpacity: 0, maskOpacity: 1, showsMask: true, tint: .cyan),
                         FloorPlanLayerDisplay(planOpacity: 1, maskOpacity: 0.3, showsMask: false, tint: .red)] {
             view.update(image: image, mask: mask, tool: .brush, normalizedDiameter: 0.02,
-                        outline: [], selection: [], pendingBrushStrokes: [],
+                        selection: [], pendingBrushStrokes: [],
                         scaleA: nil, scaleB: nil, scaleLabel: nil, layers: display)
             view.layoutIfNeeded()
             try check(images[0].image === image && image.pngData() == originalBytes, "layer display must not change source pixels")
@@ -151,7 +151,7 @@ final class FloorPlanCanvasChecks: UIResponder, UIApplicationDelegate {
         try check(!markers.layer.needsDisplay(), "unchanged input must not redraw markers")
         try check(!view.layer.needsLayout(), "unchanged input must not invalidate canvas layout")
         view.update(image: image, mask: nil, tool: .brush, normalizedDiameter: 0.02,
-                    outline: [], selection: [], pendingBrushStrokes: [],
+                    selection: [], pendingBrushStrokes: [],
                     scaleA: nil, scaleB: nil, scaleLabel: nil,
                     layers: FloorPlanLayerDisplay(planOpacity: 0.4, maskOpacity: 0.3, showsMask: false, tint: .red))
         try check(!markers.layer.needsDisplay() && !view.layer.needsLayout(),
@@ -159,7 +159,7 @@ final class FloorPlanCanvasChecks: UIResponder, UIApplicationDelegate {
         view.layoutSubviews()
         try check(!markers.layer.needsDisplay(), "same viewport/zoom must not redraw markers")
         view.update(image: image, mask: nil, tool: .brush, normalizedDiameter: 0.02,
-                    outline: [LocalPlanPoint(x: 0.1, y: 0.1)], selection: [], pendingBrushStrokes: [],
+                    selection: [LocalPlanPoint(x: 0.1, y: 0.1)], pendingBrushStrokes: [],
                     scaleA: nil, scaleB: nil, scaleLabel: nil)
         try check(markers.layer.needsDisplay(), "actual marker changes must redraw")
         update(view, image: image, tool: .brush)
@@ -220,7 +220,7 @@ final class FloorPlanCanvasChecks: UIResponder, UIApplicationDelegate {
 
     func update(_ view: LocalFloorPlanCanvasView, image: UIImage, tool: LocalCanvasTool) {
         view.update(image: image, mask: nil, tool: tool, normalizedDiameter: 0.02,
-                    outline: [], selection: [], pendingBrushStrokes: [],
+                    selection: [], pendingBrushStrokes: [],
                     scaleA: nil, scaleB: nil, scaleLabel: nil)
     }
     func makeImage(size: CGSize) -> UIImage {

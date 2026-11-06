@@ -17,6 +17,7 @@
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "788A1084307682B8003DEA3E"
                BuildableName = "InstructorApp.app"
+               BlueprintName = "InstructorApp"
                ReferencedContainer = "container:CQB.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -46,6 +47,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "788A1084307682B8003DEA3E"
             BuildableName = "InstructorApp.app"
+            BlueprintName = "InstructorApp"
             ReferencedContainer = "container:CQB.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -69,6 +71,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "788A1084307682B8003DEA3E"
             BuildableName = "InstructorApp.app"
+            BlueprintName = "InstructorApp"
             ReferencedContainer = "container:CQB.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

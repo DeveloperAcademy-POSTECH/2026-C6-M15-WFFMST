@@ -1,12 +1,15 @@
 enum InstructorPhase: Equatable {
-    case home, floorPlanList, floorPlanCreation, sessionCreation
+    case home, trainingHistory, floorPlanList, floorPlanDetail, floorPlanCreation, floorPlanEditing, sessionCreation
     case teamReadiness, trainingInProgress, resultsPreparation, aar, aarCompleted
 
     var title: String {
         switch self {
         case .home: "Instructor"
+        case .trainingHistory: "이전 훈련 기록"
         case .floorPlanList: "훈련 도면"
+        case .floorPlanDetail: "도면 상세"
         case .floorPlanCreation: "훈련 도면 설정"
+        case .floorPlanEditing: "도면 마스크 수정"
         case .sessionCreation: "새 훈련 세션"
         case .teamReadiness: "팀 준비 상태"
         case .trainingInProgress: "훈련 중"
@@ -17,6 +20,6 @@ enum InstructorPhase: Equatable {
     }
 }
 
-enum AARMode: Equatable {
-    case movement, video
+enum AARScreen: Equatable {
+    case floorPlan, video
 }

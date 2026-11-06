@@ -4,25 +4,26 @@ import XCTest
 
 @MainActor
 final class InstructorStoreTrainingTimerTests: XCTestCase {
-    func testTimerWaitsForServerStartDate() {
+    // Xcode 27 + iOS 26 런타임에서 동기 테스트가 끝날 때 @MainActor 객체 해제가 크래시해 async로 둔다(#161).
+    func testTimerWaitsForServerStartDate() async {
         let store = makeStore(startedAt: nil)
 
         XCTAssertNil(store.trainingStartedAt)
         XCTAssertNil(store.trainingElapsed(at: Date(timeIntervalSince1970: 2_000)))
-        XCTAssertEqual(store.formattedTrainingElapsed(at: Date(timeIntervalSince1970: 2_000)), "00:00:00")
+        XCTAssertEqual(store.formattedTrainingElapsed(at: Date(timeIntervalSince1970: 2_000)), "00:00")
     }
 
-    func testTimerUsesServerStartDate() {
+    func testTimerUsesServerStartDate() async {
         let start = Date(timeIntervalSince1970: 1_000)
         let store = makeStore(startedAt: start)
 
         XCTAssertEqual(store.trainingStartedAt, start)
-        XCTAssertEqual(store.trainingElapsed(at: start), "00:00:00")
-        XCTAssertEqual(store.trainingElapsed(at: start.addingTimeInterval(3_723.9)), "01:02:03")
-        XCTAssertEqual(store.trainingElapsed(at: start.addingTimeInterval(-1)), "00:00:00")
+        XCTAssertEqual(store.trainingElapsed(at: start), "00:00")
+        XCTAssertEqual(store.trainingElapsed(at: start.addingTimeInterval(3_723.9)), "62:03")
+        XCTAssertEqual(store.trainingElapsed(at: start.addingTimeInterval(-1)), "00:00")
     }
 
-    func testReturnHomeClearsServerStartDate() {
+    func testReturnHomeClearsServerStartDate() async {
         let store = makeStore(startedAt: Date(timeIntervalSince1970: 1_000))
 
         store.returnHome()
@@ -31,10 +32,10 @@ final class InstructorStoreTrainingTimerTests: XCTestCase {
         XCTAssertNil(store.trainingStartedAt)
     }
 
-    func testFormatTrainingElapsedUsesHoursMinutesAndSeconds() {
-        XCTAssertEqual(InstructorStore.formatTrainingElapsed(0), "00:00:00")
-        XCTAssertEqual(InstructorStore.formatTrainingElapsed(3_723.9), "01:02:03")
-        XCTAssertEqual(InstructorStore.formatTrainingElapsed(-1), "00:00:00")
+    func testFormatTrainingElapsedUsesAccumulatedMinutesAndSeconds() {
+        XCTAssertEqual(InstructorStore.formatTrainingElapsed(0), "00:00")
+        XCTAssertEqual(InstructorStore.formatTrainingElapsed(3_723.9), "62:03")
+        XCTAssertEqual(InstructorStore.formatTrainingElapsed(-1), "00:00")
     }
 
     private func makeStore(startedAt: Date?) -> InstructorStore {

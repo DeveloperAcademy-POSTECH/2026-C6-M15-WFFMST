@@ -16,10 +16,16 @@ xcrun swiftc -parse-as-library -module-cache-path "$test_build_dir/ModuleCache" 
   -I "$test_build_dir" -L "$test_build_dir" -lCQBCore \
   "$task_root/CQB/InstructorApp/Models/InstructorFloorPlan.swift" \
   "$task_root/CQB/InstructorApp/Models/LocalFloorPlan.swift" \
+  "$task_root/CQB/InstructorApp/Models/LocalWorldMap.swift" \
+  "$task_root/CQB/InstructorApp/Models/TrainingHistoryRecord.swift" \
   "$task_root/CQB/InstructorApp/Services/FloorPlanImporting.swift" \
+  "$task_root/CQB/InstructorApp/Services/AsyncThrowingStream+FirstValue.swift" \
+  "$task_root/CQB/InstructorApp/Services/WorldMapScanning.swift" \
   "$task_root/CQB/InstructorApp/Services/Persistence/FloorPlanCatalogRepository.swift" \
+  "$task_root/CQB/InstructorApp/Services/Persistence/TrainingHistoryRepository.swift" \
   "$task_root/CQB/InstructorApp/Services/Import/"*.swift \
   "$task_root/CQB/InstructorApp/Services/Geometry/"*.swift \
+  "$task_root/CQB/InstructorApp/Services/AAR/AARFloorPlanLayout.swift" \
   "$task_root/CQB/InstructorApp/Services/Storage/"*.swift \
   "$task_root/CQB/InstructorApp/Stores/FloorPlanDraftStore.swift" \
   "$task_root/CQB/InstructorApp/Stores/InstructorPhase.swift" \
@@ -28,6 +34,7 @@ xcrun swiftc -parse-as-library -module-cache-path "$test_build_dir/ModuleCache" 
   "$task_root/CQB/InstructorApp/Stores/TrainingRecordStore.swift" \
   "$task_root/Tests/InstructorStoreChecks.swift" \
   "$task_root/Tests/TrainingLifecycleChecks.swift" \
+  "$task_root/Tests/TrainingHistoryChecks.swift" \
   -o "$test_build_dir/InstructorStoreChecks"
 DYLD_LIBRARY_PATH="$test_build_dir${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" \
   "$test_build_dir/InstructorStoreChecks"

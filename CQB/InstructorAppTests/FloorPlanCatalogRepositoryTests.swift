@@ -39,6 +39,24 @@ final class FloorPlanCatalogRepositoryTests: XCTestCase {
         XCTAssertEqual(try repository.fetchAll(), [replacement])
     }
 
+    func testDeletingCatalogEntryRemovesOnlyRequestedFloorPlan() throws {
+        let container = try makeContainer()
+        let repository = SwiftDataFloorPlanCatalogRepository(container: container)
+        let first = makeFloorPlan()
+        let second = InstructorFloorPlan(
+            id: "other-plan",
+            name: "다른 도면",
+            fileName: "other.png",
+            referenceDistance: 5
+        )
+
+        try repository.save(first)
+        try repository.save(second)
+        try repository.delete(id: first.id)
+
+        XCTAssertEqual(try repository.fetchAll(), [second])
+    }
+
     private func makeContainer() throws -> ModelContainer {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         return try ModelContainer(for: StoredFloorPlan.self, configurations: configuration)

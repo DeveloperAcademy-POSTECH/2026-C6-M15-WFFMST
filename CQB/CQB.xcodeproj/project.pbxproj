@@ -45,6 +45,10 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				AGENTS.md,
+				"Resources/Models/BinaryWallSegmentation-LICENSE.txt",
+				"Resources/Models/BinaryWallSegmentation.mlpackage",
+				"Services/Import/LocalAIWallDetector.swift",
+				"Services/Import/LocalAIWallMaskGridBuilder.swift",
 				docs/flows.md,
 				"docs/issue-8-implementation.md",
 				"docs/issue-46-implementation.md",
@@ -52,6 +56,13 @@
 				"docs/issue-56-implementation.md",
 				"docs/issue-80-implementation.md",
 				"docs/issue-82-implementation.md",
+				"docs/issue-95-ai-wall-segmentation.md",
+				"docs/issue-97-binary-wall-coreml.md",
+				"docs/issue-102-blocked-region-autofill.md",
+				"docs/issue-126-training-history.md",
+				"docs/issue-168-sound-events.md",
+				"docs/issue-192-real-sound-candidates.md",
+				"docs/issue-142-hifi-spec.md",
 				docs/README.md,
 			);
 			target = 788A1084307682B8003DEA3E /* InstructorApp */;
@@ -62,6 +73,9 @@
 				"docs/issue-27-implementation.md",
 				"docs/issue-87-implementation.md",
 				"docs/issue-88-implementation.md",
+				"docs/issue-136-implementation.md",
+				"docs/issue-150-implementation.md",
+				"docs/issue-172-sound-candidates.md",
 			);
 			target = 788A10723076802C003DEA3E /* MemberApp */;
 		};
@@ -506,9 +520,10 @@
 				CURRENT_PROJECT_VERSION = 3;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "DEBRIEF Capture";
+				INFOPLIST_KEY_CFBundleDisplayName = Hornet;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "훈련 중 후면 카메라 영상을 화면에 표시하기 위해 카메라 접근이 필요합니다.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "훈련 중 총성 판정을 위해 마이크로 소리를 녹음합니다.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -547,9 +562,10 @@
 				CURRENT_PROJECT_VERSION = 3;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "DEBRIEF Capture";
+				INFOPLIST_KEY_CFBundleDisplayName = Hornet;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "훈련 중 후면 카메라 영상을 화면에 표시하기 위해 카메라 접근이 필요합니다.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "훈련 중 총성 판정을 위해 마이크로 소리를 녹음합니다.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -588,11 +604,12 @@
 				CURRENT_PROJECT_VERSION = 3;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "DEBRIEF Review";
+				INFOPLIST_KEY_CFBundleDisplayName = Hornet;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UIRequiresFullScreen = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -627,11 +644,12 @@
 				CURRENT_PROJECT_VERSION = 3;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "DEBRIEF Review";
+				INFOPLIST_KEY_CFBundleDisplayName = Hornet;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UIRequiresFullScreen = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -779,6 +797,7 @@
 		};
 		788A10D8307697FA003DEA3E /* CQBCore */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = 788A10D7307697FA003DEA3E /* XCLocalSwiftPackageReference "Packages/CQBCore" */;
 			productName = CQBCore;
 		};
 		788A10EF30769F19003DEA3E /* CQBFixtures */ = {

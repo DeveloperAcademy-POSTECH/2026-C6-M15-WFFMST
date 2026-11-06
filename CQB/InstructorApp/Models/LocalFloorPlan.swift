@@ -47,9 +47,29 @@ nonisolated struct LocalImportedImage: Equatable, Sendable {
     var fileName: String
 }
 
+nonisolated enum LocalWallExtractionAlgorithm: String, Equatable, Sendable {
+    case v13 = "v13-wall-detector"
+    case binaryCoreML = "unet-resnet34-binary-fp16-v1"
+}
+
 nonisolated struct LocalExtractionResult: Sendable {
     var image: LocalImportedImage
     var baseGrid: LocalObstacleGrid
+    var suggestedOutline: [LocalPlanPoint]
+    var extractionAlgorithm: LocalWallExtractionAlgorithm = .v13
+}
+
+/// 정규화된 도면과 독립적으로 완료되는 벽·장애물 추출 결과다.
+nonisolated struct LocalMaskExtractionResult: Sendable {
+    var baseGrid: LocalObstacleGrid
+    var suggestedOutline: [LocalPlanPoint]
+    var extractionAlgorithm: LocalWallExtractionAlgorithm
+}
+
+nonisolated struct LocalBlockedRegionSuggestion: Equatable, Sendable {
+    var outline: [LocalPlanPoint]
+    var confidence: Double
+    var closingRadiusCells: Int
 }
 
 nonisolated struct LocalRegisteredFloorPlan: Equatable, Sendable {
@@ -61,10 +81,11 @@ nonisolated struct LocalRegisteredFloorPlan: Equatable, Sendable {
     let outline: [LocalPlanPoint]
     let scale: LocalPlanScale
     let resolvedGrid: LocalObstacleGrid
+    let extractionAlgorithm: LocalWallExtractionAlgorithm
 }
 
 nonisolated enum LocalCanvasTool: String, CaseIterable, Sendable {
-    case move, pen, brush, scaleA, scaleB
+    case move, pen, brush, scaleA, scaleB, alignmentPoint
 }
 
 nonisolated enum LocalFloorPlanEditorMode: String, CaseIterable, Sendable {
@@ -76,7 +97,7 @@ nonisolated enum LocalScaleMarker: Sendable {
 }
 
 nonisolated enum FloorPlanRegistrationStep: Int, Sendable {
-    case information, editing, scaling
+    case information, alignment, scanning, editing
 }
 
 nonisolated enum LocalFloorPlanError: LocalizedError, Sendable {
