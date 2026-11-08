@@ -90,6 +90,14 @@ final class AARStore {
 
     var canPlay: Bool { playbackDuration > 0 && !isLoading }
 
+    /// 현재 재생 위치에서 총성을 감지한 대원인지 알려준다.
+    func isSoundDetected(for participantID: String) -> Bool {
+        AARSoundEventHighlight.participantIDs(
+            in: soundEvents,
+            at: playbackPosition
+        ).contains(participantID)
+    }
+
     /// 현재 재생 위치에서 대원 점의 위치. 표시할 위치가 없으면 nil
     func position(for participantID: String) -> AARTrackPath.Position? {
         guard case .ready(let path, _) = tracks[participantID] else { return nil }
@@ -542,12 +550,14 @@ extension AARStore {
     func configureMovementPreview(
         floorPlanImage: UIImage,
         tracks: [String: TrackState],
-        playbackPosition: Double
+        playbackPosition: Double,
+        soundEvents: [AARSoundEvent] = []
     ) {
         self.floorPlanImage = floorPlanImage
         floorPlanImageSize = floorPlanImage.size
         self.tracks = tracks
         self.playbackPosition = playbackPosition
+        self.soundEvents = soundEvents
         playbackDuration = tracks.values.compactMap { state in
             guard case .ready(let path, _) = state else { return nil }
             return path.endTime

@@ -39,6 +39,33 @@ final class AARSoundEventFusionTests: XCTestCase {
     }
 }
 
+final class AARSoundEventHighlightTests: XCTestCase {
+    private let events = [
+        AARSoundEvent(time: 10, participantIDs: ["a", "b"], isCorroborated: true),
+        AARSoundEvent(time: 10.8, participantIDs: ["b", "c"], isCorroborated: true),
+    ]
+
+    func testHighlightsParticipantsDuringPlaybackWindow() {
+        XCTAssertEqual(AARSoundEventHighlight.participantIDs(in: events, at: 9.999), [])
+        XCTAssertEqual(AARSoundEventHighlight.participantIDs(in: events, at: 10), ["a", "b"])
+        XCTAssertEqual(AARSoundEventHighlight.participantIDs(in: events, at: 10.5), ["a", "b"])
+        XCTAssertEqual(AARSoundEventHighlight.participantIDs(in: events, at: 11.2), ["b", "c"])
+        XCTAssertEqual(AARSoundEventHighlight.participantIDs(in: events, at: 12), [])
+    }
+
+    func testMergesParticipantsWhenDisplayWindowsOverlap() {
+        XCTAssertEqual(
+            AARSoundEventHighlight.participantIDs(in: events, at: 11),
+            ["a", "b", "c"]
+        )
+    }
+
+    func testIgnoresInvalidPlaybackPosition() {
+        XCTAssertEqual(AARSoundEventHighlight.participantIDs(in: events, at: .nan), [])
+        XCTAssertEqual(AARSoundEventHighlight.participantIDs(in: events, at: .infinity), [])
+    }
+}
+
 @MainActor
 final class AARSoundEventStoreTests: XCTestCase {
     // @MainActor 객체를 쓰는 테스트는 async로 둔다(#161).
@@ -62,6 +89,10 @@ final class AARSoundEventStoreTests: XCTestCase {
         let event = try XCTUnwrap(aarStore.soundEvents.dropFirst().first)
         aarStore.jumpToSoundEvent(event)
         XCTAssertEqual(aarStore.playbackPosition, 14.80, accuracy: 0.001, "마커 시각으로 바로 이동")
+        XCTAssertTrue(aarStore.isSoundDetected(for: event.participantIDs[0]))
+
+        aarStore.setPlaybackPosition(event.time + AARSoundEventHighlight.duration)
+        XCTAssertFalse(aarStore.isSoundDetected(for: event.participantIDs[0]))
 
         aarStore.reset()
         XCTAssertTrue(aarStore.soundEvents.isEmpty)
