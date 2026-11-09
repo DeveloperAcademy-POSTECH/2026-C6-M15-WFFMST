@@ -58,9 +58,30 @@ final class MemberNameTextFieldTests: XCTestCase {
         name.insertText("z")
         await settleRendering()
         XCTAssertTrue(name.isFirstResponder)
+        try await verifyPastePreservesUnselectedText(in: name)
         name.resignFirstResponder()
         await settleRendering()
         XCTAssertFalse(name.isFirstResponder)
+    }
+
+    private func verifyPastePreservesUnselectedText(in field: UITextField) async throws {
+        for (initial, offset, length, pasted, expected) in [
+            ("abcdefghij", 0, 0, "123456789012345", "1234567890abcdefghij"),
+            ("abcdefghijklmnopqrst", 7, 3, "12345", "abcdefg123klmnopqrst"),
+            ("abcdefghijklmnopqrst", 0, 20, "123456789012345678901", "12345678901234567890")
+        ] {
+            field.selectAll(nil)
+            field.insertText(initial)
+            await settleRendering()
+            XCTAssertEqual(field.text, initial)
+            let start = try XCTUnwrap(field.position(from: field.beginningOfDocument, offset: offset))
+            let end = try XCTUnwrap(field.position(from: start, offset: length))
+            field.selectedTextRange = field.textRange(from: start, to: end)
+            field.paste(itemProviders: [NSItemProvider(object: pasted as NSString)])
+            for _ in 0..<8 where field.text != expected { await settleRendering() }
+            XCTAssertEqual(field.text, expected)
+            XCTAssertTrue(field.isFirstResponder)
+        }
     }
 
     private func settleRendering() async {

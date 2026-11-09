@@ -41,10 +41,11 @@ struct MemberNameInputObserver: UIViewRepresentable {
         }
     }
 
-    final class Coordinator: NSObject, UITextFieldDelegate {
+    final class Coordinator: NSObject, UITextFieldDelegate, UITextPasteDelegate {
         var parent: MemberNameInputObserver
         private weak var field: UITextField?
         private weak var originalDelegate: (any UITextFieldDelegate)?
+        private weak var originalPasteDelegate: (any UITextPasteDelegate)?
 
         init(_ parent: MemberNameInputObserver) { self.parent = parent }
 
@@ -63,6 +64,10 @@ struct MemberNameInputObserver: UIViewRepresentable {
                         originalDelegate = target.delegate
                         target.delegate = self
                     }
+                    if target.pasteDelegate !== self {
+                        originalPasteDelegate = target.pasteDelegate
+                        target.pasteDelegate = self
+                    }
                     return
                 }
                 ancestor = container.superview
@@ -72,8 +77,10 @@ struct MemberNameInputObserver: UIViewRepresentable {
         func detach() {
             field?.removeTarget(self, action: #selector(editingChanged(_:)), for: .editingChanged)
             if field?.delegate === self { field?.delegate = originalDelegate }
+            if field?.pasteDelegate === self { field?.pasteDelegate = originalPasteDelegate }
             field = nil
             originalDelegate = nil
+            originalPasteDelegate = nil
         }
 
         private func nameField(in view: UIView) -> UITextField? {
@@ -87,11 +94,34 @@ struct MemberNameInputObserver: UIViewRepresentable {
         // SwiftUI의 포커스·submit 처리는 원래 delegate로 전달한다.
         override func responds(to selector: Selector!) -> Bool {
             super.responds(to: selector) || (originalDelegate?.responds(to: selector) ?? false)
+                || (originalPasteDelegate?.responds(to: selector) ?? false)
         }
 
         override func forwardingTarget(for selector: Selector!) -> Any? {
             if originalDelegate?.responds(to: selector) == true { return originalDelegate }
+            if originalPasteDelegate?.responds(to: selector) == true { return originalPasteDelegate }
             return super.forwardingTarget(for: selector)
+        }
+
+        func textPasteConfigurationSupporting(_ supporting: any UITextPasteConfigurationSupporting,
+                                              combineItemAttributedStrings items: [NSAttributedString],
+                                              for range: UITextRange) -> NSAttributedString {
+            let combined = originalPasteDelegate?.textPasteConfigurationSupporting?(
+                supporting, combineItemAttributedStrings: items, for: range
+            ) ?? NSAttributedString(string: items.map(\.string).joined())
+            guard let field = supporting as? UITextField else { return combined }
+            let current = field.text ?? ""
+            // 일반 붙여넣기의 대상 위치는 빈 범위로 전달될 수 있다. 실제 선택 영역을 우선한다.
+            let target = range.isEmpty ? field.selectedTextRange ?? range : range
+            let start = field.offset(from: field.beginningOfDocument, to: target.start)
+            let length = field.offset(from: target.start, to: target.end)
+            guard let replacement = Range(NSRange(location: start, length: length), in: current) else {
+                return combined
+            }
+            let accepted = limitedReplacement(combined.string, in: current, replacing: replacement)
+            guard accepted != combined.string else { return combined }
+            parent.showsLimitMessage = true
+            return combined.attributedSubstring(from: NSRange(location: 0, length: accepted.utf16.count))
         }
 
         func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange,
@@ -99,15 +129,34 @@ struct MemberNameInputObserver: UIViewRepresentable {
             if textField.markedTextRange == nil {
                 let current = textField.text ?? ""
                 guard let replacementRange = Range(range, in: current) else { return false }
-                let proposed = current.replacingCharacters(in: replacementRange, with: string)
-                if current.count == MemberNameInputObserver.maximumLength,
-                   proposed.count > MemberNameInputObserver.maximumLength {
+                let accepted = limitedReplacement(string, in: current, replacing: replacementRange)
+                if accepted != string {
                     parent.showsLimitMessage = true
+                    guard !accepted.isEmpty,
+                          originalDelegate?.textField?(textField, shouldChangeCharactersIn: range,
+                                                       replacementString: accepted) != false else { return false }
+                    let updated = current.replacingCharacters(in: replacementRange, with: accepted)
+                    textField.text = updated
+                    if let cursor = textField.position(from: textField.beginningOfDocument,
+                                                       offset: range.location + accepted.utf16.count) {
+                        textField.selectedTextRange = textField.textRange(from: cursor, to: cursor)
+                    }
+                    parent.text = updated
                     return false
                 }
             }
             return originalDelegate?.textField?(textField, shouldChangeCharactersIn: range,
                                                 replacementString: string) ?? true
+        }
+
+        private func limitedReplacement(_ replacement: String, in current: String,
+                                        replacing range: Range<String.Index>) -> String {
+            let maximum = MemberNameInputObserver.maximumLength
+            guard current.replacingCharacters(in: range, with: replacement).count > maximum else {
+                return replacement
+            }
+            let remaining = maximum - current[..<range.lowerBound].count - current[range.upperBound...].count
+            return String(replacement.prefix(max(0, remaining)))
         }
 
         @objc func editingChanged(_ field: UITextField) {
