@@ -283,10 +283,14 @@ struct AARMovementView: View {
     }
 
     private func markerAccessibilityLabel(_ participant: InstructorParticipant) -> String {
+        let soundDetectionStatus = aarStore.isSoundDetected(for: participant.id)
+            ? ", 총성 감지"
+            : ""
+
         if let slotNumber = store.videoSlotNumber(for: participant.id) {
-            return "\(participant.name), 선택됨, 영상 \(slotNumber)번"
+            return "\(participant.name), 선택됨, 영상 \(slotNumber)번\(soundDetectionStatus)"
         }
-        return "\(participant.name), 선택되지 않음"
+        return "\(participant.name), 선택되지 않음\(soundDetectionStatus)"
     }
 
     private var markerFont: Font {
