@@ -167,10 +167,8 @@ struct AARMovementView: View {
         viewport: AARFloorPlanViewport
     ) -> some View {
         if let image = aarStore.floorPlanImage ?? store.selectedPlanImage {
-            Image(uiImage: image)
-                .resizable()
+            AARFloorPlanImage(image: image)
                 .frame(width: layout.imageFrame.width, height: layout.imageFrame.height)
-                .overlay(InstructorColor.aarFloorPlanOverlay)
                 .scaleEffect(viewport.scale)
                 .offset(viewport.translation)
                 .accessibilityLabel("선택한 훈련 도면")
@@ -295,6 +293,21 @@ struct AARMovementView: View {
 
     private var markerFont: Font {
         InstructorTypography.captionBold14.font
+    }
+}
+
+struct AARFloorPlanImage: View {
+    let image: UIImage
+
+    var body: some View {
+        Image(uiImage: image)
+            .resizable()
+            .overlay {
+                InstructorColor.aarFloorPlanOverlay
+                    .blendMode(.sourceAtop)
+            }
+            // Blend against the image alone, without including the screen background.
+            .compositingGroup()
     }
 }
 

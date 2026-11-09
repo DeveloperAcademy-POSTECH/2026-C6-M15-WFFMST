@@ -205,7 +205,6 @@ struct FloorPlanCreateView: View {
                     normalizedDiameter: store.normalizedDiameter,
                     selection: store.selection,
                     usesTransparentBackground: true,
-                    keepsWhiteImageBackground: true,
                     maximumInitialDisplaySize: CGSize(
                         width: maximumPreviewWidth,
                         height: maximumPreviewHeight
