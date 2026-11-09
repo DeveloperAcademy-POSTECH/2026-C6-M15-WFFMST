@@ -58,6 +58,15 @@ describe("보정 결과와 영상", () => {
         await assertSucceeds(uploadBytes(file(MEMBER, chunk), bytes(1024), { contentType: "video/mp4" }));
     });
 
+    test("기록 주인이 음향 후보를 올리고 다시 올리면 덮어쓰며, 교관이 읽는다", async () => {
+        const candidates = `${base}/sound-candidates.json`;
+        await assertSucceeds(uploadBytes(file(MEMBER, candidates), bytes(1024), { contentType: "application/json" }));
+        await assertSucceeds(uploadBytes(file(MEMBER, candidates), bytes(2048), { contentType: "application/json" }));
+        await assertFails(uploadBytes(file(STRANGER, candidates), bytes(1024), { contentType: "application/json" }));
+        await assertFails(getBytes(file(MEMBER, candidates)));
+        await assertSucceeds(getBytes(file(INSTRUCTOR, candidates)));
+    });
+
     test("다른 사람과 교관은 기록 파일을 올릴 수 없다", async () => {
         await assertFails(uploadBytes(file(STRANGER, chunk), bytes(1024), { contentType: "video/mp4" }));
         await assertFails(uploadBytes(file(INSTRUCTOR, chunk), bytes(1024), { contentType: "video/mp4" }));

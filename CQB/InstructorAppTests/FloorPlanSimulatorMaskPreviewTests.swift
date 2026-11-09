@@ -47,10 +47,6 @@ private struct SimulatorMaskPreviewImporter: FloorPlanImporting {
         result
     }
 
-    func extractFallbackMask(from image: LocalImportedImage) async throws -> LocalMaskExtractionResult {
-        result
-    }
-
     private var result: LocalMaskExtractionResult {
         LocalMaskExtractionResult(
             baseGrid: grid,
@@ -60,7 +56,7 @@ private struct SimulatorMaskPreviewImporter: FloorPlanImporting {
                 LocalPlanPoint(x: 1, y: 1),
                 LocalPlanPoint(x: 0, y: 1),
             ],
-            extractionAlgorithm: .binaryCoreML
+            extractionAlgorithm: .v13
         )
     }
 }

@@ -27,12 +27,19 @@ struct CameraPreviewView: View {
             }
             .onChange(of: scenePhase) { _, phase in
                 onVisibilityChange(phase == .active)
-                Task {
-                    if phase == .active { await service.start() }
-                    else {
+                switch phase {
+                case .active:
+                    Task { await service.start() }
+                case .background:
+                    Task {
                         if isRecording { await onStopRecording() }
                         service.stop()
                     }
+                case .inactive:
+                    // 시스템 UI에 의한 일시적 비활성화에서는 AR과 녹화를 유지한다.
+                    break
+                @unknown default:
+                    break
                 }
             }
             .onDisappear {

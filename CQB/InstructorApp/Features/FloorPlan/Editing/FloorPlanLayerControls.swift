@@ -14,7 +14,7 @@ struct FloorPlanLayerControls: View {
 
             HStack {
                 Text("벽 마스크 표시")
-                    .font(DSTypography.body)
+                    .dsTextStyle(DSTypography.bodyRegular16)
                     .foregroundStyle(InstructorColor.textPrimary)
                 Spacer()
                 Toggle("", isOn: $display.showsMask)
@@ -50,7 +50,7 @@ struct FloorPlanLabeledSlider: View {
                 Spacer()
                 Text(formattedValue(value))
             }
-            .font(DSTypography.body)
+            .dsTextStyle(DSTypography.bodyRegular16)
             .foregroundStyle(InstructorColor.textPrimary)
 
             Slider(value: $value, in: range, step: step)

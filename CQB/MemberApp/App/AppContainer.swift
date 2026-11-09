@@ -10,6 +10,7 @@ struct AppContainer: View {
         recordingRepository: FirestoreRecordingRepository(),
         videoChunkRepository: StorageVideoChunkRepository(),
         trackResultRepository: StorageTrackResultRepository(),
+        soundCandidateRepository: StorageSoundCandidateRepository(),
         worldMapFileRepository: StorageWorldMapFileRepository()
     )
     @State private var demoMode = MemberDemoMode()

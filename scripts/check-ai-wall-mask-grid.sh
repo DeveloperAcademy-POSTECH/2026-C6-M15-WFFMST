@@ -5,7 +5,7 @@ task_root="$(cd "$(dirname "$0")/.." && pwd)"
 test_build_dir="$(mktemp -d "${TMPDIR:-/tmp}/cqb-ai-wall-mask.XXXXXX")"
 xcrun swiftc -parse-as-library -module-cache-path "$test_build_dir/ModuleCache" \
   "$task_root/CQB/InstructorApp/Models/LocalFloorPlan.swift" \
-  "$task_root/CQB/InstructorApp/Services/Import/LocalV13WallDetector.swift" \
+  "$task_root/CQB/InstructorApp/Services/Import/LocalPixelWallDetector.swift" \
   "$task_root/CQB/InstructorApp/Services/Import/LocalAIWallMaskGridBuilder.swift" \
   "$task_root/Tests/AIWallMaskGridChecks.swift" \
   -o "$test_build_dir/AIWallMaskGridChecks"

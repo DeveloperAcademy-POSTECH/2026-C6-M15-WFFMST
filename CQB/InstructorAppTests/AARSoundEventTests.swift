@@ -39,6 +39,33 @@ final class AARSoundEventFusionTests: XCTestCase {
     }
 }
 
+final class AARSoundEventHighlightTests: XCTestCase {
+    private let events = [
+        AARSoundEvent(time: 10, participantIDs: ["a", "b"], isCorroborated: true),
+        AARSoundEvent(time: 10.8, participantIDs: ["b", "c"], isCorroborated: true),
+    ]
+
+    func testHighlightsParticipantsDuringPlaybackWindow() {
+        XCTAssertEqual(AARSoundEventHighlight.participantIDs(in: events, at: 9.999), [])
+        XCTAssertEqual(AARSoundEventHighlight.participantIDs(in: events, at: 10), ["a", "b"])
+        XCTAssertEqual(AARSoundEventHighlight.participantIDs(in: events, at: 10.5), ["a", "b"])
+        XCTAssertEqual(AARSoundEventHighlight.participantIDs(in: events, at: 11.2), ["b", "c"])
+        XCTAssertEqual(AARSoundEventHighlight.participantIDs(in: events, at: 12), [])
+    }
+
+    func testMergesParticipantsWhenDisplayWindowsOverlap() {
+        XCTAssertEqual(
+            AARSoundEventHighlight.participantIDs(in: events, at: 11),
+            ["a", "b", "c"]
+        )
+    }
+
+    func testIgnoresInvalidPlaybackPosition() {
+        XCTAssertEqual(AARSoundEventHighlight.participantIDs(in: events, at: .nan), [])
+        XCTAssertEqual(AARSoundEventHighlight.participantIDs(in: events, at: .infinity), [])
+    }
+}
+
 @MainActor
 final class AARSoundEventStoreTests: XCTestCase {
     // @MainActor 객체를 쓰는 테스트는 async로 둔다(#161).
@@ -62,12 +89,16 @@ final class AARSoundEventStoreTests: XCTestCase {
         let event = try XCTUnwrap(aarStore.soundEvents.dropFirst().first)
         aarStore.jumpToSoundEvent(event)
         XCTAssertEqual(aarStore.playbackPosition, 14.80, accuracy: 0.001, "마커 시각으로 바로 이동")
+        XCTAssertTrue(aarStore.isSoundDetected(for: event.participantIDs[0]))
+
+        aarStore.setPlaybackPosition(event.time + AARSoundEventHighlight.duration)
+        XCTAssertFalse(aarStore.isSoundDetected(for: event.participantIDs[0]))
 
         aarStore.reset()
         XCTAssertTrue(aarStore.soundEvents.isEmpty)
     }
 
-    func testRealRecordingsHaveNoSoundEventsUntilContract() async {
+    func testStoreWithoutLoaderHasNoSoundEvents() async {
         let aarStore = AARStore()
         let session = Session(id: UUID(), pin: "000168", name: "검사", status: .ended, startedAt: .now, floorPlan: FloorPlanReference(floorPlanID: UUID(), navigationSHA256: "x"))
         await aarStore.load(session: session, participantIDs: [], localFloorPlan: nil)
@@ -93,6 +124,40 @@ final class AARSoundEventStoreTests: XCTestCase {
         aarStore.reset()
         let didCancel = await loader.waitForCancellation()
         XCTAssertTrue(didCancel, "reset하면 후보 다운로드를 취소한다")
+    }
+
+    func testRealCandidateFilesBecomeMarkersOnSessionTimeline() async throws {
+        let sessionID = UUID()
+        let sessionStart = Date(timeIntervalSince1970: 1_000)
+        let first = TrackIdentity(sessionID: sessionID, memberID: UUID(), recordingID: UUID())
+        let second = TrackIdentity(sessionID: sessionID, memberID: UUID(), recordingID: UUID())
+        // 둘째 대원은 세션 시작 2초 뒤에 녹화를 시작했다.
+        let recordings = [
+            Recording(identity: first, state: .done, startedAt: sessionStart, lastActiveAt: sessionStart),
+            Recording(identity: second, state: .done, startedAt: sessionStart.addingTimeInterval(2), lastActiveAt: sessionStart),
+        ]
+        func gunshot(_ time: Double, score: Double = 0.9, decay: Double = 0.2) -> SoundCandidate {
+            SoundCandidate(time: time, peakLevelDBFS: -1, decaySeconds: decay, classifierScores: ["gunshot_gunfire": score])
+        }
+        let documents = [
+            // 10초 총성은 둘 다 들었고, 20초 충격음과 25초 낮은 점수는 판정에서 빠진다.
+            first: [gunshot(10), gunshot(20, decay: 0.03), gunshot(25, score: 0.1)],
+            second: [gunshot(8.1), gunshot(18, decay: 0.03), gunshot(23, score: 0.1)],
+        ]
+        let repository = DocumentsSoundCandidateRepository(documents: documents)
+        let aarStore = AARStore(
+            recordingRepository: SingleRecordingRepository(recordings: recordings),
+            soundCandidateLoader: RepositoryAARSoundCandidateLoader(repository: repository)
+        )
+        let session = Session(id: sessionID, pin: "000192", name: "검사", status: .ended, startedAt: sessionStart, floorPlan: FloorPlanReference(floorPlanID: UUID(), navigationSHA256: "x"))
+
+        await aarStore.load(session: session, participantIDs: [first.memberID.uuidString, second.memberID.uuidString], localFloorPlan: nil)
+        try await waitUntil { !aarStore.soundEvents.isEmpty }
+
+        XCTAssertEqual(aarStore.soundEvents.count, 1)
+        let event = try XCTUnwrap(aarStore.soundEvents.first)
+        XCTAssertEqual(event.time, 10, accuracy: 0.001)
+        XCTAssertEqual(Set(event.participantIDs), [first.memberID.uuidString, second.memberID.uuidString])
     }
 
     /// 조건이 3초 안에 맞지 않으면 오류를 던져 테스트를 멈춘다. 이어서 배열을 읽다가 범위 초과로 죽지 않게 한다.
@@ -136,14 +201,33 @@ private actor HangingSoundCandidateLoader: AARSoundCandidateLoading {
 }
 
 private struct SingleRecordingRepository: RecordingRepository {
-    let recording: Recording
+    let recordings: [Recording]
+
+    init(recording: Recording) { recordings = [recording] }
+    init(recordings: [Recording]) { self.recordings = recordings }
 
     func startRecording(_ recording: Recording) async throws {}
     func updateRecording(_ recording: Recording) async throws {}
     func observeRecordings(sessionID: UUID) -> AsyncThrowingStream<[Recording], Error> {
         AsyncThrowingStream { continuation in
-            continuation.yield([recording])
+            continuation.yield(recordings)
             continuation.finish()
         }
+    }
+}
+
+/// 기록별 후보 문서를 돌려준다. 없는 기록은 파일이 없는 것으로 본다.
+private struct DocumentsSoundCandidateRepository: SoundCandidateRepository {
+    let documents: [TrackIdentity: [SoundCandidate]]
+
+    func upload(_ document: SoundCandidateDocument) async throws {}
+    func download(_ identity: TrackIdentity) async throws -> SoundCandidateDocument {
+        guard let candidates = documents[identity] else { throw RepositoryError.notFound }
+        return SoundCandidateDocument(
+            identity: identity,
+            detector: SoundDetectorIdentity(name: "gunshot-combined", version: "713e743", settingsID: "onset-standard"),
+            analyzedRanges: [SoundTimeRange(start: 0, end: 60)],
+            candidates: candidates
+        )
     }
 }

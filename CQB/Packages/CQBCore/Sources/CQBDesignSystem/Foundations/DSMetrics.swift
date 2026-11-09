@@ -10,6 +10,7 @@ public enum DSSpacing {
     public static let s32: CGFloat = 32
     public static let s40: CGFloat = 40
     public static let s60: CGFloat = 60
+    public static let s80: CGFloat = 80
 }
 
 public enum DSRadius {
@@ -20,6 +21,7 @@ public enum DSRadius {
 }
 
 public enum DSSize {
+    public static let actionButtonHeight: CGFloat = 55
     public static let controlHeight: CGFloat = 56
     public static let compactControlHeight: CGFloat = 44
 }

@@ -1,7 +1,7 @@
 import Foundation
 
-/// 대원 기기가 뽑은 큰 소리 후보 하나. 시각은 그 대원 기록의 내부 시간(초)이다.
-/// 저장 형식은 데이터 계약(#169)에서 정한다. 지금은 교관 앱 안에서만 쓰는 값이다.
+/// 총성으로 판정한 큰 소리 하나. 시각은 그 대원 기록의 내부 시간(초)이다.
+/// 저장 형식은 `SoundCandidateDocument`(#169)이고, 판정은 `AARSoundCandidateJudge`(#192)가 한다.
 nonisolated struct AARSoundCandidate: Equatable, Sendable {
     let recordingTime: Double
 }
@@ -15,6 +15,28 @@ nonisolated struct AARSoundEvent: Identifiable, Equatable, Sendable {
     let isCorroborated: Bool
 
     var id: Double { time }
+}
+
+/// 현재 AAR 재생 위치에서 도면에 강조할 총성 감지 대원을 계산한다.
+nonisolated enum AARSoundEventHighlight {
+    /// 이벤트가 발생한 뒤 감지 상태를 유지하는 AAR 재생 시간(초).
+    static let duration = 1.2
+
+    /// 표시 구간이 겹치는 이벤트가 있으면 감지 대원을 합쳐 반환한다.
+    static func participantIDs(
+        in events: [AARSoundEvent],
+        at playbackPosition: Double
+    ) -> Set<String> {
+        guard playbackPosition.isFinite else { return [] }
+
+        return events.reduce(into: Set<String>()) { result, event in
+            guard event.time.isFinite,
+                  playbackPosition >= event.time,
+                  playbackPosition < event.time + duration
+            else { return }
+            result.formUnion(event.participantIDs)
+        }
+    }
 }
 
 /// 대원별 후보를 시각이 가까운 것끼리 묶어 이벤트로 만든다.

@@ -39,7 +39,31 @@ enum FloorPlanImportChecks {
         let transparent = try makeImage(width: 51, height: 51) { _, _ in [0, 0, 0, 0] }
         let alphaURL = try write(transparent, to: directory.appendingPathComponent("transparent.png"), type: .png)
         let alphaResult = try await service.process(url: alphaURL)
-        precondition(alphaResult.baseGrid.blocked.allSatisfy { $0 == 0 }, "transparent background must become white")
+        precondition(alphaResult.baseGrid.blocked.allSatisfy { $0 == 0 }, "transparent background must be empty for wall analysis")
+        checkPadding(alphaResult, source: transparent)
+
+        // Alpha must survive normalization while analysis matches white-composited input.
+        for alpha: UInt8 in [64, 128, 255] {
+            let transparentWall = try makeImage(width: 101, height: 81) { x, y in
+                let wall = (10..<90).contains(x) && (10..<18).contains(y)
+                return wall ? [0, 0, 0, alpha] : [0, 0, 0, 0]
+            }
+            let opaqueWall = try makeImage(width: 101, height: 81) { x, y in
+                let wall = (10..<90).contains(x) && (10..<18).contains(y)
+                let gray = wall ? 255 - alpha : 255
+                return [gray, gray, gray, 255]
+            }
+            let alphaURL = try write(transparentWall, to: directory.appendingPathComponent("wall-\(alpha).png"), type: .png)
+            let opaqueURL = try write(opaqueWall, to: directory.appendingPathComponent("opaque-\(alpha).png"), type: .png)
+            let alphaWall = try await service.process(url: alphaURL)
+            let whiteWall = try await service.process(url: opaqueURL)
+            checkPadding(alphaWall, source: transparentWall)
+            precondition(alphaWall.baseGrid.blocked == whiteWall.baseGrid.blocked,
+                         "wall extraction must match white compositing for alpha \(alpha)")
+            precondition(alphaWall.suggestedOutline == whiteWall.suggestedOutline,
+                         "outline analysis must match white compositing")
+            precondition(cell(alphaWall, x: 20, y: 12) == 1, "visible wall must still be detected")
+        }
 
         let jpeg = try write(plan, to: directory.appendingPathComponent("rotated.jpg"), type: .jpeg, orientation: 6)
         let rotated = try await service.process(url: jpeg)
@@ -74,7 +98,7 @@ enum FloorPlanImportChecks {
         catch is CancellationError {}
         let started = ContinuousClock.now
         let detector = Task.detached {
-            try LocalV13WallDetector.grid(rgba: [UInt8](repeating: 0, count: 4_096 * 4_096 * 4), width: 4_096, height: 4_096)
+            try LocalPixelWallDetector.grid(rgba: [UInt8](repeating: 0, count: 4_096 * 4_096 * 4), width: 4_096, height: 4_096)
         }
         try await Task.sleep(for: .milliseconds(50))
         detector.cancel()
@@ -103,8 +127,8 @@ enum FloorPlanImportChecks {
                     precondition(actual[offset..<(offset + 4)] == expected[sourceOffset..<(sourceOffset + 4)],
                                  "padding must not scale, shift, crop or flip source pixels at \(x),\(y)")
                 } else {
-                    precondition(actual[offset..<(offset + 4)].allSatisfy { $0 == 255 },
-                                 "right and bottom padding must be opaque white")
+                    precondition(actual[offset..<(offset + 4)].allSatisfy { $0 == 0 },
+                                 "right and bottom padding must be transparent")
                 }
             }
         }

@@ -1,5 +1,8 @@
 import SwiftUI
 
+/// CQB 제품 UI에서 사용하는 의미 색상 토큰입니다.
+public enum DSColor {}
+
 public extension DSColor {
     // MARK: - Backgrounds and surfaces
 

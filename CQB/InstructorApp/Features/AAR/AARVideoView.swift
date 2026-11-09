@@ -196,7 +196,7 @@ struct AARVideoTile: View {
         ZStack {
             InstructorColor.aarVideoSlotSurface.opacity(0.94)
             Label(text, systemImage: "video.slash")
-                .font(DSTypography.label)
+                .dsTextStyle(DSTypography.bodyRegular12)
                 .foregroundStyle(InstructorColor.aarContentSecondary)
         }
     }
@@ -212,7 +212,7 @@ struct AARVideoTile: View {
     private var cameraLabel: some View {
         HStack(spacing: 6) {
             Text("\(slotNumber)  \(participant.name)")
-                .font(DSTypography.label)
+                .dsTextStyle(DSTypography.bodyRegular12)
                 .fontWeight(.bold)
                 .foregroundStyle(InstructorColor.aarContentPrimary)
 

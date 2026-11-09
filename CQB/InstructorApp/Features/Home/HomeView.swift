@@ -34,18 +34,21 @@ struct HomeView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let horizontalInset = DSSpacing.s60
-            let verticalInset: CGFloat = 90
+            // Figma Hi-Fi_ver4 홈(1366×1024)은 화면 끝 기준 위 40, 아래 60, 좌우 40이다.
+            // 상태 표시줄(24)·홈 인디케이터(20)·데모 띠를 피하도록 safe area 안에서 그 차이만큼 둔다.
+            let horizontalInset = DSSpacing.s40
+            let topInset = DSSpacing.s16
+            let bottomInset = DSSpacing.s40
             let availableWidth = max(0, proxy.size.width - horizontalInset * 2)
 
             if proxy.size.width >= 1_024 {
                 let contentWidth = availableWidth
-                let contentHeight = max(0, proxy.size.height - verticalInset * 2)
+                let contentHeight = max(0, proxy.size.height - topInset - bottomInset)
                 let columnsWidth = max(0, contentWidth - DSSpacing.s24)
-                let historyWidth = columnsWidth * 735 / 1_222
+                let historyWidth = columnsWidth * 755 / 1_262
                 let sideWidth = columnsWidth - historyWidth
                 let sideContentHeight = max(0, contentHeight - DSSpacing.s24)
-                let sessionHeight = sideContentHeight * 558 / 808
+                let sessionHeight = sideContentHeight * 650 / 900
                 let floorPlanHeight = sideContentHeight - sessionHeight
 
                 HStack(alignment: .top, spacing: DSSpacing.s24) {
@@ -70,7 +73,8 @@ struct HomeView: View {
                 }
                 .frame(width: contentWidth, height: contentHeight)
                 .padding(.horizontal, horizontalInset)
-                .padding(.vertical, verticalInset)
+                .padding(.top, topInset)
+                .padding(.bottom, bottomInset)
             } else {
                 ScrollView {
                     VStack(spacing: DSSpacing.s24) {
@@ -83,7 +87,7 @@ struct HomeView: View {
                             onStart: store.openSessionCreation,
                             onStartDemo: demoMode.start
                         )
-                        .frame(height: 558)
+                        .frame(height: 650)
 
                         FloorPlanManagementCard(
                             floorPlanCount: store.floorPlans.count,
@@ -99,7 +103,7 @@ struct HomeView: View {
             }
         }
         .background(DSColor.backgroundPrimary.ignoresSafeArea())
-        .ignoresSafeArea()
+        .ignoresSafeArea(edges: .horizontal)
         .toolbar(.hidden, for: .navigationBar)
         .alert(
             "기록을 열지 못했습니다",
@@ -146,14 +150,14 @@ private struct TrainingHistoryCard: View {
 
                     Button("모두보기", action: onShowAll)
                         .dsTextStyle(DSTypography.bodyRegular24)
-                        .foregroundStyle(DSPalette.Primary.p200)
+                        .foregroundStyle(DSPalette.Primary.p300)
                         .fixedSize()
                         .accessibilityHint("이전 훈련 기록 전체 목록으로 이동합니다.")
                         .accessibilityIdentifier("home.trainingHistory.showAll")
                 }
                 .padding(.horizontal, DSSpacing.s20)
-                .padding(.top, DSSpacing.s24)
-                .frame(height: 102, alignment: .top)
+                .padding(.top, DSSpacing.s20)
+                .frame(height: 82, alignment: .top)
 
                 if let errorMessage {
                     HomeTrainingHistoryErrorState(message: errorMessage, onRetry: onRetry)
@@ -163,7 +167,7 @@ private struct TrainingHistoryCard: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: DSSpacing.s20) {
+                        LazyVStack(alignment: .leading, spacing: DSSpacing.s24) {
                             TrainingRecordButton(
                                 record: records[0],
                                 prominence: .featured,
@@ -178,7 +182,8 @@ private struct TrainingHistoryCard: View {
                                 )
                             }
                         }
-                        .padding(.horizontal, DSSpacing.s12)
+                        .padding(.horizontal, DSSpacing.s20)
+                        .padding(.bottom, DSSpacing.s20)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .scrollIndicators(.hidden)
@@ -274,29 +279,31 @@ private struct TrainingRecordButton: View {
             VStack(alignment: .leading, spacing: 0) {
                 thumbnail
                     .frame(maxWidth: .infinity)
-                    .frame(height: 330, alignment: .bottom)
-                    .clipShape(.rect(cornerRadius: DSRadius.medium))
-                    .padding(.horizontal, 14)
-                    .padding(.top, 14)
+                    .frame(height: 393, alignment: .bottom)
+                    .clipShape(.rect(cornerRadius: DSRadius.large - 2))
+                    .padding(.horizontal, 2)
+                    .padding(.top, 2)
 
                 Text(record.title)
                     .dsTextStyle(DSTypography.headingSemiBold28)
                     .foregroundStyle(DSColor.contentPrimary)
                     .lineLimit(1)
-                    .padding(.top, DSSpacing.s12)
-                    .padding(.horizontal, DSSpacing.s24)
+                    .padding(.top, DSSpacing.s8)
+                    .padding(.horizontal, DSSpacing.s20)
 
                 Text(record.floorPlanName)
                     .dsTextStyle(DSTypography.bodyRegular20)
                     .foregroundStyle(DSPalette.Gray.g200)
                     .lineLimit(1)
-                    .padding(.horizontal, DSSpacing.s24)
+                    .padding(.top, DSSpacing.s8)
+                    .padding(.horizontal, DSSpacing.s20)
 
                 metadata
-                    .padding(.horizontal, DSSpacing.s24)
+                    .padding(.top, DSSpacing.s8)
+                    .padding(.horizontal, DSSpacing.s20)
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 451, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: 522, alignment: .topLeading)
             .background(DSColor.surfaceSecondary)
             .clipShape(.rect(cornerRadius: DSRadius.large))
             .overlay(alignment: .topLeading) {
@@ -308,7 +315,7 @@ private struct TrainingRecordButton: View {
                     .background(DSColor.surfacePrimary)
                     .clipShape(.capsule)
                     .padding(.leading, DSSpacing.s24)
-                    .padding(.top, DSSpacing.s24)
+                    .padding(.top, DSSpacing.s24 + 2)
             }
 
         case .compact:
@@ -328,11 +335,11 @@ private struct TrainingRecordButton: View {
                 metadata
                     .padding(.top, DSSpacing.s4)
             }
-            .padding(.horizontal, DSSpacing.s24)
+            .padding(.horizontal, DSSpacing.s20)
             .padding(.top, DSSpacing.s12)
             .padding(.bottom, DSSpacing.s12)
-            .frame(maxWidth: .infinity)
-            .frame(height: 127, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: 126, alignment: .leading)
             .background(DSColor.surfaceSecondary)
             .clipShape(.rect(cornerRadius: DSRadius.large))
         }
@@ -345,7 +352,7 @@ private struct TrainingRecordButton: View {
                 .resizable()
                 .scaledToFill()
                 .frame(maxWidth: .infinity)
-                .frame(height: 330, alignment: .bottom)
+                .frame(height: 393, alignment: .bottom)
                 .clipped()
         } else {
             Rectangle()
@@ -377,60 +384,57 @@ private struct SessionStartCard: View {
 
     var body: some View {
         HomeCardSurface {
-            ZStack {
-                Image("HomeSessionBackground")
-                    .resizable()
-                    .scaledToFill()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
-                    .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(alignment: .top) {
-                        Text("훈련 세션 만들고\n대원들을 초대하세요")
-                            .dsTextStyle(DSTypography.headingBold32)
-                            .foregroundStyle(DSColor.contentPrimary)
-
-                        Spacer()
-
-                        if showsDemoEntry {
-                            Button(action: onStartDemo) {
-                                Label("데모 모드", systemImage: "testtube.2")
-                                    .dsTextStyle(DSTypography.bodyRegular12)
-                                    .foregroundStyle(DSColor.contentSecondary)
-                                    .fixedSize()
-                                    .padding(.horizontal, DSSpacing.s12)
-                                    .padding(.vertical, DSSpacing.s8)
-                                    .background(DSColor.surfaceSecondary)
-                                    .clipShape(.capsule)
-                            }
-                            .buttonStyle(HomeCardButtonStyle())
-                            .accessibilityHint("샘플 데이터로 전체 훈련 흐름을 체험합니다.")
-                            .accessibilityIdentifier("home.demo")
-                        }
-                    }
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .top) {
+                    Text("훈련 세션 만들고\n대원들을 초대하세요")
+                        .dsTextStyle(DSTypography.headingBold32)
+                        .foregroundStyle(DSColor.contentPrimary)
 
                     Spacer()
 
-                    Button(action: onStart) {
-                        Text("훈련 시작하기")
-                            .dsTextStyle(DSTypography.headingExtraBold24)
-                            .frame(width: 311, height: DSSize.controlHeight)
+                    if showsDemoEntry {
+                        Button(action: onStartDemo) {
+                            Label("데모 모드", systemImage: "testtube.2")
+                                .dsTextStyle(DSTypography.bodyRegular12)
+                                .foregroundStyle(DSColor.contentSecondary)
+                                .fixedSize()
+                                .padding(.horizontal, DSSpacing.s12)
+                                .padding(.vertical, DSSpacing.s8)
+                                .background(DSColor.surfaceSecondary)
+                                .clipShape(.capsule)
+                        }
+                        .buttonStyle(HomeCardButtonStyle())
+                        .accessibilityHint("샘플 데이터로 전체 훈련 흐름을 체험합니다.")
+                        .accessibilityIdentifier("home.demo")
                     }
-                        .buttonStyle(HomeTrainingStartButtonStyle())
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .disabled(!isEnabled)
-                        .accessibilityHint(
-                            isEnabled
-                                ? "훈련 세션 생성 화면으로 이동합니다."
-                                : "도면을 등록한 후 사용할 수 있습니다."
-                        )
-                        .accessibilityIdentifier("home.createSession")
                 }
-                .padding(.horizontal, 28)
-                .padding(.top, 52)
-                .padding(.bottom, 43)
+
+                Spacer()
+
+                HomeTrainingStartButton(
+                    isEnabled: isEnabled,
+                    action: onStart
+                )
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .accessibilityHint(
+                        isEnabled
+                            ? "훈련 세션 생성 화면으로 이동합니다."
+                            : "도면을 등록한 후 사용할 수 있습니다."
+                    )
+                    .accessibilityIdentifier("home.createSession")
             }
+            .padding(.horizontal, DSSpacing.s20)
+            .padding(.top, DSSpacing.s20)
+            .padding(.bottom, 35)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            // 배경 이미지가 카드보다 커져도 글자 위치가 밀리지 않도록 배경으로 둔다.
+            .background {
+                Image("HomeSessionBackground")
+                    .resizable()
+                    .scaledToFill()
+                    .accessibilityHidden(true)
+            }
+            .clipped()
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("home.sessionStart")
@@ -458,19 +462,19 @@ private struct FloorPlanManagementCard: View {
 
                         Text("\(floorPlanCount)개")
                             .dsTextStyle(DSTypography.headingSemiBold24)
-                            .foregroundStyle(DSPalette.Primary.p200)
+                            .foregroundStyle(DSPalette.Primary.p300)
                     }
 
                     Spacer()
 
-                    Text("준비된 도면을 확인하거나\n새로운 훈련 도면을 등록할 수 있습니다.")
+                    Text(floorPlanCount == 0
+                         ? "훈련에 사용될 도면을\n생성해야 훈련 세션을 생성할 수 있습니다."
+                         : "준비된 도면을 확인하거나\n새로운 훈련 도면을 등록할 수 있습니다.")
                         .dsTextStyle(DSTypography.bodyRegular16)
                         .foregroundStyle(DSColor.contentPrimary)
                         .multilineTextAlignment(.leading)
                 }
-                .padding(.horizontal, DSSpacing.s24)
-                .padding(.top, DSSpacing.s24)
-                .padding(.bottom, 26)
+                .padding(DSSpacing.s20)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 .contentShape(.rect)
             }
@@ -501,23 +505,6 @@ private struct HomeCardButtonStyle: ButtonStyle {
         configuration.label
             .opacity(configuration.isPressed ? 0.82 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
-    }
-}
-
-private struct HomeTrainingStartButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(isEnabled ? DSPalette.Primary.p800 : DSColor.contentDisabled)
-            .background(backgroundColor(isPressed: configuration.isPressed))
-            .clipShape(.capsule)
-            .contentShape(.capsule)
-    }
-
-    private func backgroundColor(isPressed: Bool) -> Color {
-        guard isEnabled else { return DSColor.actionPrimaryDisabled }
-        return isPressed ? DSColor.actionPrimaryPressed : DSPalette.Primary.p500
     }
 }
 

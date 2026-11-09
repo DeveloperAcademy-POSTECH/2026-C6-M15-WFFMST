@@ -20,6 +20,9 @@ struct FloorPlanCreateView: View {
     )
     @State private var showsNameValidation = false
     @State private var showsExitConfirmation = false
+    @State private var dismissedAlignmentGuides: Set<String> = []
+    @State private var dismissedScanningGuides: Set<String> = []
+    @State private var dismissedEditingGuides: Set<String> = []
     @State private var registrationBrushMode: LocalEditMode = .block
     @State private var editingCanvasDisplayScale: CGFloat = 1
     @FocusState private var focusedField: InputField?
@@ -69,18 +72,15 @@ struct FloorPlanCreateView: View {
                 )
             )
 
-            Group {
-                if store.step == .information, !app.isEditingFloorPlan {
-                    informationStep(sidebarWidth: sidebarWidth)
-                } else if store.step == .alignment, !app.isEditingFloorPlan {
-                    alignmentStep(sidebarWidth: sidebarWidth)
-                } else if store.step == .scanning, !app.isEditingFloorPlan {
-                    scanningStep(sidebarWidth: sidebarWidth)
-                } else if store.step == .editing {
-                    editingStep(sidebarWidth: sidebarWidth)
-                } else {
-                    creationWorkspace
-                }
+            switch store.step {
+            case .information:
+                informationStep(sidebarWidth: sidebarWidth)
+            case .alignment:
+                alignmentStep(sidebarWidth: sidebarWidth)
+            case .scanning:
+                scanningStep(sidebarWidth: sidebarWidth)
+            case .editing:
+                editingStep(sidebarWidth: sidebarWidth)
             }
         }
         .background(DSColor.backgroundPrimary.ignoresSafeArea())
@@ -104,6 +104,14 @@ struct FloorPlanCreateView: View {
         }
         .onChange(of: importer.isPresented) { _, presented in
             if !presented { importer.finish() }
+        }
+        .onChange(of: alignmentGuideStep) { _, _ in
+            dismissedAlignmentGuides.removeAll()
+        }
+        .onChange(of: store.step) { _, step in
+            if step == .alignment {
+                dismissedAlignmentGuides.removeAll()
+            }
         }
         .alert("도면 등록을 종료할까요?", isPresented: $showsExitConfirmation) {
             Button("나가기", role: .destructive, action: app.goBack)
@@ -131,23 +139,6 @@ struct FloorPlanCreateView: View {
             importer.request { focusedField = nil }
         }
         .onDisappear { importer.finish() }
-    }
-
-    private var creationWorkspace: some View {
-        HStack(spacing: 0) {
-            VStack(spacing: 0) {
-                header
-                previewArea
-            }
-            .containerRelativeFrame(.horizontal, count: 10, span: 7, spacing: 0)
-            .frame(maxHeight: .infinity)
-            .background(InstructorColor.canvas)
-
-            sidePanel
-                .containerRelativeFrame(.horizontal, count: 10, span: 3, spacing: 0)
-                .disabled(isImportInteractionActive || app.isUploadingFloorPlan
-                    || app.floorPlanUploadError != nil)
-        }
     }
 
     private func informationStep(sidebarWidth: CGFloat) -> some View {
@@ -214,7 +205,6 @@ struct FloorPlanCreateView: View {
                     normalizedDiameter: store.normalizedDiameter,
                     selection: store.selection,
                     usesTransparentBackground: true,
-                    keepsWhiteImageBackground: true,
                     maximumInitialDisplaySize: CGSize(
                         width: maximumPreviewWidth,
                         height: maximumPreviewHeight
@@ -236,16 +226,23 @@ struct FloorPlanCreateView: View {
                 .accessibilityIdentifier("floorPlan.editing.canvas")
             }
 
-            FloorPlanBackButton(action: handleTopBack)
+            InstructorBackButton(action: handleTopBack)
                 .disabled(!app.canGoBack)
                 .padding(.top, DSSpacing.s40)
                 .padding(.leading, DSSpacing.s40)
 
-            DSGuideToast(editingGuideMessage)
+            if !dismissedEditingGuides.contains(editingGuideMessage) {
+                DSGuideToast(
+                    editingGuideMessage,
+                    onDismiss: { dismissedEditingGuides.insert(editingGuideMessage) },
+                    dismissAccessibilityIdentifier: "floorPlan.editing.guide.dismiss"
+                )
+                .accessibilityIdentifier("floorPlan.editing.guide")
                 .frame(maxWidth: store.editorMode == .pen ? 734 : 690, minHeight: 100)
                 .padding(.leading, 175)
                 .padding(.trailing, DSSpacing.s40)
                 .padding(.top, DSSpacing.s40)
+            }
 
             editingHistoryControls
                 .padding(.leading, 40)
@@ -332,16 +329,23 @@ struct FloorPlanCreateView: View {
                 .accessibilityIdentifier("floorPlan.alignment.canvas")
             }
 
-            FloorPlanBackButton(action: handleTopBack)
+            InstructorBackButton(action: handleTopBack)
                 .disabled(!app.canGoBack)
                 .padding(.top, DSSpacing.s40)
                 .padding(.leading, DSSpacing.s40)
 
-            DSGuideToast(alignmentGuideMessage)
+            if !dismissedAlignmentGuides.contains(alignmentGuideMessage) {
+                DSGuideToast(
+                    alignmentGuideMessage,
+                    onDismiss: { dismissedAlignmentGuides.insert(alignmentGuideMessage) },
+                    dismissAccessibilityIdentifier: "floorPlan.alignment.guide.dismiss"
+                )
+                .accessibilityIdentifier("floorPlan.alignment.guide")
                 .frame(maxWidth: 690, minHeight: 100)
                 .padding(.leading, 175)
                 .padding(.trailing, DSSpacing.s40)
                 .padding(.top, DSSpacing.s40)
+            }
 
             alignmentHistoryControls
                 .padding(.leading, 40)
@@ -386,16 +390,23 @@ struct FloorPlanCreateView: View {
                 .accessibilityIdentifier("floorPlan.scanning.canvas")
             }
 
-            FloorPlanBackButton(action: handleTopBack)
+            InstructorBackButton(action: handleTopBack)
                 .disabled(!app.canGoBack)
                 .padding(.top, DSSpacing.s40)
                 .padding(.leading, DSSpacing.s40)
 
-            DSGuideToast(scanningGuideMessage)
+            if !dismissedScanningGuides.contains(scanningGuideMessage) {
+                DSGuideToast(
+                    scanningGuideMessage,
+                    onDismiss: { dismissedScanningGuides.insert(scanningGuideMessage) },
+                    dismissAccessibilityIdentifier: "floorPlan.scanning.guide.dismiss"
+                )
+                .accessibilityIdentifier("floorPlan.scanning.guide")
                 .frame(maxWidth: 690, minHeight: 100)
                 .padding(.leading, 175)
                 .padding(.trailing, DSSpacing.s40)
                 .padding(.top, DSSpacing.s40)
+            }
 
             statusOverlay
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -451,7 +462,7 @@ struct FloorPlanCreateView: View {
                 .frame(maxWidth: maximumPreviewWidth, maxHeight: maximumPreviewHeight)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            FloorPlanBackButton(action: handleTopBack)
+            InstructorBackButton(action: handleTopBack)
                 .disabled(isImportInteractionActive || !app.canGoBack)
                 .padding(.top, DSSpacing.s40)
                 .padding(.leading, DSSpacing.s40)
@@ -477,354 +488,6 @@ struct FloorPlanCreateView: View {
         }
     }
 
-    private var header: some View {
-        HStack(spacing: 16) {
-            InstructorBackButton(action: handleTopBack)
-                .disabled(isImportInteractionActive || !app.canGoBack)
-
-            Text(store.image?.fileName ?? "도면 설정")
-                .font(DSTypography.h2)
-                .foregroundStyle(InstructorColor.textPrimary)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity)
-
-            if !app.isEditingFloorPlan {
-                ActionButton(
-                    store.image == nil ? "파일 첨부" : "파일 변경",
-                    tone: .secondary,
-                    density: .file
-                ) {
-                    importer.request { focusedField = nil }
-                }
-                .disabled(isImportInteractionActive || store.isProcessing || store.isDrawing
-                    || app.isUploadingFloorPlan || app.floorPlanUploadError != nil)
-                .accessibilityIdentifier("floorPlan.import")
-            }
-        }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 22)
-    }
-
-    private var previewArea: some View {
-        GeometryReader { geometry in
-            let topInset = previewTopInset(for: geometry.size.height)
-            let cardSize = previewCardSize(in: geometry.size, topInset: topInset)
-
-            ZStack {
-                VStack(spacing: 0) {
-                    previewCard
-                        .frame(width: cardSize.width, height: cardSize.height)
-
-                    Spacer(minLength: 24)
-
-                    HStack {
-                        if store.step == .editing, store.image != nil {
-                            historyControls
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .frame(height: 52)
-                }
-                .padding(.horizontal, 24)
-                .padding(.top, topInset)
-                .padding(.bottom, 24)
-
-                statusOverlay
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    .padding(24)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var previewCard: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            Text("도면 미리보기")
-                .font(DSTypography.h3)
-                .foregroundStyle(InstructorColor.textPrimary)
-                .frame(height: 24)
-
-            canvas
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipShape(.rect(cornerRadius: 4))
-
-            if store.image != nil, store.step == .editing {
-                Text("출발점·방향은 대원 기기에서 보정")
-                    .font(DSTypography.bodySmall)
-                    .foregroundStyle(InstructorColor.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .layoutPriority(1)
-            }
-        }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 32)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(InstructorColor.surfaceBase)
-        .clipShape(.rect(cornerRadius: 4))
-        .overlay {
-            RoundedRectangle(cornerRadius: 4)
-                .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
-        }
-    }
-
-    private func previewTopInset(for availableHeight: CGFloat) -> CGFloat {
-        min(56, max(24, availableHeight * 0.06))
-    }
-
-    private func previewCardSize(in availableSize: CGSize, topInset: CGFloat) -> CGSize {
-        let referenceSize = CGSize(width: 702, height: 728)
-        let availableWidth = max(0, availableSize.width - 48)
-        let availableHeight = max(0, availableSize.height - topInset - 24 - 52 - 24)
-        return CGSize(
-            width: min(referenceSize.width, availableWidth),
-            height: min(referenceSize.height, availableHeight)
-        )
-    }
-
-    @ViewBuilder
-    private var canvas: some View {
-        if let image = store.previewImage {
-            LocalFloorPlanCanvas(
-                image: image,
-                mask: store.step == .editing ? store.maskImage : nil,
-                tool: store.tool,
-                normalizedDiameter: store.normalizedDiameter,
-                selection: store.selection,
-                pendingBrushStrokes: store.pendingBrushStrokes,
-                scaleA: store.step == .alignment || store.step == .scanning
-                    ? store.startPlanPoint : nil,
-                scaleB: store.step == .alignment || store.step == .scanning
-                    ? store.directionPlanPoint : nil,
-                scaleLabel: nil,
-                scaleALabel: "출발",
-                scaleBLabel: "방향",
-                checkpointMarkers: store.step == .alignment || store.step == .scanning
-                    ? scanCheckpointMarkers : [],
-                importPresentation: importer,
-                layers: layers,
-                onStroke: store.stageBrushStroke,
-                onPoint: store.placePoint,
-                onScaleMarkerMoved: store.moveScaleMarker,
-                onEditingChanged: store.setDrawing
-            )
-            .allowsHitTesting(!store.isImporting && store.processingStage != .preparingPreview
-                && !app.isUploadingFloorPlan
-                && app.floorPlanUploadError == nil)
-            .accessibilityIdentifier("floorPlan.canvas")
-        } else {
-            Text("이미지가 업로드 되지 않았습니다.")
-                .font(DSTypography.bodySmall)
-                .foregroundStyle(InstructorColor.textSecondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-    }
-
-    private var historyControls: some View {
-        HStack(spacing: 8) {
-            historyButton(asset: "InstructorUndoIcon", label: "실행 취소", enabled: store.canUndo, action: store.undo)
-            historyButton(asset: "InstructorRedoIcon", label: "다시 실행", enabled: store.canRedo, action: store.redo)
-        }
-        .padding(4)
-        .frame(width: 104, height: 52)
-        .background(InstructorColor.surfaceBase)
-        .clipShape(.rect(cornerRadius: 4))
-        .overlay {
-            RoundedRectangle(cornerRadius: 4)
-                .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
-        }
-    }
-
-    private func historyButton(asset: String, label: String, enabled: Bool,
-                               action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(asset)
-                .renderingMode(.original)
-                .frame(width: 24, height: 24)
-                .frame(width: 44, height: 44)
-                .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .disabled(!enabled)
-        .opacity(enabled ? 1 : 0.35)
-        .accessibilityLabel(label)
-    }
-
-    private var sidePanel: some View {
-        Group {
-            switch store.step {
-            case .information: informationPanel
-            case .alignment: alignmentPanel
-            case .scanning: scanningPanel
-            case .editing: editingPanel
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(InstructorColor.surfaceBase)
-        .overlay(alignment: .leading) {
-            Rectangle()
-                .fill(InstructorColor.borderDefault)
-                .frame(width: 1)
-        }
-    }
-
-    private var editingPanel: some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("이동 불가 영역 편집")
-                        .font(DSTypography.h2)
-                        .foregroundStyle(InstructorColor.textPrimary)
-
-                    Text("자동으로 표시된 결과에서 잘못된 부분을 추가하거나 지우세요")
-                        .font(DSTypography.bodySmall)
-                        .foregroundStyle(InstructorColor.textSecondary)
-                        .padding(.top, 8)
-
-                    editorControls
-                        .padding(.top, 20)
-
-                    FloorPlanLayerControls(display: $layers)
-                        .padding(.top, 32)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 24)
-                .padding(.top, 24)
-                .padding(.bottom, 20)
-            }
-
-            ActionButton(
-                app.isEditingFloorPlan
-                    ? (app.isUploadingFloorPlan ? "수정본 업로드 중" : "수정 완료")
-                    : (app.isUploadingFloorPlan ? "저장 중" : "도면 저장"),
-                fillsWidth: true,
-                action: app.isEditingFloorPlan ? app.saveFloorPlanMaskEdit : app.registerFloorPlan
-            )
-                .frame(height: 52)
-                .disabled(app.isEditingFloorPlan ? !store.canSaveMaskEdit : !store.canRegister)
-                .accessibilityIdentifier(app.isEditingFloorPlan
-                    ? "floorPlan.edit.save" : "floorPlan.save")
-                .padding(.horizontal, 24)
-                .padding(.top, 12)
-                .padding(.bottom, 32)
-        }
-    }
-
-    private var editorControls: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            editorTabs
-
-            Group {
-                if store.editorMode == .pen {
-                    penControls
-                } else {
-                    brushControls
-                }
-            }
-            .padding(.top, 24)
-        }
-        .padding(8)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(InstructorColor.surfaceRaised)
-        .clipShape(.rect(cornerRadius: 4))
-        .overlay {
-            RoundedRectangle(cornerRadius: 4)
-                .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
-        }
-        .disabled(store.image == nil || store.isProcessing || importer.isPreparing || importer.isPresented
-            || app.isUploadingFloorPlan || app.floorPlanUploadError != nil)
-    }
-
-    private var editorTabs: some View {
-        HStack(spacing: 4) {
-            editorTab("펜툴", mode: .pen)
-            editorTab("브러시", mode: .brush)
-        }
-        .padding(4)
-        .frame(height: 44)
-        .background(InstructorColor.canvas)
-        .clipShape(.rect(cornerRadius: 4))
-        .overlay {
-            RoundedRectangle(cornerRadius: 4)
-                .strokeBorder(InstructorColor.borderDefault, lineWidth: 1)
-        }
-    }
-
-    private func editorTab(_ title: String, mode: LocalFloorPlanEditorMode) -> some View {
-        let selected = store.editorMode == mode
-        return Button(title) { store.setEditorMode(mode) }
-            .font(Self.mediumBodyFont)
-            .foregroundStyle(selected ? InstructorColor.canvas : InstructorColor.textSecondary)
-            .frame(maxWidth: .infinity, minHeight: 36, maxHeight: 36)
-            .background(selected ? InstructorColor.actionPrimary : .clear)
-            .clipShape(.rect(cornerRadius: 4))
-            .buttonStyle(.plain)
-            .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-
-    private var penControls: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("수정할 영역을 점으로 찍어 선택하세요")
-                .font(DSTypography.bodySmall)
-                .foregroundStyle(InstructorColor.textPrimary)
-
-            panelButton("선택영역 추가하기", enabled: store.canApplySelection) {
-                store.applySelection(.block)
-            }
-            .padding(.top, 24)
-
-            panelButton("선택영역 삭제하기", enabled: store.canApplySelection) {
-                store.applySelection(.open)
-            }
-            .padding(.top, 12)
-
-            Text("선택영역의 내부에 장애물을 추가하거나 삭제합니다")
-                .font(DSTypography.caption)
-                .foregroundStyle(InstructorColor.textSecondary)
-                .padding(.top, 12)
-        }
-    }
-
-    private var brushControls: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("필요한 영역을 그리세요")
-                .font(DSTypography.bodySmall)
-                .foregroundStyle(InstructorColor.textPrimary)
-
-            HStack(spacing: 12) {
-                panelButton("추가하기", enabled: store.canApplyBrush) {
-                    store.applyPendingBrush(.block)
-                }
-                panelButton("지우기", enabled: store.canApplyBrush) {
-                    store.applyPendingBrush(.open)
-                }
-            }
-            .padding(.top, 24)
-
-            FloorPlanLabeledSlider(
-                label: "브러시 크기",
-                value: Binding(
-                    get: { store.normalizedDiameter },
-                    set: store.setBrushDiameter
-                ),
-                range: 0.001...0.05,
-                step: 0.001,
-                formattedValue: { value in
-                    guard let image = store.image else { return "–" }
-                    let points = value * Double(min(image.width, image.height))
-                    return "\(Int(points.rounded()))pt"
-                }
-            )
-            .padding(.top, 32)
-        }
-    }
-
-    private func panelButton(_ title: String, enabled: Bool,
-                             action: @escaping () -> Void) -> some View {
-        ActionButton(title, tone: .secondary, fillsWidth: true, action: action)
-            .frame(height: 48)
-            .disabled(!enabled)
-    }
-
     private var editingRegistrationPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 16) {
@@ -835,7 +498,7 @@ struct FloorPlanCreateView: View {
                 Spacer(minLength: 0)
 
                 if !app.isEditingFloorPlan {
-                    DSStepIndicator(current: 4, total: 4)
+                InstructorStepIndicator(current: 4, total: 4)
                         .fixedSize()
                 }
             }
@@ -851,7 +514,7 @@ struct FloorPlanCreateView: View {
                 .foregroundStyle(DSColor.contentTertiary)
                 .padding(.top, 4)
 
-            DSSegmentedControl(
+            InstructorSegmentedControl(
                 options: LocalFloorPlanEditorMode.allCases,
                 selection: Binding(
                     get: { store.editorMode },
@@ -924,7 +587,7 @@ struct FloorPlanCreateView: View {
             }
             .padding(.top, 20)
 
-            DSLabeledSlider("원본 도면 투명도", value: planTransparency, step: 0.05)
+            InstructorLabeledSlider("원본 도면 투명도", value: planTransparency, step: 0.05)
                 .padding(.top, 168)
                 .accessibilityIdentifier("floorPlan.editing.planTransparency")
         }
@@ -953,7 +616,7 @@ struct FloorPlanCreateView: View {
             brushSizePreview
                 .padding(.top, 64)
 
-            DSLabeledSlider(
+            InstructorLabeledSlider(
                 "브러쉬 크기",
                 value: Binding(
                     get: { store.normalizedDiameter },
@@ -970,7 +633,7 @@ struct FloorPlanCreateView: View {
             .padding(.top, 32)
             .accessibilityIdentifier("floorPlan.editing.brushSize")
 
-            DSLabeledSlider("원본 도면 투명도", value: planTransparency, step: 0.05)
+            InstructorLabeledSlider("원본 도면 투명도", value: planTransparency, step: 0.05)
                 .padding(.top, 26)
                 .accessibilityIdentifier("floorPlan.editing.planTransparency")
         }
@@ -995,7 +658,7 @@ struct FloorPlanCreateView: View {
             Text(title)
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(DSSelectablePillStyle(isSelected: selected))
+        .buttonStyle(InstructorSelectablePillStyle(isSelected: selected))
         .frame(maxWidth: .infinity, minHeight: 45)
         .disabled(!enabled)
     }
@@ -1069,7 +732,7 @@ struct FloorPlanCreateView: View {
 
                 Spacer(minLength: 0)
 
-                DSStepIndicator(current: 1, total: 4)
+                InstructorStepIndicator(current: 1, total: 4)
                     .fixedSize()
             }
             .padding(.top, 40)
@@ -1165,7 +828,7 @@ struct FloorPlanCreateView: View {
 
                 Spacer(minLength: 0)
 
-                DSStepIndicator(current: 2, total: 4)
+                InstructorStepIndicator(current: 2, total: 4)
                     .fixedSize()
             }
             .padding(.top, 40)
@@ -1338,7 +1001,7 @@ struct FloorPlanCreateView: View {
 
                     Spacer(minLength: 0)
 
-                    DSStepIndicator(current: 3, total: 4)
+                    InstructorStepIndicator(current: 3, total: 4)
                         .fixedSize()
                 }
                 .padding(.top, 40)
@@ -1468,14 +1131,25 @@ struct FloorPlanCreateView: View {
         .background(DSColor.surfacePrimary)
     }
 
-    private var alignmentGuideMessage: String {
+    private var alignmentGuideStep: LocalWorldMapPointTarget {
         if store.startPlanPoint == nil {
-            return "공간 스캔을 시작할 출발점을 도면 위에서 터치해 표시해주세요."
+            return .start
         }
         if store.directionPlanPoint == nil {
-            return "출발점에서 처음 바라볼 방향점을 도면 위에서 터치해 표시해주세요."
+            return .direction
         }
-        return "방의 입구나 모서리, 복도의 연결부 등 공간의 특징점이 될만한 지점을 터치해 표시해주세요."
+        return .checkpoint
+    }
+
+    private var alignmentGuideMessage: String {
+        switch alignmentGuideStep {
+        case .start:
+            return "공간 스캔을 시작할 출발점을 도면 위에서 터치해 표시해주세요."
+        case .direction:
+            return "출발점에서 처음 바라볼 방향점을 도면 위에서 터치해 표시해주세요."
+        case .checkpoint:
+            return "방의 입구나 모서리, 복도의 연결부 등 공간의 특징점이 될만한 지점을 터치해 표시해주세요."
+        }
     }
 
     private var scanningGuideMessage: String {
@@ -1539,7 +1213,7 @@ struct FloorPlanCreateView: View {
         HStack(spacing: 10) {
             Circle().fill(color).frame(width: 12, height: 12)
             Text(title)
-                .font(DSTypography.caption)
+                .dsTextStyle(DSTypography.bodyRegular12)
                 .foregroundStyle(InstructorColor.textPrimary)
         }
     }
@@ -1588,10 +1262,10 @@ struct FloorPlanCreateView: View {
                         .accessibilityIdentifier("floorPlan.upload.retry")
                 }
             }
-            .font(DSTypography.bodySmall)
+            .dsTextStyle(DSTypography.captionRegular14)
             .foregroundStyle(InstructorColor.textPrimary)
             .padding(12)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 4))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: DSRadius.small))
         }
     }
 
@@ -1600,8 +1274,7 @@ struct FloorPlanCreateView: View {
     }
 
     private static let mediumBodyFont: Font = {
-        DSFonts.register()
-        return .custom("NotoSansKR-Medium", size: 16, relativeTo: .body)
+        InstructorTypography.bodyMedium16.font
     }()
 }
 
@@ -1674,6 +1347,29 @@ private struct FloorPlanSavingGlassStyle: ViewModifier {
 }
 
 #if DEBUG
+#Preview("출발점 선택 · 안내 닫기", traits: .landscapeLeft) {
+    let draft = FloorPlanDraftStore.makeScanningPreview()
+    let _ = draft.goBackCreationStep()
+    let _ = draft.resetWorldMapReference()
+    let app = InstructorStore(floorPlanDraft: draft)
+    return FloorPlanCreateView()
+        .environment(app)
+        .environment(draft)
+        .frame(width: 1_366, height: 1_024)
+        .preferredColorScheme(.dark)
+}
+
+#Preview("체크포인트 지정 · 안내 닫기", traits: .landscapeLeft) {
+    let draft = FloorPlanDraftStore.makeScanningPreview()
+    let _ = draft.goBackCreationStep()
+    let app = InstructorStore(floorPlanDraft: draft)
+    return FloorPlanCreateView()
+        .environment(app)
+        .environment(draft)
+        .frame(width: 1_366, height: 1_024)
+        .preferredColorScheme(.dark)
+}
+
 #Preview("AR 출발점 · 기록 전", traits: .landscapeLeft) {
     let draft = FloorPlanDraftStore.makeScanningPreview(hasCapturedStart: false)
     let app = InstructorStore(floorPlanDraft: draft)
@@ -1709,6 +1405,21 @@ private struct FloorPlanSavingGlassStyle: ViewModifier {
 
 #Preview("AR 체크포인트 · 기록 완료", traits: .landscapeLeft) {
     let draft = FloorPlanDraftStore.makeScanningPreview(completedIndices: [0, 1, 2])
+    let app = InstructorStore(floorPlanDraft: draft)
+    return FloorPlanCreateView()
+        .environment(app)
+        .environment(draft)
+        .frame(width: 1_366, height: 1_024)
+        .preferredColorScheme(.dark)
+}
+
+#Preview("도면 생성 · 처리 오류", traits: .landscapeLeft) {
+    let draft = FloorPlanDraftStore.makeScanningPreview(selectedIndex: 1)
+    draft.reportImportFailure(NSError(
+        domain: "FloorPlanStatusPreview",
+        code: 1,
+        userInfo: [NSLocalizedDescriptionKey: "도면 이미지를 처리하지 못했습니다. 다시 시도해주세요."]
+    ))
     let app = InstructorStore(floorPlanDraft: draft)
     return FloorPlanCreateView()
         .environment(app)

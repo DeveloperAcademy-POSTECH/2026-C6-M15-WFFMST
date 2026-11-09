@@ -21,10 +21,10 @@ struct AARCompletedView: View {
                     ActionButton(
                         "처음으로",
                         tone: .secondary,
-                        fillsWidth: true,
+                        width: .fill,
                         action: store.returnHome
                     )
-                    .frame(width: 300, height: 48)
+                    .frame(width: 300)
                     .accessibilityIdentifier("aar.home")
                 }
             }
@@ -37,8 +37,7 @@ struct AARCompletedView: View {
     }
 
     private var completionFont: Font {
-        DSFonts.register()
-        return .custom("NotoSansKR-Bold", size: 64, relativeTo: .largeTitle)
+        InstructorTypography.displayBold64.font
     }
 }
 

@@ -1,10 +1,11 @@
+import CryptoKit
 import Foundation
 import CoreGraphics
 import ImageIO
 import OSLog
 import UniformTypeIdentifiers
 
-/// Core ML 벽 분할 모델을 사용하는 앱 내부 입력 경계.
+/// 정규화된 도면을 픽셀 규칙으로 분석하는 앱 내부 입력 경계.
 struct LocalFloorPlanImportService: FloorPlanImporting {
     nonisolated private static let logger = Logger(
         subsystem: "com.wffmst.cqb",
@@ -29,66 +30,42 @@ struct LocalFloorPlanImportService: FloorPlanImporting {
 
     nonisolated func extractMask(from image: LocalImportedImage) async throws -> LocalMaskExtractionResult {
         try Task.checkCancellation()
-        let worker = Task.detached(priority: .utility) {
-            let source = try Self.decodedSource(from: image)
-            let extractionStart = ContinuousClock.now
-            let grid = try LocalAIWallDetector.grid(
-                image: source.image,
-                sourceWidth: image.width,
-                sourceHeight: image.height
-            )
-            let suggestion = try LocalBlockedRegionAutoFill.suggest(
-                base: grid,
-                rgba: source.pixels,
-                width: image.width,
-                height: image.height
-            )
-            Self.logDuration("ai-wall-extraction", since: extractionStart)
-            return LocalMaskExtractionResult(
-                baseGrid: grid,
-                suggestedOutline: suggestion?.outline ?? [],
-                extractionAlgorithm: .binaryCoreML
-            )
+        let cacheKey = Data(SHA256.hash(data: image.pngData))
+        if let cached = await Self.maskCache.result(for: cacheKey) {
+            Self.logger.debug("stage=v13-wall-extraction cache=hit")
+            return cached
         }
-        return try await withTaskCancellationHandler {
-            let result = try await worker.value
-            try Task.checkCancellation()
-            return result
-        } onCancel: {
-            worker.cancel()
-        }
-    }
-
-    nonisolated func extractFallbackMask(from image: LocalImportedImage) async throws -> LocalMaskExtractionResult {
-        try Task.checkCancellation()
         let worker = Task.detached(priority: .utility) {
-            let source = try Self.decodedSource(from: image)
+            let pixels = try Self.decodedPixels(from: image)
             let extractionStart = ContinuousClock.now
-            let grid = try LocalV13WallDetector.grid(
-                rgba: source.pixels,
+            let grid = try LocalPixelWallDetector.grid(
+                rgba: pixels,
                 width: image.width,
                 height: image.height
             )
             let suggestion = try LocalBlockedRegionAutoFill.suggest(
                 base: grid,
-                rgba: source.pixels,
+                rgba: pixels,
                 width: image.width,
                 height: image.height
             )
-            Self.logDuration("v13-wall-extraction-fallback", since: extractionStart)
+            Self.logDuration("v13-wall-extraction", since: extractionStart)
             return LocalMaskExtractionResult(
                 baseGrid: grid,
                 suggestedOutline: suggestion?.outline ?? [],
                 extractionAlgorithm: .v13
             )
         }
-        return try await withTaskCancellationHandler {
+        let result = try await withTaskCancellationHandler {
             let result = try await worker.value
             try Task.checkCancellation()
             return result
         } onCancel: {
             worker.cancel()
         }
+        try Task.checkCancellation()
+        await Self.maskCache.store(result, for: cacheKey)
+        return result
     }
 
     nonisolated private static func loadAndNormalize(url: URL) throws -> LocalImportedImage {
@@ -127,18 +104,17 @@ struct LocalFloorPlanImportService: FloorPlanImporting {
             throw LocalFloorPlanError.invalid("이미지를 변환하지 못했습니다.")
         }
         try Task.checkCancellation()
-        let cellSize = LocalV13WallDetector.cellSizePixels
+        let cellSize = LocalPixelWallDetector.cellSizePixels
         let width = (thumbnail.width + cellSize - 1) / cellSize * cellSize
         let height = (thumbnail.height + cellSize - 1) / cellSize * cellSize
-        var pixels = [UInt8](repeating: 255, count: width * height * 4)
+        // Preserve source alpha, including transparent cell-alignment padding.
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
         let image = pixels.withUnsafeMutableBytes { bytes -> CGImage? in
             guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
                   let context = CGContext(data: bytes.baseAddress, width: width, height: height,
                     bitsPerComponent: 8, bytesPerRow: width * 4, space: colorSpace,
                     bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue)
             else { return nil }
-            context.setFillColor(CGColor(gray: 1, alpha: 1))
-            context.fill(CGRect(x: 0, y: 0, width: width, height: height))
             // Keep the source pixels at the top-left; only pad the right and bottom.
             // CGContext's drawing origin is bottom-left. Do not scale or flip the image.
             context.draw(thumbnail, in: CGRect(x: 0, y: height - thumbnail.height,
@@ -164,9 +140,9 @@ struct LocalFloorPlanImportService: FloorPlanImporting {
         )
     }
 
-    nonisolated private static func decodedSource(
+    nonisolated private static func decodedPixels(
         from imported: LocalImportedImage
-    ) throws -> (image: CGImage, pixels: [UInt8]) {
+    ) throws -> [UInt8] {
         guard imported.width > 0, imported.height > 0,
               let source = CGImageSourceCreateWithData(imported.pngData as CFData, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
@@ -186,13 +162,17 @@ struct LocalFloorPlanImportService: FloorPlanImporting {
                     bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
                         | CGBitmapInfo.byteOrder32Big.rawValue
                   ) else { return false }
+            // Wall detectors read RGB only. Composite onto white for analysis without
+            // changing the PNG used for display and persistence.
+            context.setFillColor(CGColor(gray: 1, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: imported.width, height: imported.height))
             context.draw(image, in: CGRect(x: 0, y: 0, width: imported.width, height: imported.height))
             return true
         }
         guard rendered else {
             throw LocalFloorPlanError.invalid("정규화된 도면 픽셀을 읽지 못했습니다.")
         }
-        return (image, pixels)
+        return pixels
     }
 
     nonisolated private static func logDuration(_ stage: String, since start: ContinuousClock.Instant) {
@@ -202,5 +182,21 @@ struct LocalFloorPlanImportService: FloorPlanImporting {
             + Double(duration.attoseconds) / 1_000_000_000_000_000
         logger.debug("stage=\(stage, privacy: .public) duration_ms=\(milliseconds, privacy: .public)")
 #endif
+    }
+
+    private static let maskCache = LocalWallMaskCache()
+}
+
+/// 재선택한 동일 도면의 분석을 반복하지 않도록 최근 결과 하나만 보관한다.
+private actor LocalWallMaskCache {
+    private var cached: (key: Data, result: LocalMaskExtractionResult)?
+
+    func result(for key: Data) -> LocalMaskExtractionResult? {
+        guard cached?.key == key else { return nil }
+        return cached?.result
+    }
+
+    func store(_ result: LocalMaskExtractionResult, for key: Data) {
+        cached = (key, result)
     }
 }
