@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// SwiftUI가 입력 필드·포커스·키보드 툴바를 관리하고, 이 관찰자는 길이 제한만 담당한다.
+/// SwiftUI가 입력 필드·포커스·키보드 툴바를 관리하고, 이 관찰자는 대원명의 입력 규칙을 적용한다.
 struct MemberNameInputObserver: UIViewRepresentable {
     static let maximumLength = 20
     @Binding var text: String
@@ -53,6 +53,7 @@ struct MemberNameInputObserver: UIViewRepresentable {
             var ancestor = view.superview
             while let container = ancestor {
                 if let target = nameField(in: container) {
+                    target.smartInsertDeleteType = .no
                     if field !== target {
                         detach()
                         field = target
