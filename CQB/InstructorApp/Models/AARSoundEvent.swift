@@ -17,6 +17,28 @@ nonisolated struct AARSoundEvent: Identifiable, Equatable, Sendable {
     var id: Double { time }
 }
 
+/// 현재 AAR 재생 위치에서 도면에 강조할 총성 감지 대원을 계산한다.
+nonisolated enum AARSoundEventHighlight {
+    /// 이벤트가 발생한 뒤 감지 상태를 유지하는 AAR 재생 시간(초).
+    static let duration = 1.2
+
+    /// 표시 구간이 겹치는 이벤트가 있으면 감지 대원을 합쳐 반환한다.
+    static func participantIDs(
+        in events: [AARSoundEvent],
+        at playbackPosition: Double
+    ) -> Set<String> {
+        guard playbackPosition.isFinite else { return [] }
+
+        return events.reduce(into: Set<String>()) { result, event in
+            guard event.time.isFinite,
+                  playbackPosition >= event.time,
+                  playbackPosition < event.time + duration
+            else { return }
+            result.formUnion(event.participantIDs)
+        }
+    }
+}
+
 /// 대원별 후보를 시각이 가까운 것끼리 묶어 이벤트로 만든다.
 nonisolated enum AARSoundEventFusion {
     /// 서로 다른 대원의 후보를 같은 소리로 볼 시간 차(초). 임시 값이며 gunshot-lab 결과로 정한다(#168).

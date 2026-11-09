@@ -123,8 +123,12 @@ struct AARMovementView: View {
                         store.toggleParticipantSelection(participant.id)
                     } label: {
                         HStack(spacing: 4) {
-                            participantMarker(participant, showsName: false)
-                                .opacity(0.35)
+                            participantMarker(
+                                participant,
+                                showsName: false,
+                                usesCompactSoundBadge: true
+                            )
+                            .opacity(aarStore.isSoundDetected(for: participant.id) ? 1 : 0.35)
                             Text(participant.displayName)
                                 .font(.caption)
                                 .foregroundStyle(InstructorColor.aarContentSecondary)
@@ -192,21 +196,25 @@ struct AARMovementView: View {
 
     private func participantMarker(
         _ participant: InstructorParticipant,
-        showsName: Bool
+        showsName: Bool,
+        usesCompactSoundBadge: Bool = false
     ) -> some View {
         let slotNumber = store.videoSlotNumber(for: participant.id)
+        let isSoundDetected = aarStore.isSoundDetected(for: participant.id)
+        let markerSize: CGFloat = slotNumber == nil && !isSoundDetected ? 26 : 48
 
         return ZStack {
             Circle()
-                .fill(slotNumber == nil ? InstructorColor.aarParticipantMarker : InstructorColor.aarActionPrimary)
-                .frame(width: slotNumber == nil ? 26 : 48, height: slotNumber == nil ? 26 : 48)
+                .fill(markerColor(slotNumber: slotNumber, isSoundDetected: isSoundDetected))
+                .frame(width: markerSize, height: markerSize)
                 .overlay {
                     Circle()
                         .strokeBorder(
-                            slotNumber == nil
-                                ? InstructorColor.aarContentPrimary
-                                : InstructorColor.aarParticipantSelectedBorder,
-                            lineWidth: 1
+                            markerBorderColor(
+                                slotNumber: slotNumber,
+                                isSoundDetected: isSoundDetected
+                            ),
+                            lineWidth: isSoundDetected ? 0 : 1
                         )
                 }
 
@@ -219,6 +227,16 @@ struct AARMovementView: View {
         }
         .frame(width: 48, height: 48)
         .contentShape(.circle)
+        .overlay(alignment: .topTrailing) {
+            if isSoundDetected {
+                soundDetectedBadge(compact: usesCompactSoundBadge)
+                    .offset(
+                        x: usesCompactSoundBadge ? 7 : 5,
+                        y: usesCompactSoundBadge ? 0 : 3
+                    )
+                    .allowsHitTesting(false)
+            }
+        }
         .overlay(alignment: .top) {
             if showsName {
                 Text(participant.name)
@@ -234,13 +252,45 @@ struct AARMovementView: View {
                     .allowsHitTesting(false)
             }
         }
+        .animation(.easeInOut(duration: 0.2), value: isSoundDetected)
+    }
+
+    private func markerColor(slotNumber: Int?, isSoundDetected: Bool) -> Color {
+        if isSoundDetected { return InstructorColor.aarSoundDetected }
+        return slotNumber == nil
+            ? InstructorColor.aarParticipantMarker
+            : InstructorColor.aarActionPrimary
+    }
+
+    private func markerBorderColor(slotNumber: Int?, isSoundDetected: Bool) -> Color {
+        if isSoundDetected { return .clear }
+        return slotNumber == nil
+            ? InstructorColor.aarContentPrimary
+            : InstructorColor.aarParticipantSelectedBorder
+    }
+
+    private func soundDetectedBadge(compact: Bool) -> some View {
+        let size: CGFloat = compact ? 18 : 24
+
+        return Circle()
+            .fill(InstructorColor.aarContentPrimary)
+            .frame(width: size, height: size)
+            .overlay {
+                Image(systemName: "ear")
+                    .font(.system(size: compact ? 10 : 13, weight: .semibold))
+                    .foregroundStyle(InstructorColor.aarPlayerSurface)
+            }
     }
 
     private func markerAccessibilityLabel(_ participant: InstructorParticipant) -> String {
+        let soundDetectionStatus = aarStore.isSoundDetected(for: participant.id)
+            ? ", 총성 감지"
+            : ""
+
         if let slotNumber = store.videoSlotNumber(for: participant.id) {
-            return "\(participant.name), 선택됨, 영상 \(slotNumber)번"
+            return "\(participant.name), 선택됨, 영상 \(slotNumber)번\(soundDetectionStatus)"
         }
-        return "\(participant.name), 선택되지 않음"
+        return "\(participant.name), 선택되지 않음\(soundDetectionStatus)"
     }
 
     private var markerFont: Font {
@@ -510,7 +560,14 @@ private func unavailablePositionPreview() -> some View {
             participants[1].id: .unavailable("동선 보정 결과가 없습니다."),
             participants[2].id: .ready(trackedPath, partial: false),
         ],
-        playbackPosition: 0
+        playbackPosition: 0,
+        soundEvents: [
+            AARSoundEvent(
+                time: 0,
+                participantIDs: [participants[0].id, participants[1].id],
+                isCorroborated: true
+            ),
+        ]
     )
     store.toggleParticipantSelection(participants[1].id)
 
