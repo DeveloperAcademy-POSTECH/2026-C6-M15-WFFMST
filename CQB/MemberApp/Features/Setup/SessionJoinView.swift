@@ -132,7 +132,8 @@ struct SessionJoinView: View {
                 if focusedField == nil {
                     ActionButton(isJoining ? "세션 도면 불러오는 중…" : "참가") {
                         focusedField = nil
-                        onJoin(pin, memberName.trimmingCharacters(in: .whitespacesAndNewlines))
+                        let trimmedName = memberName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        onJoin(pin, String(trimmedName.prefix(MemberNameInputObserver.maximumLength)))
                     }
                     .disabled(!canJoin || isJoining)
                     .accessibilityIdentifier("join.submit")
