@@ -23,7 +23,7 @@ nonisolated struct RouteRegistration: Hashable, Sendable {
     }
 
     static var worldMapCandidates: [Self] {
-        let angles = (Array(stride(from: -30.0, through: 30.0, by: 4.0)) + [0]).sorted()
+        let angles = stride(from: -30.0, through: 30.0, by: 5.0)
         let shifts: [(Double, Double)] = [
             (0, 0), (-0.5, 0), (0.5, 0), (-1, 0), (1, 0),
             (0, -0.5), (0, 0.5), (0, -1), (0, 1)

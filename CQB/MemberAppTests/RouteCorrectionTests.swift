@@ -5,10 +5,10 @@ import XCTest
 final class RouteCorrectionTests: XCTestCase {
     func testWorldMapRegistrationIncludesZeroAndCardinalOffsetsOnly() {
         let candidates = RouteRegistration.worldMapCandidates
-        XCTAssertEqual(candidates.count, 153)
-        XCTAssertEqual(Set(candidates).count, 153)
+        XCTAssertEqual(candidates.count, 117)
+        XCTAssertEqual(Set(candidates).count, 117)
         XCTAssertEqual(Set(candidates.map(\.offsetDegrees)).sorted(),
-                       [-30, -26, -22, -18, -14, -10, -6, -2, 0, 2, 6, 10, 14, 18, 22, 26, 30])
+                       [-30, -25, -20, -15, -10, -5, 0, 5, 10, 15, 20, 25, 30])
         for candidate in candidates {
             XCTAssertTrue(candidate.coherentOnly)
             XCTAssertTrue(candidate.translationXMeters == 0 || candidate.translationYMeters == 0)

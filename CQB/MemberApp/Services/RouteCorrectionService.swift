@@ -95,7 +95,7 @@ nonisolated enum RouteCorrectionService {
             sourceRawSHA256: rawHash,
             algorithm: .init(name: "contextAware", version: mode == .manual ? "V13" : "V13-registration1",
                 settingsID: mode == .manual ? "standard-heading60-excursions-23.11pxpm"
-                    : "worldmap-heading30-step4-zero-shift1-step0.5-top4"),
+                    : "worldmap-heading30-step5-shift1-step0.5-top4"),
             status: failed ? .failed : (intervals.isEmpty && warnings.isEmpty ? .done : .partial),
             vertices: vertices, sampleCoverage: coverage.sorted { $0.samples.from < $1.samples.from },
             unresolvedIntervals: intervals.sorted { $0.from < $1.from }, searchIncomplete: incomplete,
