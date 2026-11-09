@@ -38,6 +38,15 @@ final class RouteCorrectionTests: XCTestCase {
         XCTAssertEqual(anchor.y, 40)
         XCTAssertTrue(chosen.unresolved.isEmpty)
         XCTAssertEqual(chosen.vertices.last?.sampleIndex, input.count - 1)
+        let search = try XCTUnwrap(result.initialHeadingSearch)
+        let metrics = try XCTUnwrap(search.phaseMetrics)
+        // Only the original and y+1m anchors are free for all 13 angles.
+        XCTAssertEqual(metrics.coarseEvaluations, 26)
+        XCTAssertEqual(metrics.generalSeconds, 0)
+        let restored = try JSONDecoder().decode(InitialHeadingSearchSummary.self, from: JSONEncoder().encode(search))
+        XCTAssertEqual(restored.evaluatedRotations, search.evaluatedRotations)
+        XCTAssertNil(restored.phaseMetrics)
+
         for candidate in result.candidates {
             XCTAssertTrue(map.grid.isFree(try XCTUnwrap(candidate.vertices.first).point))
             for (a, b) in zip(candidate.vertices, candidate.vertices.dropFirst()) where a.part == b.part {

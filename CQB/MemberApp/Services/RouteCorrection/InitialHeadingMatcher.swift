@@ -15,6 +15,13 @@ nonisolated struct InitialHeadingFit: Codable, Sendable {
         case localPositionChangeMeters, objective
     }
 }
+nonisolated struct InitialHeadingPhaseMetrics: Sendable {
+    let coarseEvaluations: Int
+    let coarseSeconds: Double
+    let coherentSeconds: Double
+    let generalSeconds: Double
+}
+
 nonisolated struct InitialHeadingSearchSummary: Codable, Sendable {
     let baselineRotationDegrees: Double
     let searchHalfRangeDegrees: Double
@@ -24,6 +31,13 @@ nonisolated struct InitialHeadingSearchSummary: Codable, Sendable {
     let reachedBoundary: Bool
     let baselineDistanceCoverage: Double
     var registrationFirst: Bool? = nil
+    /// 화면과 재실행 도구에서만 사용하며 기존 진단 JSON에는 추가하지 않는다.
+    var phaseMetrics: InitialHeadingPhaseMetrics? = nil
+
+    private enum CodingKeys: String, CodingKey {
+        case baselineRotationDegrees, searchHalfRangeDegrees, evaluatedRotations, originalLengthMeters
+        case ambiguous, reachedBoundary, baselineDistanceCoverage, registrationFirst
+    }
 }
 
 /// V11: a bounded outer search of constant registration yaw, followed by the unchanged V9 matcher.
@@ -132,6 +146,9 @@ nonisolated enum InitialHeadingMatcher {
             }
             progress(min(0.94,Double(evaluationCount)/25))
         }
+        let coarseStarted = ProcessInfo.processInfo.systemUptime
+        var coarseFinished = coarseStarted
+        var coarseEvaluations = 0
         if improvedExcursions,mode == .worldMap {
             // Rank rigid rotation/translation cheaply before spending the existing per-trial budget.
             var ranked:[(registration:RouteRegistration,cost:Double)]=[]
@@ -168,6 +185,8 @@ nonisolated enum InitialHeadingMatcher {
                 shortlist.append(trial.registration)
                 if shortlist.count==4 { break }
             }
+            coarseEvaluations = ranked.count
+            coarseFinished = ProcessInfo.processInfo.systemUptime
             for trial in shortlist {
                 evaluate(trial.offsetDegrees,coherent:true,dx:trial.translationXMeters,dy:trial.translationYMeters)
             }
@@ -205,12 +224,15 @@ nonisolated enum InitialHeadingMatcher {
                 shortlist.append(trial.offset)
                 if shortlist.count==4 { break }
             }
+            coarseEvaluations = ranked.count
+            coarseFinished = ProcessInfo.processInfo.systemUptime
             for offset in shortlist { evaluate(offset,coherent:true) }
             evaluate(0,coherent:true)
             if let center=retained.first?.fit.offsetDegrees {
                 for step in [-4.0,-2,2,4] where abs(center+step)<=halfRange { evaluate(center+step,coherent:true) }
             }
         }
+        let coherentFinished = ProcessInfo.processInfo.systemUptime
         let coherentFit=improvedExcursions && retained.first.map {
             $0.fit.distanceCoverage>0.999 && ($0.candidate.deformation?.maxDirectionChangeDegrees ?? 180)<=24
                 && $0.fit.localPositionChangeMeters<=1.5 && $0.fit.objective<0.15 && !$0.candidate.searchLimited
@@ -232,6 +254,7 @@ nonisolated enum InitialHeadingMatcher {
                 }
             }
         }
+        let generalSeconds = coherentFit ? 0 : ProcessInfo.processInfo.systemUptime - coherentFinished
         guard !Task.isCancelled,var template=resultTemplate,!retained.isEmpty else { return nil }
         // Do not move an already good baseline merely because a nearby trial has a tiny lower cost.
         if let base=baselineTrial,let best=retained.first,
@@ -279,7 +302,14 @@ nonisolated enum InitialHeadingMatcher {
         template.initialHeadingSearch=InitialHeadingSearchSummary(baselineRotationDegrees:baseline,searchHalfRangeDegrees:halfRange,
             evaluatedRotations:evaluationCount,originalLengthMeters:total,ambiguous:ambiguous,
             reachedBoundary:abs(best.fit.offsetDegrees)>=halfRange-2,baselineDistanceCoverage:baselineTrial?.fit.distanceCoverage ?? 0)
-        if improvedExcursions { template.initialHeadingSearch?.registrationFirst=true }
+        if improvedExcursions {
+            template.initialHeadingSearch?.registrationFirst = true
+            template.initialHeadingSearch?.phaseMetrics = InitialHeadingPhaseMetrics(
+                coarseEvaluations: coarseEvaluations,
+                coarseSeconds: coarseFinished - coarseStarted,
+                coherentSeconds: coherentFinished - coarseFinished,
+                generalSeconds: generalSeconds)
+        }
         progress(1)
         return template
     }
