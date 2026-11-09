@@ -14,9 +14,16 @@ service firebase.storage {
     }
 
     // 도면: 로그인 사용자가 읽고, 처음 한 번만 올린다. 덮어쓰기·삭제는 막는다.
+    // 계약한 세 파일만 받는다. 크기는 앱(StorageTransfer.maxFileBytes)과 같은 20MB다.
     match /floorPlans/{floorPlanID}/{fileName} {
+      function isContractFile() {
+        return (fileName == 'original.png' && request.resource.contentType == 'image/png')
+          || (fileName == 'resolved-mask.bin' && request.resource.contentType == 'application/octet-stream')
+          || (fileName == 'navigation-map.json' && request.resource.contentType == 'application/json');
+      }
+
       allow read: if signedIn();
-      allow create: if signedIn() && resource == null && underSizeLimit();
+      allow create: if signedIn() && resource == null && underSizeLimit() && isContractFile();
     }
 
     // 훈련장 스캔: 로그인 사용자가 읽고, 처음 한 번만 올린다. 덮어쓰기·삭제는 막는다.

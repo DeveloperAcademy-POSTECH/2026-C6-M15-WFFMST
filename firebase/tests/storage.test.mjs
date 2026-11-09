@@ -39,6 +39,39 @@ describe("도면 파일", () => {
         await assertFails(uploadBytes(file(INSTRUCTOR, image), bytes(20 * MB + 1), { contentType: "image/png" }));
     });
 
+    test("계약한 세 파일을 각자의 contentType으로 올린다", async () => {
+        const folder = image.replace("/original.png", "");
+        await assertSucceeds(uploadBytes(file(INSTRUCTOR, image), bytes(1024), { contentType: "image/png" }));
+        await assertSucceeds(uploadBytes(file(INSTRUCTOR, `${folder}/resolved-mask.bin`), bytes(1024),
+            { contentType: "application/octet-stream" }));
+        await assertSucceeds(uploadBytes(file(INSTRUCTOR, `${folder}/navigation-map.json`), bytes(1024),
+            { contentType: "application/json" }));
+    });
+
+    test("계약하지 않은 파일 이름은 올릴 수 없다", async () => {
+        const folder = image.replace("/original.png", "");
+        for (const name of ["other.png", "original.jpg", "navigation-map.json.bak", "nested/original.png"]) {
+            await assertFails(uploadBytes(file(INSTRUCTOR, `${folder}/${name}`), bytes(1024), { contentType: "image/png" }));
+        }
+    });
+
+    test("파일과 contentType이 맞지 않으면 올릴 수 없다", async () => {
+        const folder = image.replace("/original.png", "");
+        await assertFails(uploadBytes(file(INSTRUCTOR, image), bytes(1024), { contentType: "image/jpeg" }));
+        await assertFails(uploadBytes(file(INSTRUCTOR, `${folder}/resolved-mask.bin`), bytes(1024),
+            { contentType: "image/png" }));
+        await assertFails(uploadBytes(file(INSTRUCTOR, `${folder}/navigation-map.json`), bytes(1024),
+            { contentType: "text/plain" }));
+    });
+
+    test("20MB를 넘는 마스크와 내비게이션 맵도 올릴 수 없다", async () => {
+        const folder = image.replace("/original.png", "");
+        await assertFails(uploadBytes(file(INSTRUCTOR, `${folder}/resolved-mask.bin`), bytes(20 * MB + 1),
+            { contentType: "application/octet-stream" }));
+        await assertFails(uploadBytes(file(INSTRUCTOR, `${folder}/navigation-map.json`), bytes(20 * MB + 1),
+            { contentType: "application/json" }));
+    });
+
     test("로그인하지 않으면 올리거나 읽을 수 없다", async () => {
         await assertFails(uploadBytes(file(null, image), bytes(1024), { contentType: "image/png" }));
         await uploadBytes(file(INSTRUCTOR, image), bytes(1024), { contentType: "image/png" });

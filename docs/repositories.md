@@ -22,7 +22,7 @@ Store는 `CQBCore`의 프로토콜만 안다. Firebase 구현을 아는 곳은 �
   - 교관은 자기가 만든 세션(`instructorUid`)만 바꾼다. 상태는 앞으로만 바뀐다.
   - 대원은 맞는 PIN으로 `preparing`·`waiting` 세션에만 입장하고, 본인 문서(`uid`)와 본인 기록만 쓴다. 다른 대원 목록은 볼 수 없다.
   - 문서 목록 조회는 교관이 자기 세션의 대원·기록을 볼 때만 된다.
-  - Storage의 보정 결과·음향 후보·영상은 기록 주인이 올리고, 그 세션의 교관이 받고 지운다. 도면은 처음 한 번만 올린다.
+  - Storage의 보정 결과·음향 후보·영상은 기록 주인이 올리고, 그 세션의 교관이 받고 지운다. 도면은 처음 한 번만 올리고, 계약한 세 파일(`original.png` `image/png`, `resolved-mask.bin` `application/octet-stream`, `navigation-map.json` `application/json`)만 각 20MB까지 받는다.
 - Storage 버킷의 `.mp4` 1일 자동 삭제(수명 주기 규칙)는 **UT 영상을 남기려고 2026-10-13부터 꺼 두었다.** 지금은 영상이 지워지지 않고 쌓인다(10분 훈련·대원 4명에 약 600MB). UT가 끝나면 영상을 백업하고 다시 켠다.
 
   ```bash
