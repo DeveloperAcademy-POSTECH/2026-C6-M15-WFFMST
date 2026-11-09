@@ -1,5 +1,6 @@
 import CQBCore
 import CQBFirebase
+import SwiftUI
 import UIKit
 import XCTest
 @testable import InstructorApp
@@ -67,7 +68,14 @@ final class TransparentFloorPlanTests: XCTestCase {
         XCTAssertEqual(pixels[(8 * 32 + 28) * 4 + 3], 255)
     }
 
-    func testCanvasAndToneOverlayLeaveTransparentRegionClear() throws {
+    func testAARToneChangesColorWithoutChangingAlpha() throws {
+        let image = makeImage()
+        let renderer = ImageRenderer(content: AARFloorPlanImage(image: image)
+            .frame(width: 64, height: 64))
+        try assertTonePreservesAlpha(XCTUnwrap(renderer.cgImage))
+    }
+
+    func testCanvasToneChangesColorWithoutChangingAlpha() throws {
         let image = makeImage()
         let view = LocalFloorPlanCanvasView(frame: CGRect(x: 0, y: 0, width: 64, height: 64))
         defer { view.tearDown() }
@@ -89,11 +97,27 @@ final class TransparentFloorPlanTests: XCTestCase {
             let rendered = UIGraphicsImageRenderer(size: content.bounds.size, format: format).image {
                 content.layer.render(in: $0.cgContext)
             }
-            let pixels = rgba(try XCTUnwrap(rendered.cgImage))
-            XCTAssertEqual(pixels[(16 * 64 + 8) * 4 + 3], transparentBackground ? 0 : 255,
-                           "Transparent canvases must stay clear; the detail canvas retains its original white background")
-            XCTAssertEqual(pixels[(16 * 64 + 56) * 4 + 3], 255)
+            let renderedImage = try XCTUnwrap(rendered.cgImage)
+            if transparentBackground {
+                assertTonePreservesAlpha(renderedImage)
+            } else {
+                XCTAssertEqual(rgba(renderedImage)[(16 * 64 + 8) * 4 + 3], 255,
+                               "The detail canvas retains its original opaque white background")
+            }
         }
+    }
+
+    private func assertTonePreservesAlpha(_ image: CGImage) {
+        guard image.width == 64, image.height == 64 else {
+            XCTFail("Expected a 64 × 64 render, got \(image.width) × \(image.height)")
+            return
+        }
+        let pixels = rgba(image)
+        XCTAssertEqual(pixels[(16 * 64 + 8) * 4 + 3], 0)
+        let semitransparentPixel = (16 * 64 + 32) * 4
+        XCTAssertEqual(Int(pixels[semitransparentPixel + 3]), 128, accuracy: 1)
+        XCTAssertGreaterThan(pixels[semitransparentPixel], 0, "The tone must still change the black source color")
+        XCTAssertEqual(pixels[(16 * 64 + 56) * 4 + 3], 255)
     }
 
     private func makeRegistration(image: LocalImportedImage) -> LocalRegisteredFloorPlan {
