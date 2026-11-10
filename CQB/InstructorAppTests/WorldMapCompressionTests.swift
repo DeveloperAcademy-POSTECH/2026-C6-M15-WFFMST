@@ -161,10 +161,11 @@ final class WorldMapCompressionTests: XCTestCase {
         store.placePoint(.init(x: 1, y: 0.5))
         store.placePoint(.init(x: 1, y: 0.5))
         await store.startWorldMapScan()
-        scanner.onFrameUpdate?(.init(mapping: .mapped, trackingMessage: "추적 정상"))
+        scanner.onFrameUpdate?(.init(mapping: .mapped, tracking: .normal))
         store.captureWorldMapStart()
         scanner.pose = ARPose(x: 4, y: 1.5, z: 0, forwardX: 1, forwardZ: 0)
-        XCTAssertEqual(store.captureScanCheckpoint(at: 0), .captured)
+        XCTAssertEqual(store.selectScanCheckpoint(at: 0), .selected)
+        XCTAssertEqual(store.captureSelectedScanCheckpoint(), .captured)
         XCTAssertTrue(store.canSaveWorldMap)
         return store
     }
@@ -182,7 +183,7 @@ private final class CompressionScanStub: WorldMapScanning {
 
     init(archive: Data) { self.archive = archive }
     func start() async throws { stopped = false }
-    func currentPose() throws -> ARPose { pose }
+    func captureCurrentPose() -> LocalWorldMapPoseCaptureResult { .captured(pose) }
     func makeWorldMapArchive() async throws -> Data {
         if suspendsArchive {
             return try await withCheckedThrowingContinuation { continuation = $0 }
