@@ -261,8 +261,10 @@ h1, h2, h3, p { margin: 0; }
   .hero__actions { margin-top: 36px; }
   .heading { margin-bottom: 48px; }
   .heading__sub { font-size: 16px; }
-  .row { grid-template-columns: 1fr; gap: 12px; }
-  .row__arrow { transform: rotate(90deg); justify-self: center; }
+  /* 짝 안(문제 → 해결)은 좁게, 짝 사이는 넓게 해서 한 쌍으로 읽히게 */
+  .rows { gap: 40px; }
+  .row { grid-template-columns: 1fr; gap: 8px; }
+  .row__arrow { transform: rotate(90deg); justify-self: center; width: 24px; height: 24px; }
   .row__card { min-height: 0; padding: 24px; }
   .row__q, .row__a { font-size: 20px; }
   .photo { aspect-ratio: 4 / 3; border-radius: 20px; }
