@@ -1,10 +1,11 @@
-name: Deploy privacy policy to Pages
+name: Deploy site and privacy policy to Pages
 
 on:
   push:
     branches:
       - develop
     paths:
+      - docs/site/**
       - docs/privacy-policy/**
       - .github/workflows/privacy-policy-pages.yml
   workflow_dispatch:
@@ -31,9 +32,11 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
-      - name: Prepare privacy policy artifact
+      # 소개 사이트는 루트에, 개인정보 처리방침은 기존 주소(/privacy-policy/)에 둔다.
+      - name: Prepare Pages artifact
         run: |
           mkdir -p _site/privacy-policy
+          cp -R docs/site/. _site/
           cp -R docs/privacy-policy/. _site/privacy-policy/
           touch _site/.nojekyll
 
