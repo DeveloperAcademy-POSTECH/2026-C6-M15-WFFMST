@@ -27,7 +27,10 @@ enum InstructorDemoScenario {
     }
 
     @MainActor
-    static func makeEnvironment(processingDelay: Duration = .seconds(1)) -> Environment {
+    static func makeEnvironment(
+        processingDelay: Duration = .seconds(1),
+        videoSeekAction: AARStore.VideoSeekAction? = nil
+    ) -> Environment {
         let plan = makeFloorPlan()
         let samples = makeSampleHistory(floorPlan: plan)
         let sessionRepository = InstructorDemoSessionRepository(sessions: samples.map(\.session))
@@ -61,7 +64,8 @@ enum InstructorDemoScenario {
             ),
             floorPlanFileRepository: DemoFloorPlanFileRepository(),
             videoChunkRepository: videoChunkRepository,
-            soundCandidateLoader: InstructorDemoSoundCandidateLoader(memberIDs: memberIDs)
+            soundCandidateLoader: InstructorDemoSoundCandidateLoader(memberIDs: memberIDs),
+            videoSeekAction: videoSeekAction
         )
         return Environment(store: store, aarStore: aarStore)
     }

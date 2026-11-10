@@ -94,7 +94,18 @@ final class InstructorDemoScenarioTests: XCTestCase {
     }
 
     func testDemoScenarioLoadsSixTracksAndFourSelectedVideosInAAR() async {
-        let environment = InstructorDemoScenario.makeEnvironment(processingDelay: .milliseconds(20))
+        var seekCalls: [(player: ObjectIdentifier, seconds: Double)] = []
+        let environment = InstructorDemoScenario.makeEnvironment(
+            processingDelay: .milliseconds(20),
+            videoSeekAction: { player, seconds in
+                seekCalls.append((ObjectIdentifier(player), seconds))
+                player.seek(
+                    to: CMTime(seconds: seconds, preferredTimescale: 600),
+                    toleranceBefore: .zero,
+                    toleranceAfter: .zero
+                )
+            }
+        )
         let store = environment.store
         let aarStore = environment.aarStore
 
@@ -168,8 +179,7 @@ final class InstructorDemoScenarioTests: XCTestCase {
 
         let reselectedParticipantID = selectedParticipantIDs[3]
         guard case .ready(let uninterruptedPlayer, _)? = aarStore.videos[selectedParticipantIDs[0]],
-              case .ready(let reselectedPlayer, _)? = aarStore.videos[reselectedParticipantID],
-              let uninterruptedItem = uninterruptedPlayer.currentItem
+              case .ready(let reselectedPlayer, _)? = aarStore.videos[reselectedParticipantID]
         else {
             return XCTFail("기존 영상과 재선택할 영상 플레이어가 준비되어야 합니다.")
         }
@@ -183,21 +193,20 @@ final class InstructorDemoScenarioTests: XCTestCase {
         uninterruptedPlayer.isMuted = false
         reselectedPlayer.isMuted = false
 
-        // 선택을 바꿔도 남은 영상은 seek하지 않는다. 재생 중에는 재생 시작 seek와 위치 보정 seek가
-        // 정상적으로 일어나 알림을 구분할 수 없으므로, 같은 코드 경로를 멈춘 상태에서 확인한다.
-        let unexpectedTimeJump = expectation(
-            forNotification: .AVPlayerItemTimeJumped,
-            object: uninterruptedItem
-        )
-        unexpectedTimeJump.isInverted = true
+        // 선택에서 빠진 영상만 멈추고 남은 영상에는 seek를 다시 요청하지 않는다.
+        seekCalls.removeAll()
         store.toggleParticipantSelection(reselectedParticipantID)
         aarStore.showVideos(for: store.selectedParticipantIDs)
-        await fulfillment(of: [unexpectedTimeJump], timeout: 0.2)
+        XCTAssertTrue(seekCalls.isEmpty)
 
         aarStore.togglePlayback()
         XCTAssertTrue(aarStore.isPlaying)
+        seekCalls.removeAll()
         store.toggleParticipantSelection(reselectedParticipantID)
         aarStore.showVideos(for: store.selectedParticipantIDs)
+        XCTAssertEqual(seekCalls.count, 1)
+        XCTAssertEqual(seekCalls.first?.player, ObjectIdentifier(reselectedPlayer))
+        XCTAssertEqual(seekCalls.first?.seconds, 6)
         XCTAssertTrue(reselectedPlayer.isMuted)
         XCTAssertFalse(uninterruptedPlayer.isMuted)
 
