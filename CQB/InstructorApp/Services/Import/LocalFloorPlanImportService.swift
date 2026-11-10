@@ -107,15 +107,14 @@ struct LocalFloorPlanImportService: FloorPlanImporting {
         let cellSize = LocalPixelWallDetector.cellSizePixels
         let width = (thumbnail.width + cellSize - 1) / cellSize * cellSize
         let height = (thumbnail.height + cellSize - 1) / cellSize * cellSize
-        var pixels = [UInt8](repeating: 255, count: width * height * 4)
+        // Preserve source alpha, including transparent cell-alignment padding.
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
         let image = pixels.withUnsafeMutableBytes { bytes -> CGImage? in
             guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
                   let context = CGContext(data: bytes.baseAddress, width: width, height: height,
                     bitsPerComponent: 8, bytesPerRow: width * 4, space: colorSpace,
                     bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue)
             else { return nil }
-            context.setFillColor(CGColor(gray: 1, alpha: 1))
-            context.fill(CGRect(x: 0, y: 0, width: width, height: height))
             // Keep the source pixels at the top-left; only pad the right and bottom.
             // CGContext's drawing origin is bottom-left. Do not scale or flip the image.
             context.draw(thumbnail, in: CGRect(x: 0, y: height - thumbnail.height,
@@ -163,6 +162,10 @@ struct LocalFloorPlanImportService: FloorPlanImporting {
                     bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
                         | CGBitmapInfo.byteOrder32Big.rawValue
                   ) else { return false }
+            // Wall detectors read RGB only. Composite onto white for analysis without
+            // changing the PNG used for display and persistence.
+            context.setFillColor(CGColor(gray: 1, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: imported.width, height: imported.height))
             context.draw(image, in: CGRect(x: 0, y: 0, width: imported.width, height: imported.height))
             return true
         }

@@ -20,6 +20,9 @@ struct FloorPlanCreateView: View {
     )
     @State private var showsNameValidation = false
     @State private var showsExitConfirmation = false
+    @State private var dismissedAlignmentGuides: Set<String> = []
+    @State private var dismissedScanningGuides: Set<String> = []
+    @State private var dismissedEditingGuides: Set<String> = []
     @State private var registrationBrushMode: LocalEditMode = .block
     @State private var editingCanvasDisplayScale: CGFloat = 1
     @FocusState private var focusedField: InputField?
@@ -101,6 +104,14 @@ struct FloorPlanCreateView: View {
         }
         .onChange(of: importer.isPresented) { _, presented in
             if !presented { importer.finish() }
+        }
+        .onChange(of: alignmentGuideStep) { _, _ in
+            dismissedAlignmentGuides.removeAll()
+        }
+        .onChange(of: store.step) { _, step in
+            if step == .alignment {
+                dismissedAlignmentGuides.removeAll()
+            }
         }
         .alert("도면 등록을 종료할까요?", isPresented: $showsExitConfirmation) {
             Button("나가기", role: .destructive, action: app.goBack)
@@ -194,7 +205,6 @@ struct FloorPlanCreateView: View {
                     normalizedDiameter: store.normalizedDiameter,
                     selection: store.selection,
                     usesTransparentBackground: true,
-                    keepsWhiteImageBackground: true,
                     maximumInitialDisplaySize: CGSize(
                         width: maximumPreviewWidth,
                         height: maximumPreviewHeight
@@ -221,11 +231,18 @@ struct FloorPlanCreateView: View {
                 .padding(.top, DSSpacing.s40)
                 .padding(.leading, DSSpacing.s40)
 
-            DSGuideToast(editingGuideMessage)
+            if !dismissedEditingGuides.contains(editingGuideMessage) {
+                DSGuideToast(
+                    editingGuideMessage,
+                    onDismiss: { dismissedEditingGuides.insert(editingGuideMessage) },
+                    dismissAccessibilityIdentifier: "floorPlan.editing.guide.dismiss"
+                )
+                .accessibilityIdentifier("floorPlan.editing.guide")
                 .frame(maxWidth: store.editorMode == .pen ? 734 : 690, minHeight: 100)
                 .padding(.leading, 175)
                 .padding(.trailing, DSSpacing.s40)
                 .padding(.top, DSSpacing.s40)
+            }
 
             editingHistoryControls
                 .padding(.leading, 40)
@@ -317,11 +334,18 @@ struct FloorPlanCreateView: View {
                 .padding(.top, DSSpacing.s40)
                 .padding(.leading, DSSpacing.s40)
 
-            DSGuideToast(alignmentGuideMessage)
+            if !dismissedAlignmentGuides.contains(alignmentGuideMessage) {
+                DSGuideToast(
+                    alignmentGuideMessage,
+                    onDismiss: { dismissedAlignmentGuides.insert(alignmentGuideMessage) },
+                    dismissAccessibilityIdentifier: "floorPlan.alignment.guide.dismiss"
+                )
+                .accessibilityIdentifier("floorPlan.alignment.guide")
                 .frame(maxWidth: 690, minHeight: 100)
                 .padding(.leading, 175)
                 .padding(.trailing, DSSpacing.s40)
                 .padding(.top, DSSpacing.s40)
+            }
 
             alignmentHistoryControls
                 .padding(.leading, 40)
@@ -371,11 +395,18 @@ struct FloorPlanCreateView: View {
                 .padding(.top, DSSpacing.s40)
                 .padding(.leading, DSSpacing.s40)
 
-            DSGuideToast(scanningGuideMessage)
+            if !dismissedScanningGuides.contains(scanningGuideMessage) {
+                DSGuideToast(
+                    scanningGuideMessage,
+                    onDismiss: { dismissedScanningGuides.insert(scanningGuideMessage) },
+                    dismissAccessibilityIdentifier: "floorPlan.scanning.guide.dismiss"
+                )
+                .accessibilityIdentifier("floorPlan.scanning.guide")
                 .frame(maxWidth: 690, minHeight: 100)
                 .padding(.leading, 175)
                 .padding(.trailing, DSSpacing.s40)
                 .padding(.top, DSSpacing.s40)
+            }
 
             statusOverlay
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -1100,14 +1131,25 @@ struct FloorPlanCreateView: View {
         .background(DSColor.surfacePrimary)
     }
 
-    private var alignmentGuideMessage: String {
+    private var alignmentGuideStep: LocalWorldMapPointTarget {
         if store.startPlanPoint == nil {
-            return "공간 스캔을 시작할 출발점을 도면 위에서 터치해 표시해주세요."
+            return .start
         }
         if store.directionPlanPoint == nil {
-            return "출발점에서 처음 바라볼 방향점을 도면 위에서 터치해 표시해주세요."
+            return .direction
         }
-        return "방의 입구나 모서리, 복도의 연결부 등 공간의 특징점이 될만한 지점을 터치해 표시해주세요."
+        return .checkpoint
+    }
+
+    private var alignmentGuideMessage: String {
+        switch alignmentGuideStep {
+        case .start:
+            return "공간 스캔을 시작할 출발점을 도면 위에서 터치해 표시해주세요."
+        case .direction:
+            return "출발점에서 처음 바라볼 방향점을 도면 위에서 터치해 표시해주세요."
+        case .checkpoint:
+            return "방의 입구나 모서리, 복도의 연결부 등 공간의 특징점이 될만한 지점을 터치해 표시해주세요."
+        }
     }
 
     private var scanningGuideMessage: String {
@@ -1305,6 +1347,29 @@ private struct FloorPlanSavingGlassStyle: ViewModifier {
 }
 
 #if DEBUG
+#Preview("출발점 선택 · 안내 닫기", traits: .landscapeLeft) {
+    let draft = FloorPlanDraftStore.makeScanningPreview()
+    let _ = draft.goBackCreationStep()
+    let _ = draft.resetWorldMapReference()
+    let app = InstructorStore(floorPlanDraft: draft)
+    return FloorPlanCreateView()
+        .environment(app)
+        .environment(draft)
+        .frame(width: 1_366, height: 1_024)
+        .preferredColorScheme(.dark)
+}
+
+#Preview("체크포인트 지정 · 안내 닫기", traits: .landscapeLeft) {
+    let draft = FloorPlanDraftStore.makeScanningPreview()
+    let _ = draft.goBackCreationStep()
+    let app = InstructorStore(floorPlanDraft: draft)
+    return FloorPlanCreateView()
+        .environment(app)
+        .environment(draft)
+        .frame(width: 1_366, height: 1_024)
+        .preferredColorScheme(.dark)
+}
+
 #Preview("AR 출발점 · 기록 전", traits: .landscapeLeft) {
     let draft = FloorPlanDraftStore.makeScanningPreview(hasCapturedStart: false)
     let app = InstructorStore(floorPlanDraft: draft)

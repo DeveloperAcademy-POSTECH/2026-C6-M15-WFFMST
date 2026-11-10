@@ -26,7 +26,6 @@ struct LocalFloorPlanCanvas: UIViewRepresentable {
     var scaleMarkerAppearance: LocalScaleMarkerAppearance = .standard
     var showsScanStartSelection = false
     var usesTransparentBackground = false
-    var keepsWhiteImageBackground = false
     var maximumInitialDisplaySize: CGSize? = nil
     var imageToneOverlayOpacity: CGFloat = 0
     var checkpointMarkers: [LocalScanCheckpointMarker] = []
@@ -62,7 +61,6 @@ struct LocalFloorPlanCanvas: UIViewRepresentable {
                     scaleMarkerAppearance: scaleMarkerAppearance,
                     showsScanStartSelection: showsScanStartSelection,
                     usesTransparentBackground: usesTransparentBackground,
-                    keepsWhiteImageBackground: keepsWhiteImageBackground,
                     maximumInitialDisplaySize: maximumInitialDisplaySize,
                     imageToneOverlayOpacity: imageToneOverlayOpacity,
                     checkpointMarkers: checkpointMarkers,
@@ -86,7 +84,8 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
     private let scrollView = UIScrollView()
     private let contentView = UIView()
     private let imageView = UIImageView()
-    private let imageToneOverlayView = UIView()
+    private var sourceImage: UIImage?
+    private var appliedToneOpacity: CGFloat = 0
     private let obstacleImageView = UIImageView()
     private let markersView = LocalFloorPlanMarkersView()
     private let canvasView = PKCanvasView()
@@ -154,31 +153,32 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
                 scaleMarkerAppearance: LocalScaleMarkerAppearance,
                 showsScanStartSelection: Bool,
                 usesTransparentBackground: Bool,
-                keepsWhiteImageBackground: Bool,
                 maximumInitialDisplaySize: CGSize?,
                 imageToneOverlayOpacity: CGFloat,
                 checkpointMarkers: [LocalScanCheckpointMarker],
                 checkpointAppearance: LocalScanCheckpointAppearance,
                 layers: FloorPlanLayerDisplay = FloorPlanLayerDisplay()) {
-        let imageChanged = imageView.image !== image
+        let imageChanged = sourceImage !== image
+        let toneOpacity = min(1, max(0, imageToneOverlayOpacity))
         if imageChanged {
             discardPendingDrawing()
             needsFit = true
-            imageView.image = image
+            sourceImage = image
             imageSize = CGSize(width: image.cgImage?.width ?? Int(image.size.width),
                                height: image.cgImage?.height ?? Int(image.size.height))
+        }
+        if imageChanged || toneOpacity != appliedToneOpacity {
+            imageView.image = tonedImage(image, opacity: toneOpacity)
+            appliedToneOpacity = toneOpacity
         }
         let planAlpha = CGFloat(min(1, max(0, layers.planOpacity)))
         if imageView.alpha != planAlpha { imageView.alpha = planAlpha }
         let canvasBackground: UIColor = usesTransparentBackground ? .clear : .secondarySystemBackground
-        let imageBackground: UIColor = usesTransparentBackground && !keepsWhiteImageBackground
-            ? .clear
-            : .white
+        let imageBackground: UIColor = usesTransparentBackground ? .clear : .white
         if backgroundColor != canvasBackground { backgroundColor = canvasBackground }
         if contentView.backgroundColor != imageBackground { contentView.backgroundColor = imageBackground }
         isOpaque = !usesTransparentBackground
-        contentView.isOpaque = !usesTransparentBackground || keepsWhiteImageBackground
-        imageToneOverlayView.alpha = min(1, max(0, imageToneOverlayOpacity))
+        contentView.isOpaque = !usesTransparentBackground
         if self.maximumInitialDisplaySize != maximumInitialDisplaySize {
             self.maximumInitialDisplaySize = maximumInitialDisplaySize
             needsFit = true
@@ -247,20 +247,33 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
         // Do not becomeFirstResponder here; resume input only on the next user gesture.
     }
 
+    private func tonedImage(_ image: UIImage, opacity: CGFloat) -> UIImage {
+        guard opacity > 0, image.size.width > 0, image.size.height > 0 else { return image }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = image.scale
+        format.opaque = false
+        let bounds = CGRect(origin: .zero, size: image.size)
+        return UIGraphicsImageRenderer(size: image.size, format: format).image { context in
+            image.draw(in: bounds)
+            context.cgContext.setFillColor(UIColor(DSPalette.Gray.g700).withAlphaComponent(opacity).cgColor)
+            // Apply the tone without adding coverage to semitransparent pixels.
+            context.cgContext.setBlendMode(.sourceAtop)
+            context.cgContext.fill(bounds)
+        }
+    }
+
     private func configureViews() {
         backgroundColor = .secondarySystemBackground
         scrollView.delegate = self
         scrollView.bouncesZoom = true
         scrollView.contentInsetAdjustmentBehavior = .never
         addSubview(scrollView)
-        contentView.backgroundColor = .white
+        contentView.backgroundColor = .clear
+        contentView.isOpaque = false
         contentView.clipsToBounds = true
         scrollView.addSubview(contentView)
         imageView.contentMode = .scaleToFill
         contentView.addSubview(imageView)
-        imageToneOverlayView.backgroundColor = UIColor(DSPalette.Gray.g700)
-        imageToneOverlayView.isUserInteractionEnabled = false
-        contentView.addSubview(imageToneOverlayView)
         obstacleImageView.contentMode = .scaleToFill
         obstacleImageView.tintAdjustmentMode = .normal
         obstacleImageView.alpha = 0.65
@@ -321,7 +334,6 @@ final class LocalFloorPlanCanvasView: UIView, UIScrollViewDelegate, PKCanvasView
         let frame = CGRect(origin: .zero, size: imageSize)
         contentView.frame = frame
         imageView.frame = frame
-        imageToneOverlayView.frame = frame
         canvasView.frame = frame
         markersView.frame = frame
         markersView.setNeedsDisplay()

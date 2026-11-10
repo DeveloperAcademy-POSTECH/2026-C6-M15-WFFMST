@@ -14,9 +14,13 @@ enum AARLayout {
 }
 
 struct AARView: View {
+    private static let videoLoadingGuideMessage =
+        "영상을 불러오는 데 시간이 소요됩니다. 대원을 선택한 후 잠시만 기다려 주세요."
+
     @Environment(InstructorStore.self) private var store
     @Environment(AARStore.self) private var aarStore
     @State private var showsFinishConfirmation = false
+    @State private var showsVideoLoadingGuide = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,8 +29,13 @@ struct AARView: View {
 
             AARContentView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .overlay(alignment: .topLeading) {
-                    recordingFailureNotice
+                .overlay(alignment: .top) {
+                    VStack(spacing: 0) {
+                        recordingFailureNotice
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        videoLoadingGuide
+                    }
                 }
 
             AARTimelineView()
@@ -48,6 +57,20 @@ struct AARView: View {
         // UT 영상을 남기려고 당분간 AAR을 떠나도 영상을 지우지 않는다(#66). Storage 자동 삭제도 꺼져 있다(docs/repositories.md).
         // 다시 지우려면 `aarStore.finish()`를 부른다.
         .onDisappear { aarStore.reset() }
+    }
+
+    @ViewBuilder
+    private var videoLoadingGuide: some View {
+        if showsVideoLoadingGuide {
+            DSGuideToast(
+                Self.videoLoadingGuideMessage,
+                onDismiss: { showsVideoLoadingGuide = false },
+                dismissAccessibilityIdentifier: "aar.videoLoadingGuide.dismiss"
+            )
+            .frame(maxWidth: 690)
+            .padding(.top, DSSpacing.s12)
+            .accessibilityIdentifier("aar.videoLoadingGuide")
+        }
     }
 
     private var header: some View {
@@ -120,6 +143,21 @@ struct AARView: View {
 }
 
 #Preview("AAR 동선") {
+    let store = InstructorPreviewFixture.store(floorPlan: InstructorFloorPlan(
+        id: "preview-plan",
+        name: "훈련장 A 도면",
+        fileName: "훈련장 A 도면.png",
+        referenceDistance: 15
+    ), phase: .aar)
+
+    return AARView()
+        .environment(store)
+        .environment(AARStore())
+        .frame(width: 1_366, height: 1_024)
+        .preferredColorScheme(.dark)
+}
+
+#Preview("AAR 영상 로딩 안내 토스트") {
     let store = InstructorPreviewFixture.store(floorPlan: InstructorFloorPlan(
         id: "preview-plan",
         name: "훈련장 A 도면",
