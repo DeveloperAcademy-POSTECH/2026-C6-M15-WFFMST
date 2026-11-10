@@ -13,6 +13,8 @@ import UIKit
 @MainActor
 @Observable
 final class AARStore {
+    typealias VideoSeekAction = @MainActor (_ player: AVPlayer, _ seconds: Double) -> Void
+
     enum TrackState: Equatable {
         case loading
         case ready(AARTrackPath, partial: Bool)
@@ -39,6 +41,7 @@ final class AARStore {
     @ObservationIgnored private let trackLoader: AARTrackLoader
     @ObservationIgnored private let videoLoader: AARVideoLoader
     @ObservationIgnored private let soundCandidateLoader: any AARSoundCandidateLoading
+    @ObservationIgnored private let videoSeekAction: VideoSeekAction
     @ObservationIgnored private var videoTasks: [String: Task<Void, Never>] = [:]
     /// 영상을 보여 달라고 요청한 대원. 기록 목록을 받기 전에 요청되면 받은 뒤 불러온다
     @ObservationIgnored private var requestedVideoIDs: [String] = []
@@ -77,7 +80,8 @@ final class AARStore {
         trackResultRepository: any TrackResultRepository = DemoTrackResultRepository(),
         floorPlanFileRepository: any FloorPlanFileRepository = DemoFloorPlanFileRepository(),
         videoChunkRepository: any VideoChunkRepository = DemoVideoChunkRepository(),
-        soundCandidateLoader: any AARSoundCandidateLoading = UnavailableAARSoundCandidateLoader()
+        soundCandidateLoader: any AARSoundCandidateLoading = UnavailableAARSoundCandidateLoader(),
+        videoSeekAction: VideoSeekAction? = nil
     ) {
         self.sessionRepository = sessionRepository
         self.memberRepository = memberRepository
@@ -86,6 +90,13 @@ final class AARStore {
         trackLoader = AARTrackLoader(repository: trackResultRepository)
         videoLoader = AARVideoLoader(repository: videoChunkRepository)
         self.soundCandidateLoader = soundCandidateLoader
+        self.videoSeekAction = videoSeekAction ?? { player, seconds in
+            player.seek(
+                to: CMTime(seconds: seconds, preferredTimescale: 600),
+                toleranceBefore: .zero,
+                toleranceAfter: .zero
+            )
+        }
     }
 
     var canPlay: Bool { playbackDuration > 0 && !isLoading }
@@ -318,9 +329,9 @@ final class AARStore {
         switch timeline.frame(at: playbackPosition) {
         case .notStarted:
             player.pause()
-            Self.seek(player, to: 0, ifDriftFrom: seek ? nil : 0)
+            requestVideoSeek(player, to: 0, ifDriftFrom: seek ? nil : 0)
         case .playing(let seconds):
-            Self.seek(player, to: seconds, ifDriftFrom: seek ? nil : player.currentTime().seconds)
+            requestVideoSeek(player, to: seconds, ifDriftFrom: seek ? nil : player.currentTime().seconds)
             if isPlaying {
                 if player.rate == 0 { player.play() }
             } else {
@@ -328,18 +339,14 @@ final class AARStore {
             }
         case .ended(let seconds):
             player.pause()
-            Self.seek(player, to: seconds, ifDriftFrom: seek ? nil : player.currentTime().seconds)
+            requestVideoSeek(player, to: seconds, ifDriftFrom: seek ? nil : player.currentTime().seconds)
         }
     }
 
     /// `current`가 nil이면 항상, 아니면 목표와 많이 벌어졌을 때만 옮긴다.
-    private static func seek(_ player: AVPlayer, to seconds: Double, ifDriftFrom current: Double?) {
-        if let current, current.isFinite, abs(current - seconds) < videoDriftTolerance { return }
-        player.seek(
-            to: CMTime(seconds: seconds, preferredTimescale: 600),
-            toleranceBefore: .zero,
-            toleranceAfter: .zero
-        )
+    private func requestVideoSeek(_ player: AVPlayer, to seconds: Double, ifDriftFrom current: Double?) {
+        if let current, current.isFinite, abs(current - seconds) < Self.videoDriftTolerance { return }
+        videoSeekAction(player, seconds)
     }
 
     private func rememberRecordings(session: Session, recordings: [Recording], participantIDs: [String]) {
