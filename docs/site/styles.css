@@ -17,8 +17,6 @@
 
   --sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
 
-  /* 제목의 거친 질감: Figma NOISE(검은 점 25%, MONOTONE)와 같게 검은 점을 얹는다 */
-  --noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='2.2' numOctaves='1' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.9 0 0 0 -0.33'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -50,16 +48,8 @@ h1, h2, h3, p { margin: 0; }
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
 
-/* 거친 질감 글자: 색은 --c로 받는다 */
-.grit {
-  --c: var(--text);
-  color: var(--c);
-  background-image: var(--noise), linear-gradient(var(--c), var(--c));
-  background-size: 120px 120px, auto;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
+/* 제목 색: 기본은 흰색, --yellow는 노랑 (Figma에서 노이즈 효과를 뺐으므로 단색) */
+.grit { --c: var(--text); color: var(--c); }
 .grit--yellow { --c: var(--yellow); }
 
 /* ---------- 내비 ---------- */
@@ -164,7 +154,6 @@ h1, h2, h3, p { margin: 0; }
   position: absolute; left: var(--x); top: var(--y); width: 52px; height: 52px; margin: -26px 0 0 -26px;
   display: grid; place-items: center;
   border-radius: 50%; border: 4px solid var(--bg); background: var(--yellow);
-  box-shadow: 0 0 0 10px rgba(255, 217, 0, .35);
   color: var(--bg); font-size: 24px; font-weight: 900;
 }
 .route__steps { list-style: none; margin: 0; padding: 0; }
@@ -215,6 +204,7 @@ h1, h2, h3, p { margin: 0; }
 }
 .member__name { margin-top: 32px; font-size: 24px; font-weight: 700; }
 .member__position { margin-top: 12px; font-size: 16px; font-weight: 500; color: var(--yellow); }
+.member__role span { display: block; }
 .member__role { margin-top: 20px; min-height: 2lh; font-size: 14px; line-height: 1.6; color: var(--text-2); }
 .member__links { margin-top: 28px; display: flex; gap: 12px; }
 .member__links a {
@@ -233,12 +223,13 @@ h1, h2, h3, p { margin: 0; }
   .route__svg, .marker { display: none; }
   .route { aspect-ratio: auto; }
   .route__steps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 56px 48px; }
-  .step { position: relative; left: auto; top: auto; padding-left: 68px; }
+  .step { position: relative; left: auto; top: auto; padding-left: 76px; }
+  /* 번호 원은 도면 위 마커(.marker, Figma Route Marker)와 같은 모양 */
   .step::before {
-    content: attr(data-n); position: absolute; margin-left: -68px; margin-top: -6px;
-    width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center;
-    background: var(--yellow); color: var(--bg); font-weight: 900; font-size: 20px;
-    box-shadow: 0 0 0 8px rgba(255, 217, 0, .3);
+    content: attr(data-n); position: absolute; left: 0; top: -8px;
+    width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center;
+    border: 4px solid var(--bg); background: var(--yellow);
+      color: var(--bg); font-weight: 900; font-size: 24px;
   }
 }
 
@@ -261,8 +252,10 @@ h1, h2, h3, p { margin: 0; }
   .hero__actions { margin-top: 36px; }
   .heading { margin-bottom: 48px; }
   .heading__sub { font-size: 16px; }
-  .row { grid-template-columns: 1fr; gap: 12px; }
-  .row__arrow { transform: rotate(90deg); justify-self: center; }
+  /* 짝 안(문제 → 해결)은 좁게, 짝 사이는 넓게 해서 한 쌍으로 읽히게 */
+  .rows { gap: 56px; }
+  .row { grid-template-columns: 1fr; gap: 8px; }
+  .row__arrow { transform: rotate(90deg); justify-self: center; width: 24px; height: 24px; }
   .row__card { min-height: 0; padding: 24px; }
   .row__q, .row__a { font-size: 20px; }
   .photo { aspect-ratio: 4 / 3; border-radius: 20px; }
@@ -275,8 +268,17 @@ h1, h2, h3, p { margin: 0; }
   .role__desc { font-size: 17px; margin-top: 28px; }
   .closing { padding-top: 140px; }
   .team-head__sub { font-size: 16px; }
-  .members { grid-template-columns: 1fr; row-gap: 72px; }
-  .member__avatar { width: 180px; height: 180px; font-size: 56px; }
+  /* 휴대폰에서도 2열. 카드 안 요소를 폭에 맞게 줄인다 */
+  .members { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 16px; row-gap: 56px; }
+  .member__avatar { width: 120px; height: 120px; font-size: 40px; }
+  .member__avatar::after { padding: 3px; }
+  .member__name { margin-top: 20px; font-size: 17px; }
+  .member__position { margin-top: 6px; font-size: 13px; }
+  .member__role { margin-top: 12px; font-size: 12px; min-height: 0; }
+  .member__role span { display: inline; }
+  .member__links { margin-top: auto; padding-top: 16px; gap: 8px; }
+  .member__links a { width: 40px; height: 40px; }
+  .member__links svg { width: 17px; height: 17px; }
 }
 
 
