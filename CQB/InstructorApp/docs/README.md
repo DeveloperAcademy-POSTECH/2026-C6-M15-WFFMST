@@ -23,6 +23,7 @@
 - [Issue #126 이전 훈련 기록](issue-126-training-history.md): 기기 저장, 목록·삭제 화면과 AAR 다시 열기 스펙
 - [Issue #168 AAR 큰 소리 마커](issue-168-sound-events.md): 대원별 후보 묶기, 재생바 핀 표시와 이동, 임시 가정
 - [Issue #192 실제 기록의 큰 소리 후보](issue-192-real-sound-candidates.md): Storage 후보 파일 받기, 판정 기준, 실패 처리
+- [Issue #240 도면 저장 성능 계측](issue-240-floor-plan-save-metrics.md): 실제 iPad 저장 단계·파일별 전송 시간 측정 방법
 
 작업 기록은 당시의 이력이다. 현재 동작은 `flows.md`를 기준으로 관리하고, 정책이 바뀌면 관련 이슈와 함께 갱신한다.
 

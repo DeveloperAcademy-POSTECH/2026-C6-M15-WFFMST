@@ -1,9 +1,12 @@
 import CQBCore
 import CryptoKit
 import Foundation
+import OSLog
 
 /// 검증을 통과한 도면 파일을 메모리와 앱 Caches 영역에서 재사용한다.
 actor CachedFloorPlanFileRepository: FloorPlanFileRepository {
+    private static let logger = Logger(subsystem: "com.wffmst.cqb", category: "FloorPlanSave")
+
     struct Configuration: Sendable {
         static let defaultDiskLimit = 250 * 1_024 * 1_024
         static let defaultMemoryLimit = 40 * 1_024 * 1_024
@@ -60,10 +63,22 @@ actor CachedFloorPlanFileRepository: FloorPlanFileRepository {
     }
 
     func upload(_ files: FloorPlanFiles, for reference: FloorPlanReference) async throws {
+        let validationStarted = ContinuousClock.now
         _ = try LocalFloorPlanFileValidator.validate(files: files, reference: reference)
+        Self.logDuration("floorPlan.validate", since: validationStarted)
+
+        let remoteUploadStarted = ContinuousClock.now
         try await remote.upload(files, for: reference)
+        Self.logDuration("floorPlan.remoteUpload", since: remoteUploadStarted)
+
         storeInMemory(files, key: Self.cacheKey(for: reference))
-        try? storeOnDisk(files, reference: reference)
+        let diskCacheStarted = ContinuousClock.now
+        do {
+            try storeOnDisk(files, reference: reference)
+            Self.logDuration("floorPlan.cacheWrite", since: diskCacheStarted)
+        } catch {
+            Self.logDuration("floorPlan.cacheWrite", since: diskCacheStarted, result: "failure")
+        }
     }
 
     func download(_ reference: FloorPlanReference) async throws -> FloorPlanFiles {
@@ -230,6 +245,21 @@ actor CachedFloorPlanFileRepository: FloorPlanFileRepository {
 
     private static func byteCount(of files: FloorPlanFiles) -> Int {
         files.imagePNG.count + files.navigationMapJSON.count + files.resolvedMask.count
+    }
+
+    private static func logDuration(
+        _ stage: String,
+        since start: ContinuousClock.Instant,
+        result: String = "success"
+    ) {
+#if DEBUG
+        let duration = start.duration(to: .now).components
+        let milliseconds = Double(duration.seconds) * 1_000
+            + Double(duration.attoseconds) / 1_000_000_000_000_000
+        logger.info(
+            "event=floor-plan-save stage=\(stage, privacy: .public) result=\(result, privacy: .public) duration_ms=\(milliseconds, privacy: .public)"
+        )
+#endif
     }
 
     private static func sha256(_ data: Data) -> String {
