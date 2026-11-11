@@ -91,6 +91,65 @@ struct StorageTransferErrorTests {
         }
         #expect(await recorder.uploadCount == 0)
     }
+
+    @Test("한 파일 실패 시 원격 확인 중인 형제 작업의 신규 업로드를 취소한다")
+    func firstFailureCancelsSiblingBeforeUpload() async {
+        let requests = ["failure", "pending"].map { role in
+            StorageTransfer.UploadRequest(
+                data: Data(role.utf8),
+                fileRole: role,
+                path: "floorPlans/test/\(role)",
+                contentType: "application/octet-stream"
+            )
+        }
+        let remoteCheckGate = RemoteCheckGate()
+        let recorder = UploadInvocationRecorder()
+        let fallbackRelease = Task {
+            await remoteCheckGate.waitUntilWaiting()
+            try? await Task.sleep(for: .seconds(1))
+            await remoteCheckGate.release()
+        }
+
+        do {
+            try await StorageTransfer.uploadConcurrently(requests) { request in
+                if request.fileRole == "failure" {
+                    await remoteCheckGate.waitUntilWaiting()
+                    throw UploadConcurrencyTestError.failedRequest
+                }
+                try await StorageTransfer.uploadIfMissingOrMatching(
+                    request.data,
+                    fileRole: request.fileRole,
+                    to: request.path,
+                    contentType: request.contentType,
+                    maxBytes: request.maxBytes,
+                    downloadOperation: { _, _ in
+                        await withTaskCancellationHandler {
+                            await remoteCheckGate.waitUntilReleased()
+                        } onCancel: {
+                            Task { await remoteCheckGate.release() }
+                        }
+                        throw RepositoryError.notFound
+                    },
+                    uploadOperation: { _, _, _, _ in
+                        await recorder.recordUpload()
+                    }
+                )
+            }
+            Issue.record("실패한 파일 묶음이 성공으로 완료되었습니다.")
+        } catch UploadConcurrencyTestError.failedRequest {
+            // 첫 번째 파일의 원래 오류가 전달되어야 한다.
+        } catch {
+            Issue.record("첫 번째 파일 오류 대신 \(error)가 전달되었습니다.")
+        }
+
+        fallbackRelease.cancel()
+        await fallbackRelease.value
+        #expect(await recorder.uploadCount == 0)
+    }
+}
+
+private enum UploadConcurrencyTestError: Error {
+    case failedRequest
 }
 
 private actor UploadConcurrencyRecorder {

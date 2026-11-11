@@ -89,7 +89,7 @@ enum StorageTransfer {
                 }
             }
             do {
-                try await group.waitForAll()
+                while let _ = try await group.next() {}
             } catch {
                 group.cancelAll()
                 throw error
