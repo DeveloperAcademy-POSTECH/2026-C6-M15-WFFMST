@@ -9,6 +9,20 @@ import UIKit
 @MainActor
 @Observable
 final class InstructorStore {
+    enum FloorPlanSavePresentationStage: Equatable {
+        case saving
+        case finishing
+
+        var message: String {
+            switch self {
+            case .saving:
+                "잠시만 기다려주세요."
+            case .finishing:
+                "마무리하고 있습니다."
+            }
+        }
+    }
+
     enum MemberConnectionState {
         case idle, connecting, connected, failed
     }
@@ -105,6 +119,7 @@ final class InstructorStore {
     private(set) var unmutedParticipantIDs: Set<String> = []
     private(set) var playbackPosition = 331.0
     private(set) var isUploadingFloorPlan = false
+    private(set) var floorPlanSavePresentationStage: FloorPlanSavePresentationStage?
     private(set) var floorPlanUploadError: String?
     private(set) var currentSession: Session?
     private(set) var isCreatingSession = false
@@ -1309,6 +1324,7 @@ final class InstructorStore {
         let saveStarted = ContinuousClock.now
         let preparationStarted = ContinuousClock.now
         isUploadingFloorPlan = true
+        floorPlanSavePresentationStage = .saving
         floorPlanUploadError = nil
         failedFloorPlanRegistration = registration
         failedWorldMapDraft = worldMapDraft
@@ -1382,6 +1398,9 @@ final class InstructorStore {
                 }
                 let worldMapReference = worldMapUpload?.reference
                 try Task.checkCancellation()
+                self?.floorPlanSavePresentationStage = .finishing
+                await Task.yield()
+                try Task.checkCancellation()
                 let now = Date.now
                 let plan = InstructorFloorPlan(
                     id: existingPlan?.id ?? upload.registration.id.uuidString,
@@ -1440,6 +1459,7 @@ final class InstructorStore {
                 )
                 guard let self, !(error is CancellationError) else { return }
                 self.isUploadingFloorPlan = false
+                self.floorPlanSavePresentationStage = nil
                 self.floorPlanUploadTask = nil
                 self.floorPlanUploadError = Self.floorPlanUploadMessage(for: error)
             }
@@ -1506,6 +1526,7 @@ final class InstructorStore {
         floorPlanUploadTask?.cancel()
         floorPlanUploadTask = nil
         isUploadingFloorPlan = false
+        floorPlanSavePresentationStage = nil
         floorPlanUploadError = nil
         failedFloorPlanRegistration = nil
         failedWorldMapDraft = nil

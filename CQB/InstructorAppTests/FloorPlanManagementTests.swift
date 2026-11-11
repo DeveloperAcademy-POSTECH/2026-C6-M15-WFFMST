@@ -5,6 +5,17 @@ import XCTest
 
 @MainActor
 final class FloorPlanManagementTests: XCTestCase {
+    func testFloorPlanSavePresentationMessagesStayUserFacing() {
+        XCTAssertEqual(
+            InstructorStore.FloorPlanSavePresentationStage.saving.message,
+            "잠시만 기다려주세요."
+        )
+        XCTAssertEqual(
+            InstructorStore.FloorPlanSavePresentationStage.finishing.message,
+            "마무리하고 있습니다."
+        )
+    }
+
     func testStorageFilesRestoreEditableMaskSnapshot() throws {
         let registration = try makeRegistration()
         let upload = try LocalFloorPlanFileBuilder.build(from: registration)
@@ -191,12 +202,14 @@ final class FloorPlanManagementTests: XCTestCase {
         let didStartUploadsTogether = await waitUntilAsync {
             await uploadGate.startedUploadCount == 2
         }
+        XCTAssertEqual(store.floorPlanSavePresentationStage, .saving)
         await uploadGate.releaseUploads()
         let didSaveEdit = await waitUntil {
             store.phase == .floorPlanDetail && !store.isUploadingFloorPlan
         }
         XCTAssertTrue(didStartUploadsTogether)
         XCTAssertTrue(didSaveEdit)
+        XCTAssertNil(store.floorPlanSavePresentationStage)
 
         let updatedPlan = try XCTUnwrap(store.floorPlans.first)
         let updatedWorldMap = try XCTUnwrap(updatedPlan.worldMap)
@@ -248,6 +261,7 @@ final class FloorPlanManagementTests: XCTestCase {
         let worldMapResult = await worldMapRepository.result()
         XCTAssertEqual(floorPlanUploadCount, 0)
         XCTAssertTrue(worldMapResult.uploads.isEmpty)
+        XCTAssertNil(store.floorPlanSavePresentationStage)
         XCTAssertTrue(store.floorPlanUploadError?.contains("압축 후 용량:") == true)
         XCTAssertTrue(store.floorPlanUploadError?.contains("52428801바이트") == true)
     }
