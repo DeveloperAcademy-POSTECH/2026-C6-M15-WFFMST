@@ -12,21 +12,26 @@ public struct StorageFloorPlanFileRepository: FloorPlanFileRepository {
 
     public func upload(_ files: FloorPlanFiles, for reference: FloorPlanReference) async throws {
         try verify(files.navigationMapJSON, against: reference)
-        try await StorageTransfer.uploadIfMissingOrMatching(
-            files.imagePNG,
-            to: StoragePaths.floorPlanImage(reference),
-            contentType: "image/png"
-        )
-        try await StorageTransfer.uploadIfMissingOrMatching(
-            files.resolvedMask,
-            to: StoragePaths.floorPlanMask(reference),
-            contentType: "application/octet-stream"
-        )
-        try await StorageTransfer.uploadIfMissingOrMatching(
-            files.navigationMapJSON,
-            to: StoragePaths.floorPlanNavigationMap(reference),
-            contentType: "application/json"
-        )
+        try await StorageTransfer.uploadConcurrently([
+            StorageTransfer.UploadRequest(
+                data: files.imagePNG,
+                fileRole: "floorPlan.image",
+                path: StoragePaths.floorPlanImage(reference),
+                contentType: "image/png"
+            ),
+            StorageTransfer.UploadRequest(
+                data: files.resolvedMask,
+                fileRole: "floorPlan.mask",
+                path: StoragePaths.floorPlanMask(reference),
+                contentType: "application/octet-stream"
+            ),
+            StorageTransfer.UploadRequest(
+                data: files.navigationMapJSON,
+                fileRole: "floorPlan.navigation",
+                path: StoragePaths.floorPlanNavigationMap(reference),
+                contentType: "application/json"
+            ),
+        ])
     }
 
     public func download(_ reference: FloorPlanReference) async throws -> FloorPlanFiles {

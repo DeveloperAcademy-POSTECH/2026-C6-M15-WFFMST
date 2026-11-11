@@ -7,18 +7,22 @@ public struct StorageWorldMapFileRepository: WorldMapFileRepository {
 
     public func upload(_ files: WorldMapFiles, for reference: WorldMapReference) async throws {
         _ = try WorldMapFileValidation.validate(files, against: reference)
-        try await StorageTransfer.uploadIfMissingOrMatching(
-            files.worldMapArchive,
-            to: StoragePaths.worldMapArchive(reference),
-            contentType: "application/octet-stream",
-            maxBytes: StorageTransfer.maxWorldMapBytes
-        )
-        try await StorageTransfer.uploadIfMissingOrMatching(
-            files.setupJSON,
-            to: StoragePaths.worldMapSetup(reference),
-            contentType: "application/json",
-            maxBytes: StorageTransfer.maxWorldMapSetupBytes
-        )
+        try await StorageTransfer.uploadConcurrently([
+            StorageTransfer.UploadRequest(
+                data: files.worldMapArchive,
+                fileRole: "worldMap.archive",
+                path: StoragePaths.worldMapArchive(reference),
+                contentType: "application/octet-stream",
+                maxBytes: StorageTransfer.maxWorldMapBytes
+            ),
+            StorageTransfer.UploadRequest(
+                data: files.setupJSON,
+                fileRole: "worldMap.setup",
+                path: StoragePaths.worldMapSetup(reference),
+                contentType: "application/json",
+                maxBytes: StorageTransfer.maxWorldMapSetupBytes
+            ),
+        ])
     }
 
     public func download(_ reference: WorldMapReference) async throws -> WorldMapFiles {

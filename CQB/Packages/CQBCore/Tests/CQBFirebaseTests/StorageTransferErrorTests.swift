@@ -34,4 +34,43 @@ struct StorageTransferErrorTests {
         let mapped = StorageTransfer.mapDownloadError(error)
         #expect((mapped as NSError) === error)
     }
+
+    @Test("한 파일 묶음의 독립적인 Storage 요청을 동시에 시작한다")
+    func uploadsBundleFilesConcurrently() async throws {
+        let requests = ["image", "mask", "navigation"].map { role in
+            StorageTransfer.UploadRequest(
+                data: Data(role.utf8),
+                fileRole: role,
+                path: "floorPlans/test/\(role)",
+                contentType: "application/octet-stream"
+            )
+        }
+        let recorder = UploadConcurrencyRecorder()
+
+        try await StorageTransfer.uploadConcurrently(requests) { request in
+            try await recorder.perform(request)
+        }
+
+        let result = await recorder.result()
+        #expect(result.maximumInFlight == requests.count)
+        #expect(result.fileRoles == Set(requests.map(\.fileRole)))
+    }
+}
+
+private actor UploadConcurrencyRecorder {
+    private var inFlight = 0
+    private var maximumInFlight = 0
+    private var fileRoles: Set<String> = []
+
+    func perform(_ request: StorageTransfer.UploadRequest) async throws {
+        inFlight += 1
+        maximumInFlight = max(maximumInFlight, inFlight)
+        fileRoles.insert(request.fileRole)
+        defer { inFlight -= 1 }
+        try await Task.sleep(for: .milliseconds(50))
+    }
+
+    func result() -> (maximumInFlight: Int, fileRoles: Set<String>) {
+        (maximumInFlight, fileRoles)
+    }
 }

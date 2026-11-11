@@ -46,6 +46,10 @@ final class InstructorStore {
     }
 
     private static let logger = Logger(subsystem: "com.wffmst.cqb", category: "InstructorStore")
+    private static let floorPlanSaveLogger = Logger(
+        subsystem: "com.wffmst.cqb",
+        category: "FloorPlanSave"
+    )
 
     let floorPlanDraft: FloorPlanDraftStore
     let trainingRecords: TrainingRecordStore
@@ -1302,6 +1306,8 @@ final class InstructorStore {
         worldMapDraft: LocalWorldMapScanDraft? = nil,
         replacing existingPlan: InstructorFloorPlan? = nil
     ) {
+        let saveStarted = ContinuousClock.now
+        let preparationStarted = ContinuousClock.now
         isUploadingFloorPlan = true
         floorPlanUploadError = nil
         failedFloorPlanRegistration = registration
@@ -1320,12 +1326,14 @@ final class InstructorStore {
             return (upload, worldMapUpload)
         }
         floorPlanUploadTask = Task { [weak self] in
+            var activeStage = "prepare.files"
             do {
                 let (upload, preparedWorldMap) = try await withTaskCancellationHandler {
                     try await preparation.value
                 } onCancel: {
                     preparation.cancel()
                 }
+                Self.logFloorPlanSaveDuration(activeStage, since: preparationStarted)
                 try Task.checkCancellation()
                 let worldMapUpload: LocalWorldMapUpload?
                 if let preparedWorldMap {
@@ -1337,6 +1345,8 @@ final class InstructorStore {
                     guard let worldMapRepository else {
                         throw LocalFloorPlanError.invalid("WorldMap 저장소가 구성되지 않았습니다.")
                     }
+                    activeStage = "worldMap.downloadAndRebind"
+                    let reboundStarted = ContinuousClock.now
                     let existingFiles = try await worldMapRepository.download(existingWorldMap)
                     try Task.checkCancellation()
                     let rebound = try LocalWorldMapFileBuilder.rebind(
@@ -1344,16 +1354,31 @@ final class InstructorStore {
                         from: existingWorldMap,
                         to: upload.reference
                     )
+                    Self.logFloorPlanSaveDuration(activeStage, since: reboundStarted)
                     worldMapUpload = rebound
                 } else {
                     worldMapUpload = nil
                 }
+                Self.logFloorPlanSaveFileSizes(
+                    floorPlan: upload.files,
+                    worldMap: worldMapUpload?.files
+                )
                 // 두 파일 묶음의 크기 검증이 끝난 뒤 업로드를 시작한다.
                 try Task.checkCancellation()
-                try await repository.upload(upload.files, for: upload.reference)
-                try Task.checkCancellation()
+                activeStage = "remote.upload.parallel"
+                async let floorPlanUpload: Void = Self.runFloorPlanSaveStage("floorPlan.upload") {
+                    try await repository.upload(upload.files, for: upload.reference)
+                }
                 if let worldMapUpload, let worldMapRepository {
-                    try await worldMapRepository.upload(worldMapUpload.files, for: worldMapUpload.reference)
+                    async let worldMapUploadResult: Void = Self.runFloorPlanSaveStage("worldMap.upload") {
+                        try await worldMapRepository.upload(
+                            worldMapUpload.files,
+                            for: worldMapUpload.reference
+                        )
+                    }
+                    _ = try await (floorPlanUpload, worldMapUploadResult)
+                } else {
+                    try await floorPlanUpload
                 }
                 let worldMapReference = worldMapUpload?.reference
                 try Task.checkCancellation()
@@ -1370,7 +1395,10 @@ final class InstructorStore {
                     registeredPlan: upload.registration
                 )
                 do {
+                    activeStage = "catalog.save"
+                    let catalogSaveStarted = ContinuousClock.now
                     try catalogRepository.save(plan)
+                    Self.logFloorPlanSaveDuration(activeStage, since: catalogSaveStarted)
                 } catch {
                     let failure = error as NSError
                     Self.logger.error("등록 도면 로컬 저장 실패: domain=\(failure.domain, privacy: .public) code=\(failure.code) description=\(failure.localizedDescription, privacy: .private)")
@@ -1392,6 +1420,7 @@ final class InstructorStore {
                 let detailSnapshot = self.floorPlanDraft.maskPNGData.map {
                     LocalFloorPlanSnapshot(registration: upload.registration, maskPNGData: $0)
                 }
+                Self.logFloorPlanSaveDuration("save.total", since: saveStarted)
                 self.clearFloorPlanUpload()
                 self.floorPlanDraft.reset()
                 if let detailSnapshot, existingPlan != nil {
@@ -1403,12 +1432,74 @@ final class InstructorStore {
                     self.phase = .floorPlanList
                 }
             } catch {
+                let result = error is CancellationError ? "cancelled" : "failure"
+                Self.logFloorPlanSaveFailure(
+                    activeStage: activeStage,
+                    since: saveStarted,
+                    result: result
+                )
                 guard let self, !(error is CancellationError) else { return }
                 self.isUploadingFloorPlan = false
                 self.floorPlanUploadTask = nil
                 self.floorPlanUploadError = Self.floorPlanUploadMessage(for: error)
             }
         }
+    }
+
+    private static func runFloorPlanSaveStage(
+        _ stage: String,
+        operation: () async throws -> Void
+    ) async throws {
+        let started = ContinuousClock.now
+        do {
+            try await operation()
+            logFloorPlanSaveDuration(stage, since: started)
+        } catch {
+            let result = error is CancellationError ? "cancelled" : "failure"
+            logFloorPlanSaveDuration(stage, since: started, result: result)
+            throw error
+        }
+    }
+
+    private static func logFloorPlanSaveDuration(
+        _ stage: String,
+        since start: ContinuousClock.Instant,
+        result: String = "success"
+    ) {
+#if DEBUG
+        let duration = start.duration(to: .now).components
+        let milliseconds = Double(duration.seconds) * 1_000
+            + Double(duration.attoseconds) / 1_000_000_000_000_000
+        floorPlanSaveLogger.info(
+            "event=floor-plan-save stage=\(stage, privacy: .public) result=\(result, privacy: .public) duration_ms=\(milliseconds, privacy: .public)"
+        )
+#endif
+    }
+
+    private static func logFloorPlanSaveFileSizes(
+        floorPlan: FloorPlanFiles,
+        worldMap: WorldMapFiles?
+    ) {
+#if DEBUG
+        floorPlanSaveLogger.info(
+            "event=floor-plan-save stage=file-sizes floor_image_bytes=\(floorPlan.imagePNG.count, privacy: .public) floor_mask_bytes=\(floorPlan.resolvedMask.count, privacy: .public) floor_navigation_bytes=\(floorPlan.navigationMapJSON.count, privacy: .public) world_map_archive_bytes=\(worldMap?.worldMapArchive.count ?? 0, privacy: .public) world_map_setup_bytes=\(worldMap?.setupJSON.count ?? 0, privacy: .public)"
+        )
+#endif
+    }
+
+    private static func logFloorPlanSaveFailure(
+        activeStage: String,
+        since start: ContinuousClock.Instant,
+        result: String
+    ) {
+#if DEBUG
+        let duration = start.duration(to: .now).components
+        let milliseconds = Double(duration.seconds) * 1_000
+            + Double(duration.attoseconds) / 1_000_000_000_000_000
+        floorPlanSaveLogger.info(
+            "event=floor-plan-save stage=save.total result=\(result, privacy: .public) active_stage=\(activeStage, privacy: .public) duration_ms=\(milliseconds, privacy: .public)"
+        )
+#endif
     }
 
     private func clearFloorPlanUpload() {

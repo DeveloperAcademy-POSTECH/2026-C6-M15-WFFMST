@@ -122,7 +122,7 @@ final class FloorPlanManagementTests: XCTestCase {
         XCTAssertEqual(uploadCount, 1)
     }
 
-    func testMaskEditRebindsExistingWorldMapToNewFloorPlanReference() async throws {
+    func testMaskEditRebindsWorldMapAndUploadsBundlesConcurrently() async throws {
         let registration = try makeRegistration()
         let floorPlanUpload = try LocalFloorPlanFileBuilder.build(from: registration)
         let worldMapDraft = LocalWorldMapScanDraft(
@@ -166,13 +166,18 @@ final class FloorPlanManagementTests: XCTestCase {
             reference: floorPlanUpload.reference,
             worldMap: existingWorldMap.reference
         )
+        let uploadGate = UploadStartGate()
         let worldMapRepository = WorldMapRebindRepositoryStub(
             reference: existingWorldMap.reference,
-            files: existingWorldMap.files
+            files: existingWorldMap.files,
+            uploadGate: uploadGate
         )
         let store = InstructorStore(
             floorPlans: [plan],
-            floorPlanFileRepository: FloorPlanDetailRemoteStub(result: .success(floorPlanUpload.files)),
+            floorPlanFileRepository: FloorPlanDetailRemoteStub(
+                result: .success(floorPlanUpload.files),
+                uploadGate: uploadGate
+            ),
             worldMapFileRepository: worldMapRepository,
             floorPlanCatalogRepository: DemoFloorPlanCatalogRepository(floorPlans: [plan])
         )
@@ -183,9 +188,14 @@ final class FloorPlanManagementTests: XCTestCase {
         XCTAssertTrue(didLoadDetail)
         store.beginFloorPlanMaskEditing()
         store.saveFloorPlanMaskEdit()
+        let didStartUploadsTogether = await waitUntilAsync {
+            await uploadGate.startedUploadCount == 2
+        }
+        await uploadGate.releaseUploads()
         let didSaveEdit = await waitUntil {
             store.phase == .floorPlanDetail && !store.isUploadingFloorPlan
         }
+        XCTAssertTrue(didStartUploadsTogether)
         XCTAssertTrue(didSaveEdit)
 
         let updatedPlan = try XCTUnwrap(store.floorPlans.first)
@@ -381,21 +391,58 @@ final class FloorPlanManagementTests: XCTestCase {
         }
         return condition()
     }
+
+    private func waitUntilAsync(
+        attempts: Int = 200,
+        condition: @escaping () async -> Bool
+    ) async -> Bool {
+        for _ in 0..<attempts {
+            if await condition() { return true }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return await condition()
+    }
+}
+
+private actor UploadStartGate {
+    private var startedUploads = 0
+    private var isReleased = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    var startedUploadCount: Int { startedUploads }
+
+    func recordStartAndWait() async {
+        startedUploads += 1
+        guard !isReleased else { return }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func releaseUploads() {
+        isReleased = true
+        let pending = waiters
+        waiters.removeAll()
+        pending.forEach { $0.resume() }
+    }
 }
 
 private actor WorldMapRebindRepositoryStub: WorldMapFileRepository {
     private let reference: WorldMapReference
     private let files: WorldMapFiles
+    private let uploadGate: UploadStartGate?
     private var downloadCount = 0
     private var uploads: [(WorldMapReference, WorldMapFiles)] = []
 
-    init(reference: WorldMapReference, files: WorldMapFiles) {
+    init(reference: WorldMapReference, files: WorldMapFiles, uploadGate: UploadStartGate? = nil) {
         self.reference = reference
         self.files = files
+        self.uploadGate = uploadGate
     }
 
     func upload(_ files: WorldMapFiles, for reference: WorldMapReference) async throws {
         uploads.append((reference, files))
+        await uploadGate?.recordStartAndWait()
     }
 
     func download(_ reference: WorldMapReference) async throws -> WorldMapFiles {
@@ -412,12 +459,16 @@ private actor WorldMapRebindRepositoryStub: WorldMapFileRepository {
 private actor FloorPlanDetailRemoteStub: FloorPlanFileRepository {
     private(set) var downloadCount = 0
     private let result: Result<FloorPlanFiles, Error>
+    private let uploadGate: UploadStartGate?
 
-    init(result: Result<FloorPlanFiles, Error>) {
+    init(result: Result<FloorPlanFiles, Error>, uploadGate: UploadStartGate? = nil) {
         self.result = result
+        self.uploadGate = uploadGate
     }
 
-    func upload(_ files: FloorPlanFiles, for reference: FloorPlanReference) async throws {}
+    func upload(_ files: FloorPlanFiles, for reference: FloorPlanReference) async throws {
+        await uploadGate?.recordStartAndWait()
+    }
 
     func download(_ reference: FloorPlanReference) async throws -> FloorPlanFiles {
         downloadCount += 1
