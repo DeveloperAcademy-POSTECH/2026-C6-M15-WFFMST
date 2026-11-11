@@ -9,6 +9,13 @@ import FirebaseStorage
 import Foundation
 import OSLog
 
+protocol StorageTransferTask: AnyObject {
+    func cancel()
+}
+
+extension StorageDownloadTask: StorageTransferTask {}
+extension StorageUploadTask: StorageTransferTask {}
+
 /// Storage 구현이 같이 쓰는 크기 제한, 에러 변환, 지문 계산.
 enum StorageTransfer {
     struct UploadRequest: Sendable {
@@ -60,7 +67,15 @@ enum StorageTransfer {
         metadata.contentType = contentType
         let ref = try await reference(path)
         try Task.checkCancellation()
-        _ = try await ref.putDataAsync(data, metadata: metadata)
+        let _: Void = try await performCancellableTransfer { completion in
+            ref.putData(data, metadata: metadata) { _, error in
+                if let error {
+                    completion(.failure(error))
+                } else {
+                    completion(.success(()))
+                }
+            }
+        }
     }
 
     /// 사전 검증이 끝난 한 묶음의 독립적인 불변 파일을 동시에 처리한다.
@@ -191,9 +206,42 @@ enum StorageTransfer {
     static func download(_ path: String, maxBytes: Int64 = maxFileBytes) async throws -> Data {
         let ref = try await reference(path)
         do {
-            return try await ref.data(maxSize: maxBytes)
+            return try await performCancellableTransfer { completion in
+                ref.getData(maxSize: maxBytes) { data, error in
+                    if let error {
+                        completion(.failure(error))
+                    } else if let data {
+                        completion(.success(data))
+                    } else {
+                        completion(.failure(StorageTransferError.missingDownloadData))
+                    }
+                }
+            }
         } catch {
             throw mapDownloadError(error)
+        }
+    }
+
+    /// Swift 작업 취소를 Firebase가 반환한 실제 전송 작업까지 전달한다.
+    static func performCancellableTransfer<Value: Sendable>(
+        _ start: (@escaping @Sendable (Result<Value, Error>) -> Void) -> any StorageTransferTask
+    ) async throws -> Value {
+        let cancellation = StorageTransferCancellation()
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await withCheckedThrowingContinuation { continuation in
+                let task = start { result in
+                    let wasCancelled = cancellation.finish()
+                    if wasCancelled {
+                        continuation.resume(throwing: CancellationError())
+                    } else {
+                        continuation.resume(with: result)
+                    }
+                }
+                cancellation.register(task)
+            }
+        } onCancel: {
+            cancellation.cancel()
         }
     }
 
@@ -232,5 +280,52 @@ enum StorageTransfer {
             "event=floor-plan-save stage=\(stage, privacy: .public) file=\(fileRole, privacy: .public) bytes=\(byteCount, privacy: .public) result=\(result, privacy: .public) duration_ms=\(milliseconds, privacy: .public)"
         )
 #endif
+    }
+}
+
+private enum StorageTransferError: Error {
+    case missingDownloadData
+}
+
+private final class StorageTransferCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: (any StorageTransferTask)?
+    private var isCancellationRequested = false
+    private var isFinished = false
+
+    func register(_ task: any StorageTransferTask) {
+        lock.lock()
+        if isFinished {
+            lock.unlock()
+            return
+        }
+        if isCancellationRequested {
+            lock.unlock()
+            task.cancel()
+            return
+        }
+        self.task = task
+        lock.unlock()
+    }
+
+    func cancel() {
+        lock.lock()
+        guard !isFinished, !isCancellationRequested else {
+            lock.unlock()
+            return
+        }
+        isCancellationRequested = true
+        let task = task
+        lock.unlock()
+        task?.cancel()
+    }
+
+    func finish() -> Bool {
+        lock.lock()
+        isFinished = true
+        task = nil
+        let wasCancelled = isCancellationRequested
+        lock.unlock()
+        return wasCancelled
     }
 }

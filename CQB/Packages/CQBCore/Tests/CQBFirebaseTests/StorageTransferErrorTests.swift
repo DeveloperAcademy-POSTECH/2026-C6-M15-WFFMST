@@ -92,6 +92,30 @@ struct StorageTransferErrorTests {
         #expect(await recorder.uploadCount == 0)
     }
 
+    @Test("Swift 작업 취소가 진행 중인 Storage 전송을 취소한다")
+    func cancellationCancelsUnderlyingStorageTransfer() async {
+        let transfer = RecordingStorageTransferTask<Void>()
+        let task = Task {
+            try await StorageTransfer.performCancellableTransfer { completion in
+                transfer.install(completion)
+                return transfer
+            }
+        }
+
+        await transfer.waitUntilStarted()
+        task.cancel()
+
+        do {
+            try await task.value
+            Issue.record("취소된 Storage 전송이 성공으로 완료되었습니다.")
+        } catch is CancellationError {
+            // 기대한 취소 경로다.
+        } catch {
+            Issue.record("CancellationError 대신 \(error)가 전달되었습니다.")
+        }
+        #expect(transfer.cancellationCount == 1)
+    }
+
     @Test("한 파일 실패 시 원격 확인 중인 형제 작업의 신규 업로드를 취소한다")
     func firstFailureCancelsSiblingBeforeUpload() async {
         let requests = ["failure", "pending"].map { role in
@@ -102,18 +126,13 @@ struct StorageTransferErrorTests {
                 contentType: "application/octet-stream"
             )
         }
-        let remoteCheckGate = RemoteCheckGate()
+        let pendingTransfer = RecordingStorageTransferTask<Data>()
         let recorder = UploadInvocationRecorder()
-        let fallbackRelease = Task {
-            await remoteCheckGate.waitUntilWaiting()
-            try? await Task.sleep(for: .seconds(1))
-            await remoteCheckGate.release()
-        }
 
         do {
             try await StorageTransfer.uploadConcurrently(requests) { request in
                 if request.fileRole == "failure" {
-                    await remoteCheckGate.waitUntilWaiting()
+                    await pendingTransfer.waitUntilStarted()
                     throw UploadConcurrencyTestError.failedRequest
                 }
                 try await StorageTransfer.uploadIfMissingOrMatching(
@@ -123,12 +142,10 @@ struct StorageTransferErrorTests {
                     contentType: request.contentType,
                     maxBytes: request.maxBytes,
                     downloadOperation: { _, _ in
-                        await withTaskCancellationHandler {
-                            await remoteCheckGate.waitUntilReleased()
-                        } onCancel: {
-                            Task { await remoteCheckGate.release() }
+                        try await StorageTransfer.performCancellableTransfer { completion in
+                            pendingTransfer.install(completion)
+                            return pendingTransfer
                         }
-                        throw RepositoryError.notFound
                     },
                     uploadOperation: { _, _, _, _ in
                         await recorder.recordUpload()
@@ -142,8 +159,7 @@ struct StorageTransferErrorTests {
             Issue.record("첫 번째 파일 오류 대신 \(error)가 전달되었습니다.")
         }
 
-        fallbackRelease.cancel()
-        await fallbackRelease.value
+        #expect(pendingTransfer.cancellationCount == 1)
         #expect(await recorder.uploadCount == 0)
     }
 }
@@ -203,5 +219,50 @@ private actor UploadInvocationRecorder {
 
     func recordUpload() {
         uploadCount += 1
+    }
+}
+
+private final class RecordingStorageTransferTask<Value: Sendable>: StorageTransferTask, @unchecked Sendable {
+    private let lock = NSLock()
+    private var completion: (@Sendable (Result<Value, Error>) -> Void)?
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var storedCancellationCount = 0
+
+    var cancellationCount: Int {
+        lock.lock()
+        let count = storedCancellationCount
+        lock.unlock()
+        return count
+    }
+
+    func install(_ completion: @escaping @Sendable (Result<Value, Error>) -> Void) {
+        lock.lock()
+        self.completion = completion
+        let waiters = startWaiters
+        startWaiters.removeAll()
+        lock.unlock()
+        waiters.forEach { $0.resume() }
+    }
+
+    func waitUntilStarted() async {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            if completion != nil {
+                lock.unlock()
+                continuation.resume()
+            } else {
+                startWaiters.append(continuation)
+                lock.unlock()
+            }
+        }
+    }
+
+    func cancel() {
+        lock.lock()
+        storedCancellationCount += 1
+        let completion = completion
+        self.completion = nil
+        lock.unlock()
+        completion?(.failure(CancellationError()))
     }
 }
