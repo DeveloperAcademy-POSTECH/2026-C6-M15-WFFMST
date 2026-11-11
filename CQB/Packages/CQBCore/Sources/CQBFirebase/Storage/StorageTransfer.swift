@@ -54,10 +54,12 @@ enum StorageTransfer {
         contentType: String,
         maxBytes: Int64 = maxFileBytes
     ) async throws {
+        try Task.checkCancellation()
         guard Int64(data.count) <= maxBytes else { throw RepositoryError.fileTooLarge }
         let metadata = StorageMetadata()
         metadata.contentType = contentType
         let ref = try await reference(path)
+        try Task.checkCancellation()
         _ = try await ref.putDataAsync(data, metadata: metadata)
     }
 
@@ -82,6 +84,7 @@ enum StorageTransfer {
         try await withThrowingTaskGroup(of: Void.self) { group in
             for request in requests {
                 group.addTask {
+                    try Task.checkCancellation()
                     try await operation(request)
                 }
             }
@@ -102,11 +105,37 @@ enum StorageTransfer {
         contentType: String,
         maxBytes: Int64 = maxFileBytes
     ) async throws {
+        try await uploadIfMissingOrMatching(
+            data,
+            fileRole: fileRole,
+            to: path,
+            contentType: contentType,
+            maxBytes: maxBytes,
+            downloadOperation: { path, maxBytes in
+                try await download(path, maxBytes: maxBytes)
+            },
+            uploadOperation: { data, path, contentType, maxBytes in
+                try await upload(data, to: path, contentType: contentType, maxBytes: maxBytes)
+            }
+        )
+    }
+
+    /// 테스트에서 원격 확인과 업로드 경계의 취소를 검증할 수 있도록 작업 실행부를 주입한다.
+    static func uploadIfMissingOrMatching(
+        _ data: Data,
+        fileRole: String,
+        to path: String,
+        contentType: String,
+        maxBytes: Int64 = maxFileBytes,
+        downloadOperation: @escaping @Sendable (String, Int64) async throws -> Data,
+        uploadOperation: @escaping @Sendable (Data, String, String, Int64) async throws -> Void
+    ) async throws {
+        try Task.checkCancellation()
         guard Int64(data.count) <= maxBytes else { throw RepositoryError.fileTooLarge }
         let remoteCheckStarted = ContinuousClock.now
         let existing: Data
         do {
-            existing = try await download(path, maxBytes: maxBytes)
+            existing = try await downloadOperation(path, maxBytes)
         } catch let error as RepositoryError where error == .notFound {
             logTransferDuration(
                 "remote.check",
@@ -115,9 +144,10 @@ enum StorageTransfer {
                 since: remoteCheckStarted,
                 result: "missing"
             )
+            try Task.checkCancellation()
             let uploadStarted = ContinuousClock.now
             do {
-                try await upload(data, to: path, contentType: contentType, maxBytes: maxBytes)
+                try await uploadOperation(data, path, contentType, maxBytes)
                 logTransferDuration(
                     "remote.upload",
                     fileRole: fileRole,

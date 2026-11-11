@@ -55,6 +55,42 @@ struct StorageTransferErrorTests {
         #expect(result.maximumInFlight == requests.count)
         #expect(result.fileRoles == Set(requests.map(\.fileRole)))
     }
+
+    @Test("원격 파일 없음 확인 뒤 취소되면 신규 업로드를 시작하지 않는다")
+    func cancellationBeforeMissingFileUploadPreventsUpload() async {
+        let remoteCheckGate = RemoteCheckGate()
+        let recorder = UploadInvocationRecorder()
+        let task = Task {
+            try await StorageTransfer.uploadIfMissingOrMatching(
+                Data("image".utf8),
+                fileRole: "floorPlan.image",
+                to: "floorPlans/test/image.png",
+                contentType: "image/png",
+                downloadOperation: { _, _ in
+                    await remoteCheckGate.waitUntilReleased()
+                    throw RepositoryError.notFound
+                },
+                uploadOperation: { _, _, _, _ in
+                    await recorder.recordUpload()
+                }
+            )
+        }
+
+        await remoteCheckGate.waitUntilWaiting()
+
+        task.cancel()
+        await remoteCheckGate.release()
+
+        do {
+            try await task.value
+            Issue.record("취소된 작업이 성공으로 완료되었습니다.")
+        } catch is CancellationError {
+            // 기대한 취소 경로다.
+        } catch {
+            Issue.record("CancellationError 대신 \(error)가 전달되었습니다.")
+        }
+        #expect(await recorder.uploadCount == 0)
+    }
 }
 
 private actor UploadConcurrencyRecorder {
@@ -72,5 +108,41 @@ private actor UploadConcurrencyRecorder {
 
     func result() -> (maximumInFlight: Int, fileRoles: Set<String>) {
         (maximumInFlight, fileRoles)
+    }
+}
+
+private actor RemoteCheckGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var waitingContinuations: [CheckedContinuation<Void, Never>] = []
+    private(set) var isWaiting = false
+
+    func waitUntilReleased() async {
+        isWaiting = true
+        let pending = waitingContinuations
+        waitingContinuations.removeAll()
+        pending.forEach { $0.resume() }
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func waitUntilWaiting() async {
+        guard !isWaiting else { return }
+        await withCheckedContinuation { continuation in
+            waitingContinuations.append(continuation)
+        }
+    }
+
+    func release() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+private actor UploadInvocationRecorder {
+    private(set) var uploadCount = 0
+
+    func recordUpload() {
+        uploadCount += 1
     }
 }
