@@ -136,42 +136,7 @@ final class FloorPlanManagementTests: XCTestCase {
     func testMaskEditRebindsWorldMapAndUploadsBundlesConcurrently() async throws {
         let registration = try makeRegistration()
         let floorPlanUpload = try LocalFloorPlanFileBuilder.build(from: registration)
-        let worldMapDraft = LocalWorldMapScanDraft(
-            id: UUID(),
-            createdAt: Date(timeIntervalSince1970: 20),
-            archive: Data("world-map".utf8),
-            start: WorldMapStart(
-                pose: ARPose(x: 0, y: 1.5, z: 0, forwardX: 1, forwardZ: 0),
-                planPoint: NormalizedPoint(x: 0, y: 0.5),
-                directionPoint: NormalizedPoint(x: 1, y: 0.5)
-            ),
-            correspondences: [
-                WorldMapCorrespondence(
-                    label: "start",
-                    planPoint: NormalizedPoint(x: 0, y: 0.5),
-                    arPose: ARPose(x: 0, y: 1.5, z: 0, forwardX: 1, forwardZ: 0),
-                    capturedAt: Date(timeIntervalSince1970: 20)
-                ),
-                WorldMapCorrespondence(
-                    label: "checkpoint-1",
-                    planPoint: NormalizedPoint(x: 1, y: 0.5),
-                    arPose: ARPose(x: 4, y: 1.5, z: 0, forwardX: 1, forwardZ: 0),
-                    capturedAt: Date(timeIntervalSince1970: 21)
-                )
-            ],
-            alignment: WorldMapAlignment(
-                rotationDegrees: 0,
-                pixelsPerMeter: 4,
-                translation: ImagePoint(x: 0, y: 8),
-                rmsErrorMeters: 0,
-                algorithmVersion: "test"
-            ),
-            compression: .none
-        )
-        let existingWorldMap = try LocalWorldMapFileBuilder.build(
-            from: worldMapDraft,
-            floorPlan: floorPlanUpload.reference
-        )
+        let existingWorldMap = try makeWorldMapUpload(floorPlan: floorPlanUpload.reference)
         let plan = makePlan(
             registration: registration,
             reference: floorPlanUpload.reference,
@@ -220,6 +185,52 @@ final class FloorPlanManagementTests: XCTestCase {
         XCTAssertEqual(result.uploads.count, 1)
         XCTAssertEqual(result.uploads.first?.0, updatedWorldMap)
         XCTAssertEqual(result.uploads.first?.1.worldMapArchive, existingWorldMap.files.worldMapArchive)
+    }
+
+    func testWorldMapFailureCancelsFloorPlanUploadBeforeCatalogSave() async throws {
+        let registration = try makeRegistration()
+        let floorPlanUpload = try LocalFloorPlanFileBuilder.build(from: registration)
+        let existingWorldMap = try makeWorldMapUpload(floorPlan: floorPlanUpload.reference)
+        let plan = makePlan(
+            registration: registration,
+            reference: floorPlanUpload.reference,
+            worldMap: existingWorldMap.reference
+        )
+        let probe = BundleUploadFailureProbe()
+        let catalog = DemoFloorPlanCatalogRepository(floorPlans: [plan])
+        let store = InstructorStore(
+            floorPlans: [plan],
+            floorPlanFileRepository: CancellableFloorPlanRepository(
+                files: floorPlanUpload.files,
+                probe: probe
+            ),
+            worldMapFileRepository: FailingWorldMapRepository(
+                reference: existingWorldMap.reference,
+                files: existingWorldMap.files,
+                probe: probe
+            ),
+            floorPlanCatalogRepository: catalog
+        )
+        defer { store.shutdown() }
+
+        store.openFloorPlanList()
+        store.openFloorPlanDetail(plan.id)
+        let didLoadDetail = await waitUntil { store.floorPlanDetailState == .loaded }
+        XCTAssertTrue(didLoadDetail)
+
+        store.beginFloorPlanMaskEditing()
+        store.saveFloorPlanMaskEdit()
+
+        let didFail = await waitUntil { store.floorPlanUploadError != nil }
+        let result = await probe.result()
+        XCTAssertTrue(didFail)
+        XCTAssertTrue(result.floorPlanStarted)
+        XCTAssertTrue(result.floorPlanCancelled)
+        XCTAssertFalse(result.floorPlanCompleted)
+        XCTAssertEqual(store.phase, .floorPlanEditing)
+        XCTAssertFalse(store.isUploadingFloorPlan)
+        XCTAssertNil(store.floorPlanSavePresentationStage)
+        XCTAssertEqual(try catalog.fetchAll(), [plan])
     }
 
     func testOversizedWorldMapPreventsAnyFloorPlanUpload() async throws {
@@ -363,6 +374,42 @@ final class FloorPlanManagementTests: XCTestCase {
         )
     }
 
+    private func makeWorldMapUpload(floorPlan: FloorPlanReference) throws -> LocalWorldMapUpload {
+        let draft = LocalWorldMapScanDraft(
+            id: UUID(),
+            createdAt: Date(timeIntervalSince1970: 20),
+            archive: Data("world-map".utf8),
+            start: WorldMapStart(
+                pose: ARPose(x: 0, y: 1.5, z: 0, forwardX: 1, forwardZ: 0),
+                planPoint: NormalizedPoint(x: 0, y: 0.5),
+                directionPoint: NormalizedPoint(x: 1, y: 0.5)
+            ),
+            correspondences: [
+                WorldMapCorrespondence(
+                    label: "start",
+                    planPoint: NormalizedPoint(x: 0, y: 0.5),
+                    arPose: ARPose(x: 0, y: 1.5, z: 0, forwardX: 1, forwardZ: 0),
+                    capturedAt: Date(timeIntervalSince1970: 20)
+                ),
+                WorldMapCorrespondence(
+                    label: "checkpoint-1",
+                    planPoint: NormalizedPoint(x: 1, y: 0.5),
+                    arPose: ARPose(x: 4, y: 1.5, z: 0, forwardX: 1, forwardZ: 0),
+                    capturedAt: Date(timeIntervalSince1970: 21)
+                )
+            ],
+            alignment: WorldMapAlignment(
+                rotationDegrees: 0,
+                pixelsPerMeter: 4,
+                translation: ImagePoint(x: 0, y: 8),
+                rmsErrorMeters: 0,
+                algorithmVersion: "test"
+            ),
+            compression: .none
+        )
+        return try LocalWorldMapFileBuilder.build(from: draft, floorPlan: floorPlan)
+    }
+
     private func makePlan(
         registration: LocalRegisteredFloorPlan,
         reference: FloorPlanReference,
@@ -492,6 +539,82 @@ private actor FloorPlanDetailRemoteStub: FloorPlanFileRepository {
 
 private enum FloorPlanDetailTestError: Error {
     case offline
+}
+
+private enum BundleUploadTestError: Error {
+    case worldMapUpload
+}
+
+private actor BundleUploadFailureProbe {
+    private var floorPlanStarted = false
+    private var floorPlanCancelled = false
+    private var floorPlanCompleted = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func runFloorPlanUpload() async throws {
+        floorPlanStarted = true
+        let pending = startWaiters
+        startWaiters.removeAll()
+        pending.forEach { $0.resume() }
+        do {
+            try await Task.sleep(for: .seconds(30))
+            floorPlanCompleted = true
+        } catch is CancellationError {
+            floorPlanCancelled = true
+            throw CancellationError()
+        }
+    }
+
+    func waitUntilFloorPlanStarts() async {
+        guard !floorPlanStarted else { return }
+        await withCheckedContinuation { continuation in
+            startWaiters.append(continuation)
+        }
+    }
+
+    func result() -> (floorPlanStarted: Bool, floorPlanCancelled: Bool, floorPlanCompleted: Bool) {
+        (floorPlanStarted, floorPlanCancelled, floorPlanCompleted)
+    }
+}
+
+private actor CancellableFloorPlanRepository: FloorPlanFileRepository {
+    private let files: FloorPlanFiles
+    private let probe: BundleUploadFailureProbe
+
+    init(files: FloorPlanFiles, probe: BundleUploadFailureProbe) {
+        self.files = files
+        self.probe = probe
+    }
+
+    func upload(_ files: FloorPlanFiles, for reference: FloorPlanReference) async throws {
+        try await probe.runFloorPlanUpload()
+    }
+
+    func download(_ reference: FloorPlanReference) async throws -> FloorPlanFiles {
+        files
+    }
+}
+
+private actor FailingWorldMapRepository: WorldMapFileRepository {
+    private let reference: WorldMapReference
+    private let files: WorldMapFiles
+    private let probe: BundleUploadFailureProbe
+
+    init(reference: WorldMapReference, files: WorldMapFiles, probe: BundleUploadFailureProbe) {
+        self.reference = reference
+        self.files = files
+        self.probe = probe
+    }
+
+    func upload(_ files: WorldMapFiles, for reference: WorldMapReference) async throws {
+        await probe.waitUntilFloorPlanStarts()
+        throw BundleUploadTestError.worldMapUpload
+    }
+
+    func download(_ reference: WorldMapReference) async throws -> WorldMapFiles {
+        guard reference == self.reference else { throw RepositoryError.notFound }
+        return files
+    }
 }
 
 private actor FloorPlanUploadRecorder {

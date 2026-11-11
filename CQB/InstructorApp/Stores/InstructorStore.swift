@@ -1382,19 +1382,32 @@ final class InstructorStore {
                 // 두 파일 묶음의 크기 검증이 끝난 뒤 업로드를 시작한다.
                 try Task.checkCancellation()
                 activeStage = "remote.upload.parallel"
-                async let floorPlanUpload: Void = Self.runFloorPlanSaveStage("floorPlan.upload") {
-                    try await repository.upload(upload.files, for: upload.reference)
-                }
                 if let worldMapUpload, let worldMapRepository {
-                    async let worldMapUploadResult: Void = Self.runFloorPlanSaveStage("worldMap.upload") {
-                        try await worldMapRepository.upload(
-                            worldMapUpload.files,
-                            for: worldMapUpload.reference
-                        )
+                    try await withThrowingTaskGroup(of: Void.self) { group in
+                        group.addTask {
+                            try await Self.runFloorPlanSaveStage("floorPlan.upload") {
+                                try await repository.upload(upload.files, for: upload.reference)
+                            }
+                        }
+                        group.addTask {
+                            try await Self.runFloorPlanSaveStage("worldMap.upload") {
+                                try await worldMapRepository.upload(
+                                    worldMapUpload.files,
+                                    for: worldMapUpload.reference
+                                )
+                            }
+                        }
+                        do {
+                            while let _ = try await group.next() {}
+                        } catch {
+                            group.cancelAll()
+                            throw error
+                        }
                     }
-                    _ = try await (floorPlanUpload, worldMapUploadResult)
                 } else {
-                    try await floorPlanUpload
+                    try await Self.runFloorPlanSaveStage("floorPlan.upload") {
+                        try await repository.upload(upload.files, for: upload.reference)
+                    }
                 }
                 let worldMapReference = worldMapUpload?.reference
                 try Task.checkCancellation()
