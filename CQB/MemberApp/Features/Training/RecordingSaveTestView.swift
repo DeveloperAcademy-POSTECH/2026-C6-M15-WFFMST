@@ -57,10 +57,31 @@ struct RecordingSaveTestView: View {
                     }
                     if let diagnostics = correction.diagnostics {
                         DisclosureGroup("보정 후보 \(diagnostics.candidates.count)개 · 첫 후보를 저장") {
+                            Text(correction.mode == .worldMap ? "ARWorldMap 재인식 보정" : "수동 위치 설정 보정")
+                                .font(.caption)
+                            if let search = diagnostics.initialHeadingSearch, let metrics = search.phaseMetrics {
+                                Text(String(format: "사전 평가 %d개 · 정밀 탐색 %d회 · 전체 %.2f초",
+                                            metrics.coarseEvaluations, search.evaluatedRotations, diagnostics.elapsedSeconds))
+                                    .font(.caption)
+                                Text(String(format: "사전 %.3f초 · 작은 변형 %.3f초 · 일반 %.3f초",
+                                            metrics.coarseSeconds, metrics.coherentSeconds, metrics.generalSeconds))
+                                    .font(.caption)
+                            }
                             ForEach(Array(diagnostics.candidates.enumerated()), id: \.offset) { i, candidate in
                                 Text(String(format: "후보 %d · 점수 %.2f · 방향 보정 %.1f° · 미해결 %d개",
                                     i + 1, candidate.score, candidate.initialHeading?.offsetDegrees ?? 0, candidate.unresolved.count))
                                     .font(.caption).frame(maxWidth: .infinity, alignment: .leading)
+                                if let fit = candidate.initialHeading {
+                                    Text(String(format: "이동 거리 %.1f%% 보정 · 기준 경로 대비 최대 %.2fm 변형",
+                                                fit.distanceCoverage * 100, fit.localPositionChangeMeters))
+                                        .font(.caption).frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                if let registration = candidate.initialHeading?.registration {
+                                    Text(String(format: "이동 x %+.1fm · y %+.1fm · %@",
+                                                registration.translationXMeters, registration.translationYMeters,
+                                                registration.coherentOnly ? "작은 변형 탐색" : "일반 탐색"))
+                                        .font(.caption).frame(maxWidth: .infinity, alignment: .leading)
+                                }
                             }
                         }
                     }
