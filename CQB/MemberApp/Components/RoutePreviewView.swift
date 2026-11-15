@@ -48,10 +48,17 @@ struct RoutePreviewView: View {
                         }
                         let start = screen(raw.start)
                         context.fill(Path(ellipseIn: CGRect(x: start.x - 3, y: start.y - 3, width: 6, height: 6)), with: .color(.green))
+                        if showsCorrected, let first = correction?.document.vertices.first,
+                           hypot(first.point.x - raw.start.x, first.point.y - raw.start.y) > 1 {
+                            let correctedStart = screen(MapPoint(x: first.point.x, y: first.point.y))
+                            context.stroke(Path(ellipseIn: CGRect(x: correctedStart.x - 5, y: correctedStart.y - 5,
+                                                                 width: 10, height: 10)),
+                                           with: .color(.cyan), lineWidth: 2)
+                        }
                     }
                 }
                 .clipped()
-            Text("주황: 원본 · 하늘색: 보정 · 초록: 출발점")
+            Text("주황: 원본 · 하늘색: 보정 · 초록: 원본 출발점 · 하늘색 원: 이동한 보정 출발점")
                 .font(.caption)
         }
     }

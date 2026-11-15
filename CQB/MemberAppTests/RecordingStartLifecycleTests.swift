@@ -4,6 +4,42 @@ import XCTest
 
 @MainActor
 final class RecordingStartLifecycleTests: XCTestCase {
+    func testAutomaticCorrectionModeCommitsOnlyAfterSuccessfulStartAndSurvivesTrackingChanges() async throws {
+        let fixture = try Fixture(ready: false)
+        fixture.store.configurePositioning(setup: PositioningTestData.setup(fixture.map))
+        fixture.store.updatePositioning(pose: ARPose(x: 0, y: 1, z: 0, forwardX: 1, forwardZ: 0),
+                                        isNormal: true, trackingReady: true)
+        XCTAssertEqual(fixture.store.positioningState, .automaticReady)
+        fixture.feed.send(.running, session: fixture.session)
+        await eventually { fixture.starter.waitingForPermission }
+        XCTAssertNil(fixture.store.recordingCorrectionMode)
+        fixture.starter.allowPermission()
+        await eventually { fixture.starter.waitingForAudio }
+        fixture.starter.deliverAudio()
+        await eventually { fixture.store.phase == .recording }
+        XCTAssertEqual(fixture.store.recordingCorrectionMode, .worldMap)
+        fixture.store.updatePositioning(pose: nil, isNormal: false, trackingReady: false)
+        XCTAssertEqual(fixture.store.recordingCorrectionMode, .worldMap)
+        await fixture.cleanup()
+    }
+
+    func testManualFallbackRecordsManualCorrectionPolicy() async throws {
+        let fixture = try Fixture(ready: false, relocalizationTimeout: .milliseconds(10))
+        fixture.store.configurePositioning(setup: PositioningTestData.setup(fixture.map))
+        fixture.store.cameraSessionRunningChanged(true)
+        await eventually { fixture.store.canSetPositionManually }
+        // Existing resetPosition discards automatic positioning before manual confirmation.
+        try fixture.enter(fixture.session)
+        fixture.feed.send(.running, session: fixture.session)
+        await eventually { fixture.starter.waitingForPermission }
+        fixture.starter.allowPermission()
+        await eventually { fixture.starter.waitingForAudio }
+        fixture.starter.deliverAudio()
+        await eventually { fixture.store.phase == .recording }
+        XCTAssertEqual(fixture.store.recordingCorrectionMode, .manual)
+        await fixture.cleanup()
+    }
+
     func testEndedIsConsumedBeforePermissionResponseAndLateResponseCannotStartRecording() async throws {
         let fixture = try Fixture()
         fixture.feed.send(.running, session: fixture.session)
@@ -157,6 +193,7 @@ final class RecordingStartLifecycleTests: XCTestCase {
         XCTAssertEqual(fixture.store.phase, .join, file: file, line: line)
         XCTAssertFalse(fixture.store.canRetryRecordingStart, file: file, line: line)
         XCTAssertNil(fixture.store.recordingStartedAt, file: file, line: line)
+        XCTAssertNil(fixture.store.recordingCorrectionMode, file: file, line: line)
         XCTAssertNil(fixture.store.recordingFiles, file: file, line: line)
         XCTAssertFalse(fixture.starter.isCapturing, file: file, line: line)
         XCTAssertEqual(fixture.feed.metadataCount, 0, file: file, line: line)
@@ -183,12 +220,12 @@ private final class Fixture {
     let store: MemberStore
     let session: Session
 
-    init(ready: Bool = true) throws {
+    init(ready: Bool = true, relocalizationTimeout: Duration = .seconds(10)) throws {
         map = try BundledTrainingMapLoader.load()
         session = Session(id: UUID(), pin: "012345", name: "녹화 시작 취소", status: .waiting, floorPlan: map.reference)
         store = MemberStore(sessionRepository: feed, memberRepository: feed, floorPlanFileRepository: feed,
                             recordingRepository: feed, videoChunkRepository: feed, trackResultRepository: feed,
-                            recordingStarter: starter)
+                            relocalizationTimeout: relocalizationTimeout, recordingStarter: starter)
         try enter(session, ready: ready)
     }
 

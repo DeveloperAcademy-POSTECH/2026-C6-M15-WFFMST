@@ -4,21 +4,22 @@ import CQBCore
 nonisolated struct RouteCorrectionOutput: Sendable {
     let document: TrackResultDocument
     let diagnostics: MapMatchResult?
+    var mode: RouteCorrectionMode = .manual
 }
 
 /// V13 contextAware 결과를 공통 업로드 계약으로 변환한다. 원본 파일은 수정하지 않는다.
 nonisolated enum RouteCorrectionService {
-    static func correct(raw: RawTrackDocument, rawHash: String, map: TrainingMap) -> RouteCorrectionOutput {
+    static func correct(raw: RawTrackDocument, rawHash: String, map: TrainingMap, mode: RouteCorrectionMode = .manual) -> RouteCorrectionOutput {
         let input = raw.samples.map { MatchInput(meters: $0.relative, time: $0.t, segment: $0.segment) }
         let match = InitialHeadingMatcher.match(input: input, anchor: raw.start,
             pixelsPerMeter: raw.pixelsPerMeter, rotationDegrees: raw.rotationDegrees,
             map: map.navigation, mapHash: raw.floorPlan.navigationSHA256,
             recordingID: raw.identity.recordingID.uuidString, level: .standard,
-            preserveExcursions: true, improvedExcursions: true)
-        return convert(raw: raw, rawHash: rawHash, match: match)
+            preserveExcursions: true, improvedExcursions: true, mode: mode)
+        return convert(raw: raw, rawHash: rawHash, match: match, mode: mode)
     }
 
-    static func convert(raw: RawTrackDocument, rawHash: String, match: MapMatchResult?) -> RouteCorrectionOutput {
+    static func convert(raw: RawTrackDocument, rawHash: String, match: MapMatchResult?, mode: RouteCorrectionMode = .manual) -> RouteCorrectionOutput {
         var distance = 0.0
         for i in raw.samples.indices.dropFirst() {
             if raw.samples[i].segment == raw.samples[i - 1].segment,
@@ -92,11 +93,13 @@ nonisolated enum RouteCorrectionService {
         let failed = vertices.isEmpty
         let document = TrackResultDocument(identity: raw.identity, floorPlan: raw.floorPlan,
             sourceRawSHA256: rawHash,
-            algorithm: .init(name: "contextAware", version: "V13", settingsID: "standard-heading60-excursions-23.11pxpm"),
+            algorithm: .init(name: "contextAware", version: mode == .manual ? "V13" : "V13-registration1",
+                settingsID: mode == .manual ? "standard-heading60-excursions-23.11pxpm"
+                    : "worldmap-heading30-step5-shift1-step0.5-top4"),
             status: failed ? .failed : (intervals.isEmpty && warnings.isEmpty ? .done : .partial),
             vertices: vertices, sampleCoverage: coverage.sorted { $0.samples.from < $1.samples.from },
             unresolvedIntervals: intervals.sorted { $0.from < $1.from }, searchIncomplete: incomplete,
             warnings: warnings, failureReason: failed ? failure : nil)
-        return RouteCorrectionOutput(document: document, diagnostics: match)
+        return RouteCorrectionOutput(document: document, diagnostics: match, mode: mode)
     }
 }
