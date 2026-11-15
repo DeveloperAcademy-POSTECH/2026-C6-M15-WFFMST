@@ -53,7 +53,9 @@ nonisolated enum InitialHeadingMatcher {
         mode:RouteCorrectionMode = .manual,
         progress:@Sendable (Double)->Void = {_ in}) -> MapMatchResult? {
         guard input.count>1,rotationDegrees.isFinite,pixelsPerMeter.isFinite,pixelsPerMeter>0,
-              budgetSeconds>0,map.grid.isFree(anchor) else { return nil }
+              budgetSeconds>0,anchor.x.isFinite,anchor.y.isFinite else { return nil }
+        // 재인식 모드는 이동한 각 출발점을 검사한다. 수동/기존 탐색은 원본 출발점을 고정한다.
+        guard (mode == .worldMap && improvedExcursions) || map.grid.isFree(anchor) else { return nil }
         let start=Date(),deadline=start.addingTimeInterval(budgetSeconds),halfRange=60.0
         let baseline=normalized(rotationDegrees)
         var total=0.0

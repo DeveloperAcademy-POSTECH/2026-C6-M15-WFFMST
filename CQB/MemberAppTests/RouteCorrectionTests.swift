@@ -3,6 +3,43 @@ import XCTest
 @testable import MemberApp
 
 final class RouteCorrectionTests: XCTestCase {
+    func testWorldMapRecoversBlockedOriginalAnchorUsingFreeTranslatedAnchor() throws {
+        let map = corridorMap(originalAnchorFree: false)
+        let anchor = MapPoint(x: 20, y: 40)
+        XCTAssertFalse(map.grid.isFree(anchor))
+        let input = straightInput()
+        let result = try XCTUnwrap(match(input, anchor: anchor, map: map, mode: .worldMap))
+        let chosen = try XCTUnwrap(result.chosen)
+        XCTAssertEqual(chosen.initialHeading?.distanceCoverage, 1)
+        XCTAssertEqual(chosen.initialHeading?.registration?.translationYMeters, 1)
+        XCTAssertEqual(chosen.vertices.first?.point.y, 50)
+        XCTAssertEqual(chosen.vertices.last?.sampleIndex, input.count - 1)
+        XCTAssertTrue(chosen.unresolved.isEmpty)
+        for candidate in result.candidates {
+            XCTAssertTrue(map.grid.isFree(try XCTUnwrap(candidate.vertices.first).point))
+            for (a, b) in zip(candidate.vertices, candidate.vertices.dropFirst()) where a.part == b.part {
+                XCTAssertTrue(map.grid.canTravel(a.point, b.point))
+            }
+        }
+    }
+
+    func testManualStillRejectsBlockedOriginalAnchor() {
+        XCTAssertNil(match(straightInput(), anchor: MapPoint(x: 20, y: 40),
+                           map: corridorMap(originalAnchorFree: false), mode: .manual))
+    }
+
+    func testWorldMapFailsWhenEveryTranslatedAnchorIsBlocked() {
+        let map = MatchNavigationMap(grid: RouteObstacleGrid(columns: 160, rows: 100, cellSize: 1,
+            blocked: Array(repeating: 1, count: 160 * 100), minX: 0, maxX: 159, minY: 0, maxY: 99))
+        XCTAssertNil(match(straightInput(), anchor: MapPoint(x: 20, y: 40), map: map, mode: .worldMap))
+    }
+
+    func testWorldMapStillRejectsNonfiniteOriginalAnchor() {
+        for anchor in [MapPoint(x: .nan, y: 40), MapPoint(x: 20, y: .infinity)] {
+            XCTAssertNil(match(straightInput(), anchor: anchor, map: freeMap(), mode: .worldMap))
+        }
+    }
+
     func testWorldMapRegistrationIncludesZeroAndCardinalOffsetsOnly() {
         let candidates = RouteRegistration.worldMapCandidates
         XCTAssertEqual(candidates.count, 117)
@@ -104,10 +141,10 @@ final class RouteCorrectionTests: XCTestCase {
             blocked: Array(repeating: 0, count: 160 * 100), minX: 0, maxX: 159, minY: 0, maxY: 99))
     }
 
-    private func corridorMap() -> MatchNavigationMap {
+    private func corridorMap(originalAnchorFree: Bool = true) -> MatchNavigationMap {
         var mask = Array(repeating: UInt8(1), count: 160 * 100)
         for y in 48...54 { for x in 15...140 { mask[y * 160 + x] = 0 } }
-        mask[40 * 160 + 20] = 0
+        if originalAnchorFree { mask[40 * 160 + 20] = 0 }
         return MatchNavigationMap(grid: RouteObstacleGrid(columns: 160, rows: 100, cellSize: 1,
             blocked: mask, minX: 0, maxX: 159, minY: 0, maxY: 99))
     }
