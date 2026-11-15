@@ -3,6 +3,38 @@ import XCTest
 @testable import MemberApp
 
 final class RouteCorrectionTests: XCTestCase {
+    func testGeneralSearchRetainsBestCoherentTranslationAndOriginalBaseline() throws {
+        let map = bentCorridorMap()
+        let anchor = MapPoint(x: 20, y: 40)
+        let input = straightInput()
+        let result = try XCTUnwrap(match(input, anchor: anchor, map: map, mode: .worldMap))
+        let chosen = try XCTUnwrap(result.chosen)
+        let registration = try XCTUnwrap(chosen.initialHeading?.registration)
+        // Following the bend needs more than the coherent-only ±12° local correction.
+        XCTAssertFalse(registration.coherentOnly)
+        XCTAssertEqual(registration.translationXMeters, 0)
+        XCTAssertEqual(registration.translationYMeters, 1)
+        XCTAssertEqual(chosen.initialHeading?.distanceCoverage, 1)
+        XCTAssertEqual(chosen.vertices.last?.sampleIndex, input.count - 1)
+        XCTAssertTrue(chosen.unresolved.isEmpty)
+        let search = try XCTUnwrap(result.initialHeadingSearch)
+        let trials = try XCTUnwrap(search.phaseMetrics).generalRegistrations
+        let first = try XCTUnwrap(trials.first)
+        XCTAssertEqual(first.translationYMeters, 1)
+        XCTAssertFalse(first.coherentOnly)
+        XCTAssertEqual(trials.dropFirst().first, RouteRegistration(offsetDegrees: 0))
+        XCTAssertEqual(Set(trials).count, trials.count)
+        XCTAssertLessThanOrEqual(search.evaluatedRotations, 25)
+        // Only the best shifted origin is expanded; unshifted search is a single baseline.
+        for trial in trials {
+            XCTAssertTrue(trial == RouteRegistration(offsetDegrees: 0)
+                || (trial.translationXMeters == 0 && trial.translationYMeters == 1))
+        }
+        for (a, b) in zip(chosen.vertices, chosen.vertices.dropFirst()) where a.part == b.part {
+            XCTAssertTrue(map.grid.canTravel(a.point, b.point))
+        }
+    }
+
     func testWorldMapRecoversBlockedOriginalAnchorUsingFreeTranslatedAnchor() throws {
         let map = corridorMap(originalAnchorFree: false)
         let anchor = MapPoint(x: 20, y: 40)
@@ -147,5 +179,14 @@ final class RouteCorrectionTests: XCTestCase {
         if originalAnchorFree { mask[40 * 160 + 20] = 0 }
         return MatchNavigationMap(grid: RouteObstacleGrid(columns: 160, rows: 100, cellSize: 1,
             blocked: mask, minX: 0, maxX: 159, minY: 0, maxY: 99))
+    }
+
+    private func bentCorridorMap() -> MatchNavigationMap {
+        var mask = Array(repeating: UInt8(1), count: 160 * 160)
+        for x in 15...50 { for y in 47...53 { mask[y * 160 + x] = 0 } }
+        for y in 50...125 { for x in 47...53 { mask[y * 160 + x] = 0 } }
+        mask[40 * 160 + 20] = 0 // The unshifted origin is free but isolated.
+        return MatchNavigationMap(grid: RouteObstacleGrid(columns: 160, rows: 160, cellSize: 1,
+            blocked: mask, minX: 0, maxX: 159, minY: 0, maxY: 159))
     }
 }

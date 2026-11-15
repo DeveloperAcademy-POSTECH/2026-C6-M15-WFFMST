@@ -20,6 +20,8 @@ nonisolated struct InitialHeadingPhaseMetrics: Sendable {
     let coarseSeconds: Double
     let coherentSeconds: Double
     let generalSeconds: Double
+    /// 실행 중 일반 탐색의 순서와 중복을 확인한다. JSON에는 저장하지 않는다.
+    var generalRegistrations: [RouteRegistration] = []
 }
 
 nonisolated struct InitialHeadingSearchSummary: Codable, Sendable {
@@ -69,6 +71,7 @@ nonisolated enum InitialHeadingMatcher {
         var retained:[Trial]=[],evaluated=Set<RouteRegistration>(),tested:[InitialHeadingFit]=[]
         var baselineTrial:Trial?,limited=false,evaluationCount=0
         var resultTemplate:MapMatchResult?
+        var generalRegistrations: [RouteRegistration] = []
         func rank(_ a:Trial,_ b:Trial)->Bool {
             if abs(a.fit.objective-b.fit.objective)>1e-9 { return a.fit.objective<b.fit.objective }
             return abs(a.fit.offsetDegrees)<abs(b.fit.offsetDegrees)
@@ -98,6 +101,7 @@ nonisolated enum InitialHeadingMatcher {
             let angle=normalized(baseline+offset)
             let shiftedAnchor=key.anchor(from:anchor,pixelsPerMeter:pixelsPerMeter)
             evaluationCount += 1
+            if !coherent { generalRegistrations.append(key) }
             let trialStarted=Date()
             guard let result=NonrigidRouteMatcher.match(input:input,anchor:shiftedAnchor,pixelsPerMeter:pixelsPerMeter,
                 rotationDegrees:angle,map:map,mapHash:mapHash,recordingID:recordingID,level:level,budgetSeconds:budget,
@@ -239,20 +243,31 @@ nonisolated enum InitialHeadingMatcher {
             $0.fit.distanceCoverage>0.999 && ($0.candidate.deformation?.maxDirectionChangeDegrees ?? 180)<=24
                 && $0.fit.localPositionChangeMeters<=1.5 && $0.fit.objective<0.15 && !$0.candidate.searchLimited
         } == true
-        // If a small-deformation explanation completes the route, do not spend the phone's budget
-        // inventing large warps. Otherwise retain the old wider search as a clearly bounded fallback.
+        // Freeze only the best coherent registration before adding general-search candidates.
+        let fallbackRegistration = mode == .worldMap ? retained.first?.fit.registration : nil
+        // A completed small-deformation fit does not need the wider search.
         if !coherentFit {
-            evaluate(0)
+            let dx = fallbackRegistration?.translationXMeters ?? 0
+            let dy = fallbackRegistration?.translationYMeters ?? 0
+            if let fallbackRegistration {
+                evaluate(fallbackRegistration.offsetDegrees, dx: dx, dy: dy)
+                // Keep an unshifted baseline without doubling every rotation hypothesis.
+                if (dx != 0 || dy != 0), map.grid.isFree(anchor) { evaluate(0) }
+            }
+            evaluate(0, dx: dx, dy: dy)
             for offset in [-10.0,10,-20,20,-30,30,-40,40,-50,50,-60,60] {
                 if Task.isCancelled { return nil }
                 if Date()>=deadline || evaluationCount>=25 { limited=true;break }
-                evaluate(offset)
+                evaluate(offset, dx: dx, dy: dy)
             }
-            if let center=retained.first?.fit.offsetDegrees {
+            if let fit=retained.first?.fit {
+                let center = fit.offsetDegrees
+                let refinement = fit.registration
                 for step in [-8.0,-6,-4,-2,2,4,6,8] where abs(center+step)<=halfRange {
                     if Task.isCancelled { return nil }
                     if Date()>=deadline || evaluationCount>=25 { limited=true;break }
-                    evaluate(center+step)
+                    evaluate(center+step, dx: refinement?.translationXMeters ?? 0,
+                             dy: refinement?.translationYMeters ?? 0)
                 }
             }
         }
@@ -310,7 +325,7 @@ nonisolated enum InitialHeadingMatcher {
                 coarseEvaluations: coarseEvaluations,
                 coarseSeconds: coarseFinished - coarseStarted,
                 coherentSeconds: coherentFinished - coarseFinished,
-                generalSeconds: generalSeconds)
+                generalSeconds: generalSeconds, generalRegistrations: generalRegistrations)
         }
         progress(1)
         return template
