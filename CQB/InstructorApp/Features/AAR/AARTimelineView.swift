@@ -127,7 +127,7 @@ private struct AARPlaybackTrack: View {
         }
     }
 
-    /// 재생바 위의 큰 소리 표시(Figma `iPad 06 · AAR` 노란 핀). 누르면 그 시각으로 이동한다.
+    /// 재생바 위의 큰 소리 표시(Figma `iPad 06 · AAR` 빨간 핀). 누르면 그 시각으로 이동한다.
     /// 핀 끝(높이 29 중 28)이 재생바 아래 끝에 닿도록 44pt 누름 영역 가운데에서 11.5 올린다.
     private func soundEventMarkers(width: CGFloat) -> some View {
         ZStack(alignment: .leading) {
