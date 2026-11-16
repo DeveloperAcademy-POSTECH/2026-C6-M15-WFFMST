@@ -125,8 +125,7 @@ struct AARMovementView: View {
                         HStack(spacing: 4) {
                             participantMarker(
                                 participant,
-                                showsName: false,
-                                usesCompactSoundBadge: true
+                                showsName: false
                             )
                             .opacity(aarStore.isSoundDetected(for: participant.id) ? 1 : 0.35)
                             Text(participant.displayName)
@@ -194,8 +193,7 @@ struct AARMovementView: View {
 
     private func participantMarker(
         _ participant: InstructorParticipant,
-        showsName: Bool,
-        usesCompactSoundBadge: Bool = false
+        showsName: Bool
     ) -> some View {
         let slotNumber = store.videoSlotNumber(for: participant.id)
         let isSoundDetected = aarStore.isSoundDetected(for: participant.id)
@@ -225,16 +223,6 @@ struct AARMovementView: View {
         }
         .frame(width: 48, height: 48)
         .contentShape(.circle)
-        .overlay(alignment: .topTrailing) {
-            if isSoundDetected {
-                soundDetectedBadge(compact: usesCompactSoundBadge)
-                    .offset(
-                        x: usesCompactSoundBadge ? 7 : 5,
-                        y: usesCompactSoundBadge ? 0 : 3
-                    )
-                    .allowsHitTesting(false)
-            }
-        }
         .overlay(alignment: .top) {
             if showsName {
                 Text(participant.name)
@@ -265,19 +253,6 @@ struct AARMovementView: View {
         return slotNumber == nil
             ? InstructorColor.aarContentPrimary
             : InstructorColor.aarParticipantSelectedBorder
-    }
-
-    private func soundDetectedBadge(compact: Bool) -> some View {
-        let size: CGFloat = compact ? 18 : 24
-
-        return Circle()
-            .fill(InstructorColor.aarContentPrimary)
-            .frame(width: size, height: size)
-            .overlay {
-                Image(systemName: "ear")
-                    .font(.system(size: compact ? 10 : 13, weight: .semibold))
-                    .foregroundStyle(InstructorColor.aarPlayerSurface)
-            }
     }
 
     private func markerAccessibilityLabel(_ participant: InstructorParticipant) -> String {
