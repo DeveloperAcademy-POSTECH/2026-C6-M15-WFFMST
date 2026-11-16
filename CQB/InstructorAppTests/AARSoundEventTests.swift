@@ -66,6 +66,34 @@ final class AARSoundEventHighlightTests: XCTestCase {
     }
 }
 
+final class AARTimelineGeometryTests: XCTestCase {
+    private let geometry = AARTimelineGeometry(width: 100)
+
+    func testPlacesTimelineCentersInsideThumbRadius() {
+        XCTAssertEqual(geometry.x(for: 0), 8, accuracy: 0.001)
+        XCTAssertEqual(geometry.x(for: 0.5), 50, accuracy: 0.001)
+        XCTAssertEqual(geometry.x(for: 1), 92, accuracy: 0.001)
+    }
+
+    func testConvertsTimelineLocationBackToFraction() {
+        XCTAssertEqual(geometry.fraction(at: 8), 0, accuracy: 0.001)
+        XCTAssertEqual(geometry.fraction(at: 50), 0.5, accuracy: 0.001)
+        XCTAssertEqual(geometry.fraction(at: 92), 1, accuracy: 0.001)
+        XCTAssertEqual(geometry.fraction(at: -10), 0, accuracy: 0.001)
+        XCTAssertEqual(geometry.fraction(at: 110), 1, accuracy: 0.001)
+    }
+
+    func testFractionRoundTripsThroughTimelineLocation() {
+        for fraction in [0.0, 0.2, 0.5, 0.8, 1.0] {
+            XCTAssertEqual(
+                geometry.fraction(at: geometry.x(for: fraction)),
+                fraction,
+                accuracy: 0.001
+            )
+        }
+    }
+}
+
 @MainActor
 final class AARSoundEventStoreTests: XCTestCase {
     // @MainActor 객체를 쓰는 테스트는 async로 둔다(#161).

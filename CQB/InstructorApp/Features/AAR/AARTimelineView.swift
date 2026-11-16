@@ -80,6 +80,25 @@ struct AARTimelineView: View {
     }
 }
 
+nonisolated struct AARTimelineGeometry {
+    static let thumbDiameter: CGFloat = 16
+
+    let width: CGFloat
+
+    var thumbRadius: CGFloat { Self.thumbDiameter / 2 }
+    var trackWidth: CGFloat { max(0, width - Self.thumbDiameter) }
+
+    func x(for fraction: Double) -> CGFloat {
+        let clamped = min(max(fraction, 0), 1)
+        return thumbRadius + trackWidth * CGFloat(clamped)
+    }
+
+    func fraction(at x: CGFloat) -> Double {
+        guard trackWidth > 0 else { return 0 }
+        return min(max(Double((x - thumbRadius) / trackWidth), 0), 1)
+    }
+}
+
 private struct AARPlaybackTrack: View {
     let value: Double
     let range: ClosedRange<Double>
@@ -89,26 +108,33 @@ private struct AARPlaybackTrack: View {
 
     var body: some View {
         GeometryReader { geometry in
+            let metrics = AARTimelineGeometry(width: geometry.size.width)
+
             ZStack(alignment: .leading) {
                 Rectangle()
                     .fill(InstructorColor.aarTimelineTrack)
-                    .frame(height: 4)
+                    .frame(width: metrics.trackWidth, height: 4)
+                    .offset(x: metrics.thumbRadius)
 
                 Rectangle()
                     .fill(InstructorColor.aarTimelineProgress)
-                    .frame(width: geometry.size.width * progress, height: 4)
+                    .frame(width: metrics.trackWidth * CGFloat(progress), height: 4)
+                    .offset(x: metrics.thumbRadius)
 
                 Circle()
                     .fill(InstructorColor.aarTimelineProgress)
-                    .frame(width: 16, height: 16)
-                    .offset(x: thumbOffset(for: geometry.size.width))
+                    .frame(
+                        width: AARTimelineGeometry.thumbDiameter,
+                        height: AARTimelineGeometry.thumbDiameter
+                    )
+                    .offset(x: metrics.x(for: progress) - metrics.thumbRadius)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .contentShape(.rect)
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { gesture in
-                        updateValue(at: gesture.location.x, width: geometry.size.width)
+                        updateValue(at: gesture.location.x, metrics: metrics)
                     }
             )
             .accessibilityElement()
@@ -122,14 +148,14 @@ private struct AARPlaybackTrack: View {
                 }
             }
             .overlay(alignment: .leading) {
-                soundEventMarkers(width: geometry.size.width)
+                soundEventMarkers(metrics: metrics)
             }
         }
     }
 
     /// 재생바 위의 큰 소리 표시(Figma `iPad 06 · AAR` 빨간 핀). 누르면 그 시각으로 이동한다.
-    /// 핀 끝(높이 29 중 28)이 재생바 아래 끝에 닿도록 44pt 누름 영역 가운데에서 11.5 올린다.
-    private func soundEventMarkers(width: CGFloat) -> some View {
+    /// 10×29 SVG를 44pt 누름 영역 가운데에서 11.5pt 올려 표시한다.
+    private func soundEventMarkers(metrics: AARTimelineGeometry) -> some View {
         ZStack(alignment: .leading) {
             ForEach(visibleSoundEvents) { event in
                 Button {
@@ -144,7 +170,7 @@ private struct AARPlaybackTrack: View {
                         .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
-                .offset(x: markerOffset(for: event.time, width: width) - 22)
+                .offset(x: metrics.x(for: fraction(for: event.time)) - 22)
                 .accessibilityLabel("큰 소리 \(timeLabel(event.time)), 대원 \(event.participantIDs.count)명")
                 .accessibilityHint("이 시각으로 이동합니다.")
                 .accessibilityIdentifier("aar.soundEvent.\(Int(event.time * 1_000))")
@@ -158,10 +184,9 @@ private struct AARPlaybackTrack: View {
         return soundEvents.filter { range.contains($0.time) }
     }
 
-    private func markerOffset(for time: Double, width: CGFloat) -> CGFloat {
+    private func fraction(for time: Double) -> Double {
         guard range.upperBound > range.lowerBound else { return 0 }
-        let fraction = (time - range.lowerBound) / (range.upperBound - range.lowerBound)
-        return CGFloat(fraction) * width
+        return min(max((time - range.lowerBound) / (range.upperBound - range.lowerBound), 0), 1)
     }
 
     private var progress: Double {
@@ -169,13 +194,8 @@ private struct AARPlaybackTrack: View {
         return min(max((value - range.lowerBound) / (range.upperBound - range.lowerBound), 0), 1)
     }
 
-    private func thumbOffset(for width: CGFloat) -> CGFloat {
-        max(0, width - 16) * progress
-    }
-
-    private func updateValue(at x: CGFloat, width: CGFloat) {
-        guard width > 0 else { return }
-        let fraction = min(max(Double(x / width), 0), 1)
+    private func updateValue(at x: CGFloat, metrics: AARTimelineGeometry) {
+        let fraction = metrics.fraction(at: x)
         onChange(range.lowerBound + fraction * (range.upperBound - range.lowerBound))
     }
 
