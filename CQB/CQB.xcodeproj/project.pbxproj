@@ -63,6 +63,7 @@
 				"docs/issue-168-sound-events.md",
 				"docs/issue-192-real-sound-candidates.md",
 				"docs/issue-142-hifi-spec.md",
+				"docs/issue-240-floor-plan-save-metrics.md",
 				docs/README.md,
 			);
 			target = 788A1084307682B8003DEA3E /* InstructorApp */;
@@ -76,6 +77,7 @@
 				"docs/issue-136-implementation.md",
 				"docs/issue-150-implementation.md",
 				"docs/issue-172-sound-candidates.md",
+				"docs/issue-213-implementation.md",
 			);
 			target = 788A10723076802C003DEA3E /* MemberApp */;
 		};

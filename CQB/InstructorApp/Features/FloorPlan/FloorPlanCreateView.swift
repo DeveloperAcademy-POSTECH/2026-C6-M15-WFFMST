@@ -1270,7 +1270,9 @@ struct FloorPlanCreateView: View {
     }
 
     private var floorPlanSavingOverlay: some View {
-        FloorPlanSavingOverlay()
+        FloorPlanSavingOverlay(
+            message: app.floorPlanSavePresentationStage?.message ?? "잠시만 기다려주세요."
+        )
     }
 
     private static let mediumBodyFont: Font = {
@@ -1279,6 +1281,8 @@ struct FloorPlanCreateView: View {
 }
 
 private struct FloorPlanSavingOverlay: View {
+    let message: String
+
     var body: some View {
         ZStack {
             DSPalette.Neutral.black
@@ -1289,10 +1293,11 @@ private struct FloorPlanSavingOverlay: View {
                     .dsTextStyle(DSTypography.headingSemiBold24)
                     .foregroundStyle(DSPalette.Gray.g50)
 
-                Text("도면 정보를 저장하고 있습니다.\n\n잠시만 기다려주세요.")
+                Text(message)
                     .dsTextStyle(DSTypography.bodyRegular16)
                     .foregroundStyle(DSPalette.Gray.g100)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("floorPlan.uploading.message")
             }
             .padding(.horizontal, 22)
             .padding(.top, 24)
@@ -1333,7 +1338,7 @@ private struct FloorPlanSavingGlassStyle: ViewModifier {
 }
 
 #Preview("도면 저장 로딩") {
-    FloorPlanSavingOverlay()
+    FloorPlanSavingOverlay(message: "잠시만 기다려주세요.")
         .frame(width: 1_366, height: 1_024)
 }
 
