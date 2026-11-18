@@ -10,7 +10,9 @@
 
 출력: CQB/InstructorApp/Resources/PrivateDemo/ (gitignore, 커밋 금지)
   Xcode 폴더 동기화가 하위 폴더를 번들 루트로 펼치므로 파일 이름을 겹치지 않게 바꾼다.
-  ShowcaseSession.json, ShowcaseFloorPlan-*.{png,json,bin}, Showcase-<recordingID>-{result.json,sound.json,chunk_NNNN.mp4}
+  세션마다 아래 파일을 만들고, 같은 세션의 이전 파일만 지운다. 다른 세션 파일은 그대로 둔다.
+  ShowcaseSession-<sessionID>.json, ShowcaseFloorPlan-<floorPlanID>-{original.png,navigation-map.json,resolved-mask.bin},
+  Showcase-<recordingID>-{result.json,sound.json,chunk_NNNN.mp4}
 교관 uid, PIN, 대원 uid는 옮기지 않는다.
 """
 import json
@@ -42,21 +44,25 @@ def epoch(iso):
     return datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp()
 
 
-def main(source: Path):
+def main(source: Path, floor_plan_name: str):
     session = fields(json.loads((source / "session.json").read_text()))
     members = [fields(d) for d in json.loads((source / "members.json").read_text())["documents"]]
     recordings = [fields(d) for d in json.loads((source / "recordings.json").read_text())["documents"]]
     session_id = session["id"]
     floor_plan = session["floorPlan"]
 
-    if OUTPUT.exists():
-        shutil.rmtree(OUTPUT)
-    OUTPUT.mkdir(parents=True)
+    OUTPUT.mkdir(parents=True, exist_ok=True)
+    old = OUTPUT / f"ShowcaseSession-{session_id}.json"
+    if old.exists():
+        for entry in json.loads(old.read_text())["members"]:
+            for path in OUTPUT.glob(f"Showcase-{entry['recordingID']}-*"):
+                path.unlink()
+        old.unlink()
 
-    plan_dir = source / "floorPlan" / floor_plan["floorPlanID"]
-    shutil.copy(plan_dir / "original.png", OUTPUT / "ShowcaseFloorPlan-original.png")
-    shutil.copy(plan_dir / "navigation-map.json", OUTPUT / "ShowcaseFloorPlan-navigation-map.json")
-    shutil.copy(plan_dir / "resolved-mask.bin", OUTPUT / "ShowcaseFloorPlan-resolved-mask.bin")
+    plan_id = floor_plan["floorPlanID"]
+    plan_dir = source / "floorPlan" / plan_id
+    for name in ("original.png", "navigation-map.json", "resolved-mask.bin"):
+        shutil.copy(plan_dir / name, OUTPUT / f"ShowcaseFloorPlan-{plan_id}-{name}")
 
     names = {m["id"]: m["name"] for m in members}
     entries = []
@@ -65,7 +71,9 @@ def main(source: Path):
         rid = identity["recordingID"]
         rec_dir = source / "storage" / session_id / "recordings" / rid
         chunks = int(rec["videoChunkCount"])
-        shutil.copy(rec_dir / "result.json", OUTPUT / f"Showcase-{rid}-result.json")
+        result = json.loads((rec_dir / "result.json").read_text())
+        result["identity"] = identity  # 앱이 요청한 세션, 대원, 녹화와 맞춘다
+        (OUTPUT / f"Showcase-{rid}-result.json").write_text(json.dumps(result, ensure_ascii=False))
         if (rec_dir / "sound-candidates.json").exists():
             shutil.copy(rec_dir / "sound-candidates.json", OUTPUT / f"Showcase-{rid}-sound.json")
         for index in range(chunks):
@@ -82,6 +90,7 @@ def main(source: Path):
     manifest = {
         "sessionID": session_id,
         "name": session["name"],
+        "floorPlanName": floor_plan_name,
         "startedAt": epoch(session["startedAt"]),
         "endedAt": max(epoch(r["lastActiveAt"]) for r in recordings),
         "floorPlan": {
@@ -90,12 +99,12 @@ def main(source: Path):
         },
         "members": entries,
     }
-    (OUTPUT / "ShowcaseSession.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2))
+    (OUTPUT / f"ShowcaseSession-{session_id}.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2))
     total = sum(p.stat().st_size for p in OUTPUT.iterdir())
     print(f"{OUTPUT}: {len(list(OUTPUT.iterdir()))}개 파일, {total / 1_048_576:.1f} MiB")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        sys.exit("사용법: export-showcase-session.py <받은 세션 폴더>")
-    main(Path(sys.argv[1]))
+    if len(sys.argv) != 3:
+        sys.exit("사용법: export-showcase-session.py <받은 세션 폴더> <도면 이름>")
+    main(Path(sys.argv[1]), sys.argv[2])

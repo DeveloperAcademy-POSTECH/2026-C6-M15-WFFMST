@@ -1,9 +1,9 @@
 import CQBCore
 import Foundation
 
-/// 쇼케이스 부스에서 데모 모드로 보여줄 실제 훈련 세션 (#252, 머지하지 않는 브랜치).
+/// 쇼케이스 부스에서 일반 모드 이전 기록으로 보여줄 훈련 세션 (#252, 머지하지 않는 브랜치).
 /// `Resources/PrivateDemo/`(gitignore)에 `scripts/export-showcase-session.py`로 만든 파일이 있을 때만 쓴다.
-/// 파일이 없으면 `load()`가 nil이고 데모 모드는 기존 가짜 데이터로 동작한다.
+/// 세션마다 `ShowcaseSession-<sessionID>.json` 하나를 두며, 파일이 없으면 쇼케이스 세션 없이 동작한다.
 nonisolated struct ShowcaseSession: Sendable {
     struct Participant: Sendable {
         let memberID: UUID
@@ -15,6 +15,7 @@ nonisolated struct ShowcaseSession: Sendable {
 
     let id: UUID
     let name: String
+    let floorPlanName: String
     let startedAt: Date
     let endedAt: Date
     let floorPlan: FloorPlanReference
@@ -29,7 +30,7 @@ nonisolated struct ShowcaseSession: Sendable {
             sessionID: id,
             trainingName: name,
             floorPlan: floorPlan,
-            floorPlanName: "선박 도면",
+            floorPlanName: floorPlanName,
             participantNames: participants.map(\.name),
             startedAt: startedAt,
             endedAt: endedAt
@@ -76,21 +77,34 @@ nonisolated struct ShowcaseSession: Sendable {
         return nil
     }
 
-    /// 앱 번들에 든 쇼케이스 세션. 파일이 없으면 nil
-    static let bundled: ShowcaseSession? = load()
+    /// 쇼케이스 도면 파일. 세션마다 도면이 달라 이름에 도면 ID를 붙인다.
+    static func floorPlanResource(_ reference: FloorPlanReference, _ name: String) -> URL? {
+        resource("ShowcaseFloorPlan-\(reference.floorPlanID.uuidString)-\(name)")
+    }
 
     /// 쇼케이스 세션 도면 이미지. 기록 썸네일에 쓴다.
     static func floorPlanImageData(for reference: FloorPlanReference) -> Data? {
-        guard reference == bundled?.floorPlan,
-              let url = resource("ShowcaseFloorPlan-original.png") else { return nil }
+        guard ShowcaseSessions.bundled.contains(floorPlan: reference),
+              let url = floorPlanResource(reference, "original.png") else { return nil }
         return try? Data(contentsOf: url)
     }
 
-    static func load() -> ShowcaseSession? {
-        guard let url = resource("ShowcaseSession.json"),
-              let data = try? Data(contentsOf: url),
-              let manifest = try? JSONDecoder().decode(Manifest.self, from: data) else { return nil }
-        return ShowcaseSession(manifest: manifest)
+    /// 번들에 든 쇼케이스 세션 전부. 시작 시각 최신순
+    static func loadAll() -> [ShowcaseSession] {
+        var urls: [URL] = []
+        for bundle in [Bundle.main, Bundle(for: BundleToken.self)] {
+            urls += (bundle.urls(forResourcesWithExtension: "json", subdirectory: nil) ?? [])
+                .filter { $0.lastPathComponent.hasPrefix("ShowcaseSession-") }
+        }
+        var seen = Set<UUID>()
+        return urls
+            .compactMap { url -> ShowcaseSession? in
+                guard let data = try? Data(contentsOf: url),
+                      let manifest = try? JSONDecoder().decode(Manifest.self, from: data) else { return nil }
+                return ShowcaseSession(manifest: manifest)
+            }
+            .filter { seen.insert($0.id).inserted }
+            .sorted { $0.startedAt > $1.startedAt }
     }
 
     private struct Manifest: Decodable {
@@ -109,6 +123,7 @@ nonisolated struct ShowcaseSession: Sendable {
 
         let sessionID: UUID
         let name: String
+        let floorPlanName: String?
         let startedAt: Double
         let endedAt: Double
         let floorPlan: Plan
@@ -118,6 +133,7 @@ nonisolated struct ShowcaseSession: Sendable {
     private init(manifest: Manifest) {
         id = manifest.sessionID
         name = manifest.name
+        floorPlanName = manifest.floorPlanName ?? ""
         startedAt = Date(timeIntervalSince1970: manifest.startedAt)
         endedAt = Date(timeIntervalSince1970: manifest.endedAt)
         floorPlan = FloorPlanReference(
@@ -136,11 +152,41 @@ nonisolated struct ShowcaseSession: Sendable {
     }
 }
 
+/// 번들에 든 쇼케이스 세션 묶음. 비어 있으면 아래 저장소들은 모두 `fallback`으로 넘긴다.
+nonisolated struct ShowcaseSessions: Sendable {
+    let all: [ShowcaseSession]
+
+    static let bundled = ShowcaseSessions(all: ShowcaseSession.loadAll())
+
+    var ids: Set<UUID> { Set(all.map(\.id)) }
+
+    func session(id: UUID) -> ShowcaseSession? {
+        all.first { $0.id == id }
+    }
+
+    func participant(for identity: TrackIdentity) -> ShowcaseSession.Participant? {
+        session(id: identity.sessionID)?.participant(for: identity)
+    }
+
+    func contains(floorPlan reference: FloorPlanReference) -> Bool {
+        all.contains { $0.floorPlan == reference }
+    }
+
+    /// 번들 영상을 바꿔 다시 설치해도 예전 사본을 쓰지 않도록, 앱을 켤 때 쇼케이스 영상 캐시를 지운다.
+    func clearVideoCache(root: URL = AARVideoLoader.defaultCacheRoot) {
+        for participant in all.flatMap(\.participants) {
+            try? FileManager.default.removeItem(
+                at: root.appendingPathComponent(participant.recordingID.uuidString, isDirectory: true)
+            )
+        }
+    }
+}
+
 // MARK: - 번들에서 읽는 저장소
 
 /// 쇼케이스 세션 도면은 번들에서, 그 밖의 도면은 `fallback`에서 받는다.
 nonisolated struct ShowcaseFloorPlanFileRepository: FloorPlanFileRepository {
-    let showcase: ShowcaseSession
+    let showcase: ShowcaseSessions
     let fallback: any FloorPlanFileRepository
 
     func upload(_ files: FloorPlanFiles, for reference: FloorPlanReference) async throws {
@@ -148,10 +194,10 @@ nonisolated struct ShowcaseFloorPlanFileRepository: FloorPlanFileRepository {
     }
 
     func download(_ reference: FloorPlanReference) async throws -> FloorPlanFiles {
-        guard reference == showcase.floorPlan else { return try await fallback.download(reference) }
-        guard let image = ShowcaseSession.resource("ShowcaseFloorPlan-original.png"),
-              let map = ShowcaseSession.resource("ShowcaseFloorPlan-navigation-map.json"),
-              let mask = ShowcaseSession.resource("ShowcaseFloorPlan-resolved-mask.bin") else {
+        guard showcase.contains(floorPlan: reference) else { return try await fallback.download(reference) }
+        guard let image = ShowcaseSession.floorPlanResource(reference, "original.png"),
+              let map = ShowcaseSession.floorPlanResource(reference, "navigation-map.json"),
+              let mask = ShowcaseSession.floorPlanResource(reference, "resolved-mask.bin") else {
             throw RepositoryError.notFound
         }
         return FloorPlanFiles(
@@ -163,7 +209,7 @@ nonisolated struct ShowcaseFloorPlanFileRepository: FloorPlanFileRepository {
 }
 
 nonisolated struct ShowcaseTrackResultRepository: TrackResultRepository {
-    let showcase: ShowcaseSession
+    let showcase: ShowcaseSessions
     let fallback: any TrackResultRepository
 
     func upload(_ result: TrackResultDocument) async throws {
@@ -195,11 +241,11 @@ nonisolated struct ShowcaseSoundCandidateRepository: SoundCandidateRepository {
 }
 
 nonisolated struct ShowcaseSoundCandidateLoader: AARSoundCandidateLoading {
-    let showcase: ShowcaseSession
+    let showcase: ShowcaseSessions
     let fallback: any AARSoundCandidateLoading
     private let real = RepositoryAARSoundCandidateLoader(repository: ShowcaseSoundCandidateRepository())
 
-    init(showcase: ShowcaseSession, fallback: any AARSoundCandidateLoading) {
+    init(showcase: ShowcaseSessions, fallback: any AARSoundCandidateLoading) {
         self.showcase = showcase
         self.fallback = fallback
     }
@@ -211,7 +257,7 @@ nonisolated struct ShowcaseSoundCandidateLoader: AARSoundCandidateLoading {
 }
 
 nonisolated struct ShowcaseVideoChunkRepository: VideoChunkRepository {
-    let showcase: ShowcaseSession
+    let showcase: ShowcaseSessions
     let fallback: any VideoChunkRepository
 
     func upload(fileURL: URL, identity: TrackIdentity, index: Int) async throws {
@@ -247,48 +293,49 @@ nonisolated struct ShowcaseVideoChunkRepository: VideoChunkRepository {
 /// 일반 모드에서 쇼케이스 세션만 번들에서 돌려주고, 나머지는 Firestore로 보낸다.
 /// 쇼케이스 세션은 다른 기기의 교관 계정 것이라 규칙상 서버에서 읽을 수 없다.
 nonisolated struct ShowcaseSessionRepository: SessionRepository {
-    let showcase: ShowcaseSession
+    let showcase: ShowcaseSessions
     let fallback: any SessionRepository
 
     func createSession(_ session: Session) async throws { try await fallback.createSession(session) }
     func session(forPin pin: String) async throws -> Session { try await fallback.session(forPin: pin) }
 
     func updateStatus(of session: Session, to status: SessionStatus) async throws {
-        guard session.id != showcase.id else { return }
+        guard showcase.session(id: session.id) == nil else { return }
         try await fallback.updateStatus(of: session, to: status)
     }
 
     func observeSession(id: UUID) -> AsyncThrowingStream<Session, Error> {
-        guard id == showcase.id else { return fallback.observeSession(id: id) }
-        let session = showcase.session
+        guard let session = showcase.session(id: id)?.session else { return fallback.observeSession(id: id) }
         return AsyncThrowingStream { $0.yield(session) }
     }
 }
 
 nonisolated struct ShowcaseMemberRepository: MemberRepository {
-    let showcase: ShowcaseSession
+    let showcase: ShowcaseSessions
     let fallback: any MemberRepository
 
     func join(_ member: Member, pin: String) async throws { try await fallback.join(member, pin: pin) }
     func updateReadiness(of member: Member) async throws { try await fallback.updateReadiness(of: member) }
 
     func observeMembers(sessionID: UUID) -> AsyncThrowingStream<[Member], Error> {
-        guard sessionID == showcase.id else { return fallback.observeMembers(sessionID: sessionID) }
-        let members = showcase.members()
+        guard let members = showcase.session(id: sessionID)?.members() else {
+            return fallback.observeMembers(sessionID: sessionID)
+        }
         return AsyncThrowingStream { $0.yield(members) }
     }
 }
 
 nonisolated struct ShowcaseRecordingRepository: RecordingRepository {
-    let showcase: ShowcaseSession
+    let showcase: ShowcaseSessions
     let fallback: any RecordingRepository
 
     func startRecording(_ recording: Recording) async throws { try await fallback.startRecording(recording) }
     func updateRecording(_ recording: Recording) async throws { try await fallback.updateRecording(recording) }
 
     func observeRecordings(sessionID: UUID) -> AsyncThrowingStream<[Recording], Error> {
-        guard sessionID == showcase.id else { return fallback.observeRecordings(sessionID: sessionID) }
-        let recordings = showcase.recordings()
+        guard let recordings = showcase.session(id: sessionID)?.recordings() else {
+            return fallback.observeRecordings(sessionID: sessionID)
+        }
         return AsyncThrowingStream { $0.yield(recordings) }
     }
 }
@@ -297,26 +344,32 @@ nonisolated struct ShowcaseRecordingRepository: RecordingRepository {
 /// 고정을 풀고 지우면 이번 실행 동안만 목록에서 빠지고, 다음 실행 때 다시 보인다.
 @MainActor
 final class ShowcaseTrainingHistoryRepository: TrainingHistoryRepository {
-    private let showcase: ShowcaseSession
+    private let showcase: ShowcaseSessions
     private let base: any TrainingHistoryRepository
+    private var hiddenIDs: Set<UUID> = []
 
-    init(showcase: ShowcaseSession, base: any TrainingHistoryRepository) {
+    init(showcase: ShowcaseSessions, base: any TrainingHistoryRepository) {
         self.showcase = showcase
         self.base = base
     }
 
     func fetchAll() throws -> [TrainingHistoryRecord] {
-        let records = try base.fetchAll().filter { $0.sessionID != showcase.id }
-        return [showcase.historyRecord] + records
+        let ids = showcase.ids
+        let records = try base.fetchAll().filter { !ids.contains($0.sessionID) }
+        let showcaseRecords = showcase.all.filter { !hiddenIDs.contains($0.id) }.map(\.historyRecord)
+        return (showcaseRecords + records).sorted { $0.startedAt > $1.startedAt }
     }
 
     func save(_ record: TrainingHistoryRecord) throws {
-        guard record.sessionID != showcase.id else { return }
+        guard !showcase.ids.contains(record.sessionID) else { return }
         try base.save(record)
     }
 
     func delete(sessionID: UUID) throws {
-        guard sessionID != showcase.id else { return }
+        guard !showcase.ids.contains(sessionID) else {
+            hiddenIDs.insert(sessionID)
+            return
+        }
         try base.delete(sessionID: sessionID)
     }
 }
