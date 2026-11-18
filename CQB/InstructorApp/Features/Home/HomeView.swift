@@ -12,6 +12,7 @@ struct HomeTrainingRecordSummary: Identifiable {
     let participantText: String
     let thumbnail: UIImage?
     let isOpening: Bool
+    var isPinned = false
 }
 
 struct HomeView: View {
@@ -27,7 +28,8 @@ struct HomeView: View {
                 dateText: record.startedAtText,
                 participantText: record.participantSummary,
                 thumbnail: index == 0 ? store.trainingHistoryThumbnail(for: record) : nil,
-                isOpening: store.openingTrainingHistorySessionID == record.sessionID
+                isOpening: store.openingTrainingHistorySessionID == record.sessionID,
+                isPinned: store.isPinnedTrainingHistory(record.sessionID)
             )
         }
     }
@@ -125,7 +127,8 @@ struct HomeView: View {
             isSelectionEnabled: store.canSelectTrainingHistoryRecord,
             onShowAll: store.openTrainingHistory,
             onRetry: store.retryTrainingHistoryLoad,
-            onSelectRecord: store.openTrainingHistoryRecord
+            onSelectRecord: store.openTrainingHistoryRecord,
+            onSetPinned: { id, isPinned in store.setTrainingHistoryPinned(isPinned, sessionID: id) }
         )
     }
 }
@@ -137,6 +140,7 @@ private struct TrainingHistoryCard: View {
     let onShowAll: () -> Void
     let onRetry: () -> Void
     let onSelectRecord: (UUID) -> Void
+    let onSetPinned: (UUID, Bool) -> Void
 
     var body: some View {
         HomeCardSurface {
@@ -171,14 +175,16 @@ private struct TrainingHistoryCard: View {
                             TrainingRecordButton(
                                 record: records[0],
                                 prominence: .featured,
-                                action: onSelectRecord
+                                action: onSelectRecord,
+                                onSetPinned: onSetPinned
                             )
 
                             ForEach(records.dropFirst()) { record in
                                 TrainingRecordButton(
                                     record: record,
                                     prominence: .compact,
-                                    action: onSelectRecord
+                                    action: onSelectRecord,
+                                    onSetPinned: onSetPinned
                                 )
                             }
                         }
@@ -250,6 +256,7 @@ private struct TrainingRecordButton: View {
     let record: HomeTrainingRecordSummary
     let prominence: Prominence
     let action: (UUID) -> Void
+    let onSetPinned: (UUID, Bool) -> Void
 
     var body: some View {
         Button { action(record.id) } label: {
@@ -266,6 +273,13 @@ private struct TrainingRecordButton: View {
                 }
         }
         .buttonStyle(HomeCardButtonStyle())
+        // 길게 눌러 고정하거나 고정을 푼다.
+        .contextMenu {
+            Button(
+                record.isPinned ? "고정 해제" : "고정",
+                systemImage: record.isPinned ? "pin.slash" : "pin"
+            ) { onSetPinned(record.id, !record.isPinned) }
+        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(record.title), \(record.floorPlanName), \(record.dateText), \(record.participantText)")
         .accessibilityHint("AAR 화면으로 이동합니다.")
@@ -307,7 +321,14 @@ private struct TrainingRecordButton: View {
             .background(DSColor.surfaceSecondary)
             .clipShape(.rect(cornerRadius: DSRadius.large))
             .overlay(alignment: .topLeading) {
-                Text("직전 강평 다시 보기")
+                Group {
+                    if record.isPinned {
+                        Image(systemName: "pin.fill")
+                            .accessibilityLabel("고정한 기록")
+                    } else {
+                        Text("직전 강평 다시 보기")
+                    }
+                }
                     .dsTextStyle(DSTypography.bodyRegular12)
                     .foregroundStyle(DSColor.contentPrimary)
                     .padding(.horizontal, DSSpacing.s12)
@@ -320,10 +341,16 @@ private struct TrainingRecordButton: View {
 
         case .compact:
             VStack(alignment: .leading, spacing: 0) {
-                Text(record.title)
+                HStack(spacing: DSSpacing.s8) {
+                    if record.isPinned {
+                        Image(systemName: "pin.fill")
+                            .accessibilityLabel("고정한 기록")
+                    }
+                    Text(record.title)
+                        .lineLimit(1)
+                }
                     .dsTextStyle(DSTypography.headingSemiBold24)
                     .foregroundStyle(DSColor.contentPrimary)
-                    .lineLimit(1)
 
                 Spacer(minLength: DSSpacing.s8)
 

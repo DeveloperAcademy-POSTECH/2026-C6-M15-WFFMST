@@ -14,7 +14,7 @@ struct AppContainer: View {
         floorPlanCatalogRepository: (any FloorPlanCatalogRepository)? = nil,
         trainingHistoryRepository: (any TrainingHistoryRepository)? = nil
     ) {
-        // 쇼케이스(#252): 번들에 든 세션을 일반 모드 기록에 넣고, 그 세션만 번들 파일에서 읽는다.
+        // 쇼케이스(#252): 번들에 든 세션은 일반 모드 기록 맨 위에 고정하고, 그 세션만 번들 파일에서 읽는다.
         let showcase = ShowcaseSession.bundled
         let sessionRepository: any SessionRepository = showcase.map {
             ShowcaseSessionRepository(showcase: $0, fallback: FirestoreSessionRepository())
@@ -37,7 +37,11 @@ struct AppContainer: View {
             sessionRepository: sessionRepository,
             memberRepository: memberRepository,
             recordingRepository: recordingRepository,
-            trainingHistoryRepository: historyRepository
+            trainingHistoryRepository: historyRepository,
+            trainingHistoryPins: TrainingHistoryPins(
+                defaults: .standard,
+                initial: showcase.map { [$0.id] } ?? []
+            )
         ))
         _aarStore = State(initialValue: AARStore(
             sessionRepository: sessionRepository,

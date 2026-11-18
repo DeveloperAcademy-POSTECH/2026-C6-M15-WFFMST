@@ -75,6 +75,7 @@ final class InstructorStore {
     @ObservationIgnored private let memberRepository: any MemberRepository
     @ObservationIgnored private let trainingHistoryRepository: any TrainingHistoryRepository
     @ObservationIgnored private var trainingHistoryOpenTask: Task<Void, Never>?
+    @ObservationIgnored private let trainingHistoryPins: TrainingHistoryPins
     @ObservationIgnored private let pinGenerator: () -> String
     @ObservationIgnored private var floorPlanUploadTask: Task<Void, Never>?
     @ObservationIgnored private var floorPlanDetailTask: Task<Void, Never>?
@@ -139,6 +140,8 @@ final class InstructorStore {
     private(set) var trainingParticipants: [InstructorParticipant] = []
     /// 시작 시각 최신순
     private(set) var trainingHistory: [TrainingHistoryRecord] = []
+    /// 고정한 기록의 세션 ID. 고정한 기록은 목록 맨 위에 둔다.
+    private(set) var pinnedTrainingHistoryIDs: Set<UUID> = []
     private(set) var trainingHistoryState: TrainingHistoryState = .idle
     /// AAR을 열려고 서버 기록을 받는 중인 기록
     private(set) var openingTrainingHistorySessionID: UUID?
@@ -167,6 +170,7 @@ final class InstructorStore {
         recordingRepository: any RecordingRepository = DemoRecordingRepository(),
         trainingHistoryRepository: (any TrainingHistoryRepository)? = nil,
         trainingHistory: [TrainingHistoryRecord] = [],
+        trainingHistoryPins: TrainingHistoryPins? = nil,
         pinGenerator: @escaping () -> String = InstructorStore.makePIN,
         previewSession: Session? = nil,
         previewParticipants: [InstructorParticipant] = [],
@@ -182,7 +186,10 @@ final class InstructorStore {
         self.memberRepository = memberRepository
         self.trainingHistoryRepository = trainingHistoryRepository
             ?? InMemoryTrainingHistoryRepository(records: trainingHistory)
-        self.trainingHistory = trainingHistory.sorted { $0.startedAt > $1.startedAt }
+        let pins = trainingHistoryPins ?? TrainingHistoryPins()
+        self.trainingHistoryPins = pins
+        self.pinnedTrainingHistoryIDs = pins.ids
+        self.trainingHistory = Self.pinnedFirst(trainingHistory.sorted { $0.startedAt > $1.startedAt }, pinned: pins.ids)
         self.trainingHistoryState = trainingHistory.isEmpty ? .idle : .loaded
         self.trainingRecords = TrainingRecordStore(repository: recordingRepository)
         self.pinGenerator = pinGenerator
@@ -293,7 +300,7 @@ final class InstructorStore {
         guard trainingHistoryState == .idle || trainingHistoryError != nil else { return }
         trainingHistoryState = .loading
         do {
-            trainingHistory = try trainingHistoryRepository.fetchAll()
+            trainingHistory = Self.pinnedFirst(try trainingHistoryRepository.fetchAll(), pinned: pinnedTrainingHistoryIDs)
             trainingHistoryState = .loaded
         } catch {
             Self.logger.error("이전 훈련 기록 복원 실패: \(error.localizedDescription, privacy: .private)")
@@ -355,6 +362,7 @@ final class InstructorStore {
     /// 기기 목록에서만 지운다. 서버 영상·기록은 남긴다(#126 임시 가정).
     func deleteTrainingHistoryRecord(_ sessionID: UUID) {
         guard phase == .trainingHistory, canSelectTrainingHistoryRecord,
+              !isPinnedTrainingHistory(sessionID),
               trainingHistory.contains(where: { $0.sessionID == sessionID }) else { return }
         trainingHistoryDeletionError = nil
         trainingHistoryOpenError = nil
@@ -365,6 +373,27 @@ final class InstructorStore {
             Self.logger.error("이전 훈련 기록 삭제 실패: \(error.localizedDescription, privacy: .private)")
             trainingHistoryDeletionError = "기록을 삭제하지 못했습니다. 잠시 후 다시 시도해주세요."
         }
+    }
+
+    /// 고정한 기록인지 알려준다. 고정한 기록은 목록 맨 위에 두고, 고정을 풀기 전에는 지우지 않는다.
+    func isPinnedTrainingHistory(_ sessionID: UUID) -> Bool {
+        pinnedTrainingHistoryIDs.contains(sessionID)
+    }
+
+    /// 기록을 고정하거나 고정을 푼다. 고정 목록은 기기에 남는다.
+    func setTrainingHistoryPinned(_ isPinned: Bool, sessionID: UUID) {
+        guard trainingHistory.contains(where: { $0.sessionID == sessionID }) else { return }
+        trainingHistoryPins.setPinned(isPinned, sessionID: sessionID)
+        pinnedTrainingHistoryIDs = trainingHistoryPins.ids
+        trainingHistory = Self.pinnedFirst(
+            trainingHistory.sorted { $0.startedAt > $1.startedAt },
+            pinned: pinnedTrainingHistoryIDs
+        )
+    }
+
+    /// 고정한 기록을 앞으로 모은다. 고정한 기록끼리, 나머지끼리는 원래 순서(최신순)를 지킨다.
+    private static func pinnedFirst(_ records: [TrainingHistoryRecord], pinned: Set<UUID>) -> [TrainingHistoryRecord] {
+        records.filter { pinned.contains($0.sessionID) } + records.filter { !pinned.contains($0.sessionID) }
     }
 
     func dismissTrainingHistoryDeletionError() {
@@ -1078,6 +1107,7 @@ final class InstructorStore {
         trainingHistory.removeAll { $0.sessionID == record.sessionID }
         let index = trainingHistory.firstIndex { $0.startedAt < record.startedAt } ?? trainingHistory.endIndex
         trainingHistory.insert(record, at: index)
+        trainingHistory = Self.pinnedFirst(trainingHistory, pinned: pinnedTrainingHistoryIDs)
     }
 
     private func cancelTrainingHistoryOpen() {

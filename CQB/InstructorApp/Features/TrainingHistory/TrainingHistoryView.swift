@@ -86,9 +86,11 @@ struct TrainingHistoryView: View {
                     ForEach(store.trainingHistory) { record in
                         TrainingHistoryRow(
                             record: record,
+                            isPinned: store.isPinnedTrainingHistory(record.sessionID),
                             isOpening: store.openingTrainingHistorySessionID == record.sessionID,
                             isEnabled: store.canSelectTrainingHistoryRecord,
                             onOpen: { store.openTrainingHistoryRecord(record.sessionID) },
+                            onSetPinned: { store.setTrainingHistoryPinned($0, sessionID: record.sessionID) },
                             onDelete: { pendingDeletion = record }
                         )
                     }
@@ -118,55 +120,36 @@ private struct TrainingHistoryRow: View {
     @Environment(InstructorStore.self) private var store
 
     let record: TrainingHistoryRecord
+    let isPinned: Bool
     let isOpening: Bool
     let isEnabled: Bool
     let onOpen: () -> Void
+    let onSetPinned: (Bool) -> Void
     let onDelete: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
             Button(action: onOpen) {
-                HStack(alignment: .top, spacing: DSSpacing.s24) {
-                    thumbnail
-                        .frame(width: 323, height: 208)
-                        .clipShape(.rect(cornerRadius: DSRadius.small))
-                        .padding(.top, 1.5)
-
-                    VStack(alignment: .leading, spacing: 0) {
-                        // Figma는 제목 줄 오른쪽 끝(열 끝에서 20 안쪽)에 `삭제`를 둔다. 버튼은 겹쳐 올리고 자리만 비운다.
-                        Text(record.trainingName)
-                            .dsTextStyle(DSTypography.headingSemiBold32)
-                            .foregroundStyle(DSPalette.Gray.g50)
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, minHeight: 42, maxHeight: 42, alignment: .leading)
-                            .padding(.trailing, Self.deleteButtonSize + Self.deleteButtonTrailing + DSSpacing.s8)
-
-                        Text(record.detailText)
-                            .dsTextStyle(DSTypography.bodyRegular16)
-                            .foregroundStyle(DSPalette.Gray.g100)
-                            .lineLimit(1)
-                            .padding(.top, DSSpacing.s4)
-                            .padding(.trailing, Self.deleteButtonTrailing)
-
-                        Spacer(minLength: DSSpacing.s12)
-
-                        Text(record.durationText)
-                            .dsTextStyle(DSTypography.bodyRegular24)
-                            .foregroundStyle(DSPalette.Gray.g100)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(height: 211)
-                .contentShape(.rect)
+                rowContent
             }
             .buttonStyle(.plain)
+            // 길게 눌러 고정하거나 고정을 푼다.
+            .contextMenu {
+                Button(
+                    isPinned ? "고정 해제" : "고정",
+                    systemImage: isPinned ? "pin.slash" : "pin"
+                ) { onSetPinned(!isPinned) }
+            }
             .accessibilityElement(children: .combine)
             .accessibilityLabel("\(record.trainingName), \(record.detailText), 진행 시간 \(record.durationText)")
             .accessibilityHint("AAR 화면으로 이동합니다.")
             .accessibilityIdentifier("trainingHistory.record.\(record.sessionID.uuidString)")
             .overlay(alignment: .topTrailing) {
-                deleteButton
-                    .padding(.trailing, Self.deleteButtonTrailing)
+                // 고정한 기록은 지우지 않는다.
+                if !isPinned {
+                    deleteButton
+                        .padding(.trailing, Self.deleteButtonTrailing)
+                }
             }
             .padding(.top, DSSpacing.s20)
             .padding(.bottom, DSSpacing.s20)
@@ -176,6 +159,47 @@ private struct TrainingHistoryRow: View {
                 .fill(DSPalette.Gray.g400)
                 .frame(height: 1)
         }
+    }
+
+    private var rowContent: some View {
+        HStack(alignment: .top, spacing: DSSpacing.s24) {
+            thumbnail
+                .frame(width: 323, height: 208)
+                .clipShape(.rect(cornerRadius: DSRadius.small))
+                .padding(.top, 1.5)
+
+            VStack(alignment: .leading, spacing: 0) {
+                // Figma는 제목 줄 오른쪽 끝(열 끝에서 20 안쪽)에 `삭제`를 둔다. 버튼은 겹쳐 올리고 자리만 비운다.
+                HStack(spacing: DSSpacing.s12) {
+                    if isPinned {
+                        Image(systemName: "pin.fill")
+                            .accessibilityLabel("고정한 기록")
+                    }
+                    Text(record.trainingName)
+                }
+                    .dsTextStyle(DSTypography.headingSemiBold32)
+                    .foregroundStyle(DSPalette.Gray.g50)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, minHeight: 42, maxHeight: 42, alignment: .leading)
+                    .padding(.trailing, Self.deleteButtonSize + Self.deleteButtonTrailing + DSSpacing.s8)
+
+                Text(record.detailText)
+                    .dsTextStyle(DSTypography.bodyRegular16)
+                    .foregroundStyle(DSPalette.Gray.g100)
+                    .lineLimit(1)
+                    .padding(.top, DSSpacing.s4)
+                    .padding(.trailing, Self.deleteButtonTrailing)
+
+                Spacer(minLength: DSSpacing.s12)
+
+                Text(record.durationText)
+                    .dsTextStyle(DSTypography.bodyRegular24)
+                    .foregroundStyle(DSPalette.Gray.g100)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(height: 211)
+        .contentShape(.rect)
     }
 
     private static let deleteButtonSize: CGFloat = 42
