@@ -375,11 +375,15 @@ private struct TrainingRecordButton: View {
     @ViewBuilder
     private var thumbnail: some View {
         if let thumbnail = record.thumbnail {
-            Image(uiImage: thumbnail)
-                .resizable()
-                .scaledToFill()
+            // 가로로 긴 도면이 카드 너비를 밀어 넓히지 않도록 이미지를 틀 위에 겹쳐 그린다.
+            Color.clear
                 .frame(maxWidth: .infinity)
-                .frame(height: 393, alignment: .bottom)
+                .frame(height: 393)
+                .overlay {
+                    Image(uiImage: thumbnail)
+                        .resizable()
+                        .scaledToFill()
+                }
                 .clipped()
         } else {
             Rectangle()
