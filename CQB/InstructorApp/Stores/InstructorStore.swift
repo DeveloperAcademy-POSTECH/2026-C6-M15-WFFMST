@@ -376,9 +376,9 @@ final class InstructorStore {
     func trainingHistoryThumbnail(for record: TrainingHistoryRecord) -> UIImage? {
         let floorPlanID = record.floorPlan.floorPlanID
         if let cached = trainingHistoryThumbnails[floorPlanID] { return cached }
-        guard let plan = floorPlans.first(where: { $0.reference.floorPlanID == floorPlanID }),
-              let registeredPlan = plan.registeredPlan,
-              let image = UIImage(data: registeredPlan.image.pngData) else { return nil }
+        let pngData = floorPlans.first(where: { $0.reference.floorPlanID == floorPlanID })?.registeredPlan?.image.pngData
+            ?? ShowcaseSession.floorPlanImageData(for: record.floorPlan)
+        guard let pngData, let image = UIImage(data: pngData) else { return nil }
         let width: CGFloat = 640
         let height = width * image.size.height / max(image.size.width, 1)
         let thumbnail = image.preparingThumbnail(of: CGSize(width: width, height: height)) ?? image

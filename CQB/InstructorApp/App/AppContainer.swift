@@ -14,24 +14,47 @@ struct AppContainer: View {
         floorPlanCatalogRepository: (any FloorPlanCatalogRepository)? = nil,
         trainingHistoryRepository: (any TrainingHistoryRepository)? = nil
     ) {
+        // 쇼케이스(#252): 번들에 든 세션을 일반 모드 기록에 넣고, 그 세션만 번들 파일에서 읽는다.
+        let showcase = ShowcaseSession.bundled
+        let sessionRepository: any SessionRepository = showcase.map {
+            ShowcaseSessionRepository(showcase: $0, fallback: FirestoreSessionRepository())
+        } ?? FirestoreSessionRepository()
+        let memberRepository: any MemberRepository = showcase.map {
+            ShowcaseMemberRepository(showcase: $0, fallback: FirestoreMemberRepository())
+        } ?? FirestoreMemberRepository()
+        let recordingRepository: any RecordingRepository = showcase.map {
+            ShowcaseRecordingRepository(showcase: $0, fallback: FirestoreRecordingRepository())
+        } ?? FirestoreRecordingRepository()
+        let historyRepository: (any TrainingHistoryRepository)? = showcase.flatMap { showcase in
+            trainingHistoryRepository.map { ShowcaseTrainingHistoryRepository(showcase: showcase, base: $0) }
+        } ?? trainingHistoryRepository
+        let soundLoader = RepositoryAARSoundCandidateLoader(repository: StorageSoundCandidateRepository())
         _store = State(initialValue: InstructorStore(
             floorPlanDraft: FloorPlanDraftStore(worldMapScanner: LocalARWorldMapScanService()),
             floorPlanFileRepository: floorPlanFileRepository,
             worldMapFileRepository: worldMapFileRepository,
             floorPlanCatalogRepository: floorPlanCatalogRepository,
-            sessionRepository: FirestoreSessionRepository(),
-            memberRepository: FirestoreMemberRepository(),
-            recordingRepository: FirestoreRecordingRepository(),
-            trainingHistoryRepository: trainingHistoryRepository
+            sessionRepository: sessionRepository,
+            memberRepository: memberRepository,
+            recordingRepository: recordingRepository,
+            trainingHistoryRepository: historyRepository
         ))
         _aarStore = State(initialValue: AARStore(
-            sessionRepository: FirestoreSessionRepository(),
-            memberRepository: FirestoreMemberRepository(),
-            recordingRepository: FirestoreRecordingRepository(),
-            trackResultRepository: StorageTrackResultRepository(),
-            floorPlanFileRepository: floorPlanFileRepository,
-            videoChunkRepository: StorageVideoChunkRepository(),
-            soundCandidateLoader: RepositoryAARSoundCandidateLoader(repository: StorageSoundCandidateRepository())
+            sessionRepository: sessionRepository,
+            memberRepository: memberRepository,
+            recordingRepository: recordingRepository,
+            trackResultRepository: showcase.map {
+                ShowcaseTrackResultRepository(showcase: $0, fallback: StorageTrackResultRepository())
+            } ?? StorageTrackResultRepository(),
+            floorPlanFileRepository: showcase.map {
+                ShowcaseFloorPlanFileRepository(showcase: $0, fallback: floorPlanFileRepository)
+            } ?? floorPlanFileRepository,
+            videoChunkRepository: showcase.map {
+                ShowcaseVideoChunkRepository(showcase: $0, fallback: StorageVideoChunkRepository())
+            } ?? StorageVideoChunkRepository(),
+            soundCandidateLoader: showcase.map {
+                ShowcaseSoundCandidateLoader(showcase: $0, fallback: soundLoader)
+            } ?? soundLoader
         ))
     }
 
