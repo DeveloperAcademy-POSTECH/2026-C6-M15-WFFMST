@@ -32,9 +32,10 @@ struct AppContainer: View {
             memberRepository: memberRepository,
             recordingRepository: recordingRepository,
             trainingHistoryRepository: historyRepository,
+            // 처음에는 오래된 쇼케이스 세션(킬하우스)을 맨 위에 둔다. 다시 고정하면 그 기록이 맨 위로 온다.
             trainingHistoryPins: TrainingHistoryPins(
                 defaults: .standard,
-                initial: showcase.ids
+                initial: showcase.all.sorted { $0.startedAt < $1.startedAt }.map(\.id)
             )
         ))
         _aarStore = State(initialValue: AARStore(

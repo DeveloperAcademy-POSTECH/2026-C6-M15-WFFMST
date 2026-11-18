@@ -344,6 +344,7 @@ private struct TrainingRecordButton: View {
                 HStack(spacing: DSSpacing.s8) {
                     if record.isPinned {
                         Image(systemName: "pin.fill")
+                            .imageScale(.small)
                             .accessibilityLabel("고정한 기록")
                     }
                     Text(record.title)

@@ -173,6 +173,7 @@ private struct TrainingHistoryRow: View {
                 HStack(spacing: DSSpacing.s12) {
                     if isPinned {
                         Image(systemName: "pin.fill")
+                            .imageScale(.small)
                             .accessibilityLabel("고정한 기록")
                     }
                     Text(record.trainingName)
