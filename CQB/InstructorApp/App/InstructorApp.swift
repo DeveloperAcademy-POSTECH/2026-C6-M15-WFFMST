@@ -16,7 +16,13 @@ struct InstructorApp: App {
         )
         do {
             let container = try ModelContainer(for: StoredFloorPlan.self, StoredTrainingHistory.self)
-            floorPlanCatalogRepository = SwiftDataFloorPlanCatalogRepository(container: container)
+            let floorPlanCatalog = SwiftDataFloorPlanCatalogRepository(container: container)
+            do {
+                try ShowcaseFloorPlanSeed.prepareCatalog(in: floorPlanCatalog)
+            } catch {
+                Self.logger.error("쇼케이스 C5 도면 준비 실패: \(error.localizedDescription, privacy: .private)")
+            }
+            floorPlanCatalogRepository = floorPlanCatalog
             trainingHistoryRepository = SwiftDataTrainingHistoryRepository(container: container)
         } catch {
             Self.logger.error("기기 저장소 초기화 실패: \(error.localizedDescription, privacy: .private)")
