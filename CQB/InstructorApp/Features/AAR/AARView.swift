@@ -30,11 +30,15 @@ struct AARView: View {
             AARContentView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .overlay(alignment: .top) {
-                    VStack(spacing: 0) {
-                        recordingFailureNotice
-                            .frame(maxWidth: .infinity, alignment: .leading)
-
+                    recordingFailureNotice
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .overlay(alignment: .topLeading) {
+                    // 영상 안내 토스트는 오른쪽 영상 패널을 뺀 동선 화면 가운데에 둔다.
+                    GeometryReader { geometry in
                         videoLoadingGuide
+                            .frame(width: movementAreaWidth(contentWidth: geometry.size.width))
+                            .padding(.leading, AARLayout.outerHorizontalPadding)
                     }
                 }
 
@@ -120,6 +124,14 @@ struct AARView: View {
                 .padding(DSSpacing.s12)
                 .accessibilityIdentifier("aar.recordingFailures")
         }
+    }
+
+    /// `AARContentView`의 동선 화면 너비. 영상 화면일 때는 전체 너비를 쓴다.
+    private func movementAreaWidth(contentWidth: CGFloat) -> CGFloat {
+        let innerWidth = max(contentWidth - AARLayout.outerHorizontalPadding * 2, 0)
+        guard store.aarScreen == .floorPlan else { return innerWidth }
+        let availableWidth = max(innerWidth - AARLayout.contentGap, 0)
+        return availableWidth - availableWidth / 4
     }
 
     private var sessionDateText: String {
